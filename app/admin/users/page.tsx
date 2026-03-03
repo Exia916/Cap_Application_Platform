@@ -19,6 +19,8 @@ type RoleOption = { code: string; label: string };
 type ShiftOption = { code: string; name?: string; label?: string };
 type DepartmentOption = { code: string; name?: string; label?: string };
 
+type GenericOption = { value: string; label: string };
+
 export default function AdminUsersPage() {
   const [users, setUsers] = useState<UserRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -66,11 +68,36 @@ export default function AdminUsersPage() {
     setUsers(((json as any).users || []) as UserRow[]);
   }
 
+  function normalizeRolesPayload(payload: any): RoleOption[] {
+    // supports:
+    // 1) { roles: [{code,label}...] }
+    // 2) { options: [{value,label}...] }
+    // 3) { rows: [{code,label}...] }
+    const roles = (payload?.roles || payload?.rows || []) as any[];
+    const options = (payload?.options || []) as GenericOption[];
+
+    if (options.length) {
+      return options
+        .map((o) => ({
+          code: String(o.value || "").toUpperCase(),
+          label: String(o.label || o.value || "").trim() || String(o.value || "").toUpperCase(),
+        }))
+        .filter((r) => r.code);
+    }
+
+    return roles
+      .map((r) => ({
+        code: String(r.code || r.value || "").toUpperCase(),
+        label: String(r.label || r.name || r.code || r.value || "").trim() || String(r.code || r.value || "").toUpperCase(),
+      }))
+      .filter((r) => r.code);
+  }
+
   async function loadLookups() {
     // roles
     const rr = await fetch("/api/lookups/roles", { cache: "no-store", credentials: "include" });
     const rj = await rr.json().catch(() => ({}));
-    if (rr.ok) setRoleOptions((rj as any).roles || []);
+    if (rr.ok) setRoleOptions(normalizeRolesPayload(rj));
 
     // shifts
     const sr = await fetch("/api/lookups/shifts", { cache: "no-store", credentials: "include" });
@@ -93,6 +120,7 @@ export default function AdminUsersPage() {
         setLoading(false);
       }
     })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // default role after roles load
@@ -155,6 +183,7 @@ export default function AdminUsersPage() {
       credentials: "include",
       body: JSON.stringify({
         ...newUser,
+        role: String(newUser.role || "").toUpperCase(),
         employee_number: newUser.employee_number ? Number(newUser.employee_number) : null,
         shift: newUser.shift || null,
         department: newUser.department || null,
@@ -226,6 +255,7 @@ export default function AdminUsersPage() {
       credentials: "include",
       body: JSON.stringify({
         ...editForm,
+        role: String(editForm.role || "").toUpperCase(),
         employee_number: editForm.employee_number ? Number(editForm.employee_number) : null,
         shift: editForm.shift || null,
         department: editForm.department || null,
@@ -405,11 +435,7 @@ export default function AdminUsersPage() {
                     <td className="py-2 pr-3">{u.is_active ? "Yes" : "No"}</td>
                     <td className="py-2 pr-3">
                       <div className="flex flex-wrap gap-2">
-                        <button
-                          type="button"
-                          className="rounded-full border px-3 py-1 text-xs"
-                          onClick={() => startEditing(u)}
-                        >
+                        <button type="button" className="rounded-full border px-3 py-1 text-xs" onClick={() => startEditing(u)}>
                           Edit
                         </button>
                         <button
@@ -431,11 +457,7 @@ export default function AdminUsersPage() {
                             <div className="text-sm font-semibold">
                               Edit User: <span className="font-mono">{u.username}</span>
                             </div>
-                            <button
-                              type="button"
-                              className="rounded-full border px-3 py-1 text-xs"
-                              onClick={cancelEditing}
-                            >
+                            <button type="button" className="rounded-full border px-3 py-1 text-xs" onClick={cancelEditing}>
                               Close
                             </button>
                           </div>
@@ -446,12 +468,7 @@ export default function AdminUsersPage() {
                             </Field>
 
                             <Field label="Display Name">
-                              <input
-                                className="input"
-                                name="display_name"
-                                value={editForm.display_name}
-                                onChange={onEditChange}
-                              />
+                              <input className="input" name="display_name" value={editForm.display_name} onChange={onEditChange} />
                             </Field>
 
                             <Field label="Name">
@@ -459,12 +476,7 @@ export default function AdminUsersPage() {
                             </Field>
 
                             <Field label="Employee #">
-                              <input
-                                className="input"
-                                name="employee_number"
-                                value={editForm.employee_number}
-                                onChange={onEditChange}
-                              />
+                              <input className="input" name="employee_number" value={editForm.employee_number} onChange={onEditChange} />
                             </Field>
 
                             <Field label="Role">
@@ -511,18 +523,11 @@ export default function AdminUsersPage() {
 
                             <div className="flex items-end gap-2">
                               <label className="flex items-center gap-2 text-sm text-gray-700">
-                                <input
-                                  type="checkbox"
-                                  name="is_active"
-                                  checked={editForm.is_active}
-                                  onChange={onEditChange}
-                                />
+                                <input type="checkbox" name="is_active" checked={editForm.is_active} onChange={onEditChange} />
                                 Active
                               </label>
 
-                              <button className="rounded-full bg-green-600 px-4 py-2 text-sm font-semibold text-white">
-                                Save
-                              </button>
+                              <button className="rounded-full bg-green-600 px-4 py-2 text-sm font-semibold text-white">Save</button>
 
                               <button type="button" className="rounded-full border px-4 py-2 text-sm" onClick={cancelEditing}>
                                 Cancel
