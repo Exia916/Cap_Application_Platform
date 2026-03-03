@@ -1,4 +1,3 @@
-// app/api/admin/users/route.ts
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { verifyJwt } from "@/lib/auth";
@@ -7,39 +6,36 @@ import bcrypt from "bcryptjs";
 
 export const runtime = "nodejs";
 
-async function requireAdmin() {
+async function getAuth() {
   const cookieStore = await cookies();
   const token = cookieStore.get("auth_token")?.value;
-  if (!token) return { ok: false as const, status: 401, error: "Unauthorized" };
+  if (!token) return null;
+  return verifyJwt(token);
+}
 
-  const payload: any = verifyJwt(token);
+function bad(msg: string, status = 400) {
+  return NextResponse.json({ error: msg }, { status });
+}
+
+function normRole(v: any) {
+  return String(v ?? "").trim().toUpperCase();
+}
+
+async function requireAdmin() {
+  const payload: any = await getAuth();
   if (!payload) return { ok: false as const, status: 401, error: "Unauthorized" };
 
   const role = String(payload.role || "").toUpperCase();
-  if (role !== "ADMIN") {
-    return { ok: false as const, status: 403, error: "Forbidden" };
-  }
+  if (role !== "ADMIN") return { ok: false as const, status: 403, error: "Forbidden" };
 
   return { ok: true as const, payload };
 }
 
-function normUpperOrNull(v: any) {
-  const s = String(v ?? "").trim();
-  return s ? s.toUpperCase() : null;
-}
-
-function normTextOrNull(v: any) {
-  const s = String(v ?? "").trim();
-  return s ? s : null;
-}
-
 export async function GET() {
-  const auth = await requireAdmin();
-  if (!auth.ok) {
-    return NextResponse.json({ error: auth.error }, { status: auth.status });
-  }
-
   try {
+    const auth = await requireAdmin();
+    if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
+
     const res = await db.query(`
       SELECT
         id,
@@ -47,7 +43,7 @@ export async function GET() {
         display_name,
         name,
         employee_number,
-        role::text AS role,
+        role,               -- ✅ now text
         is_active,
         shift,
         department,
@@ -58,92 +54,53 @@ export async function GET() {
     `);
 
     return NextResponse.json({ users: res.rows });
-  } catch (err: any) {
+  } catch (err) {
     console.error("GET /api/admin/users failed:", err);
-    return NextResponse.json(
-      {
-        error:
-          process.env.NODE_ENV === "production"
-            ? "Failed to load users"
-            : err?.message || "Failed to load users",
-      },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: "Failed to load users" }, { status: 500 });
   }
 }
 
 export async function POST(req: Request) {
   const auth = await requireAdmin();
-  if (!auth.ok) {
-    return NextResponse.json({ error: auth.error }, { status: auth.status });
-  }
+  if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
 
   const body = (await req.json().catch(() => null)) as any;
-  if (!body) return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
+  if (!body) return bad("Invalid JSON body");
 
-  const username = normTextOrNull(body.username);
+  const username = String(body.username ?? "").trim();
   const password = String(body.password ?? "");
-  const display_name = normTextOrNull(body.display_name);
-  const name = normTextOrNull(body.name);
-
+  const display_name = String(body.display_name ?? "").trim();
+  const name = String(body.name ?? "").trim();
+  const role = normRole(body.role);
+  const shift = String(body.shift ?? "").trim() || null;
+  const department = String(body.department ?? "").trim() || null;
+  const is_active = body.is_active === false ? false : true;
   const employee_number =
     body.employee_number === null || body.employee_number === undefined || body.employee_number === ""
       ? null
       : Number(body.employee_number);
 
-  const role = normUpperOrNull(body.role) || "USER";
-  const shift = normUpperOrNull(body.shift); // store code
-  const department = normUpperOrNull(body.department); // store code
-  const is_active = body.is_active === undefined ? true : Boolean(body.is_active);
-
-  if (!username || !password || !role) {
-    return NextResponse.json(
-      { error: "Username, password, and role are required." },
-      { status: 400 }
-    );
-  }
+  if (!username) return bad("Username is required");
+  if (!password) return bad("Password is required");
+  if (!role) return bad("Role is required");
 
   try {
+    // ✅ Validate role exists (FK will also enforce, but this gives a clean error)
+    const roleCheck = await db.query(`SELECT 1 FROM roles_lookup WHERE code = $1`, [role]);
+    if (roleCheck.rowCount === 0) return bad(`Invalid role: ${role}`, 400);
+
     const password_hash = await bcrypt.hash(password, 10);
 
     const res = await db.query(
       `
-      INSERT INTO users (
-        username,
-        password_hash,
-        display_name,
-        name,
-        employee_number,
-        role,
-        shift,
-        department,
-        is_active
-      )
-      VALUES ($1, $2, $3, $4, $5, $6::role, $7, $8, $9)
+      INSERT INTO users
+        (username, password_hash, display_name, name, employee_number, role, shift, department, is_active, created_at, updated_at)
+      VALUES
+        ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW(), NOW())
       RETURNING
-        id,
-        username,
-        display_name,
-        name,
-        employee_number,
-        role::text AS role,
-        is_active,
-        shift,
-        department,
-        created_at,
-        updated_at
+        id, username, display_name, name, employee_number, role, shift, department, is_active, created_at, updated_at
       `,
-      [
-        username,
-        password_hash,
-        display_name,
-        name,
-        employee_number,
-        role,
-        shift,
-        department,
-        is_active,
-      ]
+      [username, password_hash, display_name || null, name || null, employee_number, role, shift, department, is_active]
     );
 
     return NextResponse.json({ user: res.rows[0] });
@@ -164,100 +121,69 @@ export async function POST(req: Request) {
 
 export async function PUT(req: Request) {
   const auth = await requireAdmin();
-  if (!auth.ok) {
-    return NextResponse.json({ error: auth.error }, { status: auth.status });
-  }
+  if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
 
   const body = (await req.json().catch(() => null)) as any;
-  if (!body) return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
+  if (!body) return bad("Invalid JSON body");
 
   const id = String(body.id ?? "").trim();
-  if (!id) return NextResponse.json({ error: "Missing user id" }, { status: 400 });
+  if (!id) return bad("Missing id");
 
-  const username = normTextOrNull(body.username);
-  const display_name = normTextOrNull(body.display_name);
-  const name = normTextOrNull(body.name);
-
+  const username = String(body.username ?? "").trim();
+  const display_name = String(body.display_name ?? "").trim();
+  const name = String(body.name ?? "").trim();
+  const role = normRole(body.role);
+  const shift = String(body.shift ?? "").trim() || null;
+  const department = String(body.department ?? "").trim() || null;
+  const is_active = body.is_active === false ? false : true;
   const employee_number =
     body.employee_number === null || body.employee_number === undefined || body.employee_number === ""
       ? null
       : Number(body.employee_number);
 
-  const role = normUpperOrNull(body.role) || "USER";
-  const shift = normUpperOrNull(body.shift); // store code
-  const department = normUpperOrNull(body.department); // store code
-  const is_active = body.is_active === undefined ? true : Boolean(body.is_active);
-
   const new_password = String(body.new_password ?? "").trim();
 
-  if (!username || !role) {
-    return NextResponse.json({ error: "Username and role are required." }, { status: 400 });
-  }
+  if (!username) return bad("Username is required");
+  if (!role) return bad("Role is required");
 
   try {
+    const roleCheck = await db.query(`SELECT 1 FROM roles_lookup WHERE code = $1`, [role]);
+    if (roleCheck.rowCount === 0) return bad(`Invalid role: ${role}`, 400);
+
+    const fields: string[] = [];
+    const args: any[] = [];
+    let i = 1;
+
+    fields.push(`username = $${i++}`); args.push(username);
+    fields.push(`display_name = $${i++}`); args.push(display_name || null);
+    fields.push(`name = $${i++}`); args.push(name || null);
+    fields.push(`employee_number = $${i++}`); args.push(employee_number);
+    fields.push(`role = $${i++}`); args.push(role);
+    fields.push(`shift = $${i++}`); args.push(shift);
+    fields.push(`department = $${i++}`); args.push(department);
+    fields.push(`is_active = $${i++}`); args.push(is_active);
+
     if (new_password) {
       const password_hash = await bcrypt.hash(new_password, 10);
-
-      const res = await db.query(
-        `
-        UPDATE users
-        SET
-          username = $1,
-          display_name = $2,
-          name = $3,
-          employee_number = $4,
-          role = $5::role,
-          shift = $6,
-          department = $7,
-          is_active = $8,
-          password_hash = $9,
-          updated_at = NOW()
-        WHERE id = $10
-        `,
-        [
-          username,
-          display_name,
-          name,
-          employee_number,
-          role,
-          shift,
-          department,
-          is_active,
-          password_hash,
-          id,
-        ]
-      );
-
-      if (res.rowCount === 0) {
-        return NextResponse.json({ error: "User not found" }, { status: 404 });
-      }
-
-      return NextResponse.json({ success: true });
+      fields.push(`password_hash = $${i++}`);
+      args.push(password_hash);
     }
+
+    fields.push(`updated_at = NOW()`);
 
     const res = await db.query(
       `
       UPDATE users
-      SET
-        username = $1,
-        display_name = $2,
-        name = $3,
-        employee_number = $4,
-        role = $5::role,
-        shift = $6,
-        department = $7,
-        is_active = $8,
-        updated_at = NOW()
-      WHERE id = $9
+      SET ${fields.join(", ")}
+      WHERE id = $${i}
+      RETURNING
+        id, username, display_name, name, employee_number, role, shift, department, is_active, created_at, updated_at
       `,
-      [username, display_name, name, employee_number, role, shift, department, is_active, id]
+      [...args, id]
     );
 
-    if (res.rowCount === 0) {
-      return NextResponse.json({ error: "User not found" }, { status: 404 });
-    }
-
-    return NextResponse.json({ success: true });
+    if (res.rowCount === 0) return bad("User not found", 404);
+    return NextResponse.json({ user: res.rows[0] });
   } catch (err: any) {
     console.error("PUT /api/admin/users failed:", err);
 

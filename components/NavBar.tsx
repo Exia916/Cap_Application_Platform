@@ -1,4 +1,3 @@
-// components/NavBar.tsx
 "use client";
 
 import Link from "next/link";
@@ -82,10 +81,14 @@ export default function NavBar() {
   const username = useMemo(() => (me?.username ?? "").trim().toLowerCase(), [me?.username]);
 
   const isAdmin = role === "ADMIN" || username === "admin";
-  const isManagerRole =
-    isAdmin || role === "MANAGER" || role === "SUPERVISOR";
+  const isManagerRole = isAdmin || role === "MANAGER" || role === "SUPERVISOR";
 
+  // Global search remains ADMIN/MANAGER only (your current behavior)
   const canGlobalSearch = isAdmin || role === "MANAGER";
+
+  // ✅ CMMS Repair Requests visible to: ADMIN / MANAGER / SUPERVISOR / TECH
+  const canSeeRepairRequests =
+    meLoaded && (isAdmin || role === "MANAGER" || role === "SUPERVISOR" || role === "TECH");
 
   function runGlobalSearch() {
     const q = globalQ.trim();
@@ -103,19 +106,22 @@ export default function NavBar() {
         <span style={brand}>Cap MES</span>
 
         <NavLink href="/dashboard" label="Home" pathname={pathname || ""} />
-        <NavLink href="/daily-production" label="Embroidery" pathname={pathname  || ""} />
+        <NavLink href="/daily-production" label="Embroidery" pathname={pathname || ""} />
         <NavLink href="/qc-daily-production" label="QC" pathname={pathname || ""} />
         <NavLink href="/emblem-production" label="Emblem" pathname={pathname || ""} />
         <NavLink href="/laser-production" label="Laser" pathname={pathname || ""} />
 
-        {/* New: Manager/Admin hubs */}
-        {meLoaded && isManagerRole ? (
-          <NavLink href="/manager" label="Manager" pathname={pathname  || ""} />
+        {/* ✅ NEW: CMMS Repair Request */}
+        {canSeeRepairRequests ? (
+          <NavLink href="/cmms/repair-requests" label="Repair Request" pathname={pathname || ""} />
         ) : null}
 
-        {meLoaded && isAdmin ? (
-          <NavLink href="/admin" label="Admin" pathname={pathname || ""} />
+        {/* Manager/Admin hubs */}
+        {meLoaded && isManagerRole ? (
+          <NavLink href="/manager" label="Manager" pathname={pathname || ""} />
         ) : null}
+
+        {meLoaded && isAdmin ? <NavLink href="/admin" label="Admin" pathname={pathname || ""} /> : null}
       </div>
 
       {/* Center: Global search (ADMIN/MANAGER only) */}
@@ -137,7 +143,7 @@ export default function NavBar() {
       </div>
 
       <div style={right}>
-        <span style={userPill}>{meLoaded ? (display || "Unknown") : "…"}</span>
+        <span style={userPill}>{meLoaded ? display || "Unknown" : "…"}</span>
 
         <Link
           href="/logout"
@@ -145,14 +151,16 @@ export default function NavBar() {
             setMe(null);
             setMeLoaded(false);
           }}
-          style={{padding: '8px 14px',borderRadius: '9999px',
-          border: 'none',
-          background: '#ef4444',
-          color: '#ffffff',
-          fontSize: '14px',
-          fontWeight: '500',
-          cursor: 'pointer',
-          marginLeft: 'auto',
+          style={{
+            padding: "8px 14px",
+            borderRadius: "9999px",
+            border: "none",
+            background: "#ef4444",
+            color: "#ffffff",
+            fontSize: "14px",
+            fontWeight: "500",
+            cursor: "pointer",
+            marginLeft: "auto",
           }}
         >
           Logout
@@ -235,7 +243,7 @@ const link: React.CSSProperties = {
 
 const activeLink: React.CSSProperties = {
   backgroundColor: "#f0f0f0",
-  color:"#000!important",
+  color: "#000!important",
   fontWeight: 600,
 };
 

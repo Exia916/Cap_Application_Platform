@@ -30,22 +30,40 @@ function decodeJwtPayload(token: string): Record<string, unknown> | null {
   }
 }
 
+function getRole(payload: Record<string, unknown> | null) {
+  const r = String((payload as any)?.role || "").trim().toUpperCase();
+  return r;
+}
+
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
+  // Public assets/pages
   if (isPublicPath(pathname)) {
     return NextResponse.next();
   }
 
+  // Must be logged in for everything else
   const token = request.cookies.get("auth_token")?.value;
   if (!token) {
     return NextResponse.redirect(new URL("/login", request.url));
   }
 
-  if (pathname.startsWith("/admin")) {
-    const payload = decodeJwtPayload(token);
-    if (!payload || payload.role !== "ADMIN") {
+  const payload = decodeJwtPayload(token);
+  const role = getRole(payload);
+
+  // ADMIN-only routes (pages + api)
+  if (pathname.startsWith("/admin") || pathname.startsWith("/api/admin")) {
+    if (!payload || role !== "ADMIN") {
       return NextResponse.redirect(new URL("/login", request.url));
+    }
+  }
+
+  // ✅ CMMS routes: ADMIN / MANAGER / SUPERVISOR / TECH
+  if (pathname.startsWith("/cmms") || pathname.startsWith("/api/cmms")) {
+    const allowed = new Set(["ADMIN", "MANAGER", "SUPERVISOR", "TECH"]);
+    if (!payload || !allowed.has(role)) {
+      return NextResponse.redirect(new URL("/dashboard", request.url));
     }
   }
 

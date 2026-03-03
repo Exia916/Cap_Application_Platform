@@ -6,7 +6,7 @@ import { db } from "@/lib/db";
 
 export const runtime = "nodejs";
 
-async function getAuth() {
+async function requireAuth() {
   const cookieStore = await cookies();
   const token = cookieStore.get("auth_token")?.value;
   if (!token) return null;
@@ -14,29 +14,21 @@ async function getAuth() {
 }
 
 export async function GET() {
-  try {
-    const payload: any = await getAuth();
-    if (!payload) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+  const auth = await requireAuth();
+  if (!auth) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-    // IMPORTANT: only return roles that are valid enum values in Postgres
-    // This prevents someone adding a role in roles_lookup that the enum won't accept.
-    const res = await db.query(`
-      SELECT rl.code, rl.label, rl.is_active, rl.sort_order
-      FROM roles_lookup rl
-      JOIN unnest(enum_range(NULL::role)) AS e(role_value)
-        ON rl.code = e.role_value::text
-      WHERE rl.is_active = true
-      ORDER BY rl.sort_order ASC, rl.code ASC
-    `);
+  const res = await db.query(
+    `SELECT code, label, sort_order, is_active
+     FROM roles_lookup
+     WHERE is_active = true
+     ORDER BY sort_order ASC, code ASC`
+  );
 
-    return NextResponse.json({ roles: res.rows });
-  } catch (err: any) {
-    console.error("GET /api/lookups/roles failed:", err);
-    return NextResponse.json(
-      { error: process.env.NODE_ENV === "production" ? "Failed to load roles" : err?.message || "Failed to load roles" },
-      { status: 500 }
-    );
-  }
+  return NextResponse.json({
+    rows: res.rows,
+    options: res.rows.map((r) => ({
+      value: r.code,
+      label: r.label ? r.label : r.code,
+    })),
+  });
 }
