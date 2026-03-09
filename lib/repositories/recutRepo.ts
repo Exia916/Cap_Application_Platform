@@ -95,13 +95,32 @@ export type UpdateRecutRequestInput = {
   warehousePrintedBy?: string | null;
 };
 
+export type SortDir = "asc" | "desc";
+
 export type RecutListFilters = {
   q?: string;
+
+  recutId?: string | null;
+  requestedDate?: string | null;
+  requestedTime?: string | null;
+  requestedByName?: string | null;
+  requestedDepartment?: string | null;
+  salesOrder?: string | null;
+  designName?: string | null;
+  recutReason?: string | null;
+  detailNumber?: string | null;
+  capStyle?: string | null;
+  pieces?: string | null;
+  operator?: string | null;
+  deliverTo?: string | null;
+
   supervisorApproved?: boolean | null;
   warehousePrinted?: boolean | null;
-  requestedDepartment?: string | null;
+
   page?: number;
   pageSize?: number;
+  sortBy?: string;
+  sortDir?: SortDir;
 };
 
 export type PagedRecutResult = {
@@ -116,62 +135,20 @@ function toPositiveInt(value: unknown, fallback: number): number {
   return Number.isFinite(n) && n > 0 ? Math.trunc(n) : fallback;
 }
 
-function buildWhere(filters: {
-  employeeNumber?: number | null;
-  q?: string;
-  supervisorApproved?: boolean | null;
-  warehousePrinted?: boolean | null;
-  requestedDepartment?: string | null;
-}) {
-  const where: string[] = [];
-  const params: any[] = [];
+function addIlikeFilter(where: string[], params: any[], columnSql: string, value: string | null | undefined) {
+  const v = String(value ?? "").trim();
+  if (!v) return;
 
-  if (filters.employeeNumber != null) {
-    params.push(filters.employeeNumber);
-    where.push(`requested_by_employee_number = $${params.length}`);
-  }
+  params.push(`%${v}%`);
+  where.push(`${columnSql} ILIKE $${params.length}`);
+}
 
-  const q = String(filters.q ?? "").trim();
-  if (q) {
-    params.push(`%${q}%`);
-    const p = `$${params.length}`;
-    where.push(`
-      (
-        CAST(recut_id AS text) ILIKE ${p}
-        OR requested_by_name ILIKE ${p}
-        OR requested_department ILIKE ${p}
-        OR sales_order ILIKE ${p}
-        OR design_name ILIKE ${p}
-        OR recut_reason ILIKE ${p}
-        OR CAST(detail_number AS text) ILIKE ${p}
-        OR cap_style ILIKE ${p}
-        OR CAST(pieces AS text) ILIKE ${p}
-        OR operator ILIKE ${p}
-        OR deliver_to ILIKE ${p}
-      )
-    `);
-  }
+function addTextEqualsFilter(where: string[], params: any[], columnSql: string, value: string | null | undefined) {
+  const v = String(value ?? "").trim();
+  if (!v) return;
 
-  if (typeof filters.supervisorApproved === "boolean") {
-    params.push(filters.supervisorApproved);
-    where.push(`supervisor_approved = $${params.length}`);
-  }
-
-  if (typeof filters.warehousePrinted === "boolean") {
-    params.push(filters.warehousePrinted);
-    where.push(`warehouse_printed = $${params.length}`);
-  }
-
-  const requestedDepartment = String(filters.requestedDepartment ?? "").trim();
-  if (requestedDepartment) {
-    params.push(requestedDepartment);
-    where.push(`requested_department = $${params.length}`);
-  }
-
-  return {
-    whereSql: where.length ? `WHERE ${where.join(" AND ")}` : "",
-    params,
-  };
+  params.push(v);
+  where.push(`${columnSql} = $${params.length}`);
 }
 
 function baseSelectSql() {
@@ -213,6 +190,112 @@ function baseSelectSql() {
   `;
 }
 
+function buildWhere(filters: {
+  employeeNumber?: number | null;
+  q?: string;
+
+  recutId?: string | null;
+  requestedDate?: string | null;
+  requestedTime?: string | null;
+  requestedByName?: string | null;
+  requestedDepartment?: string | null;
+  salesOrder?: string | null;
+  designName?: string | null;
+  recutReason?: string | null;
+  detailNumber?: string | null;
+  capStyle?: string | null;
+  pieces?: string | null;
+  operator?: string | null;
+  deliverTo?: string | null;
+
+  supervisorApproved?: boolean | null;
+  warehousePrinted?: boolean | null;
+}) {
+  const where: string[] = [];
+  const params: any[] = [];
+
+  if (filters.employeeNumber != null) {
+    params.push(filters.employeeNumber);
+    where.push(`requested_by_employee_number = $${params.length}`);
+  }
+
+  const q = String(filters.q ?? "").trim();
+  if (q) {
+    params.push(`%${q}%`);
+    const p = `$${params.length}`;
+    where.push(`
+      (
+        CAST(recut_id AS text) ILIKE ${p}
+        OR CAST(requested_date AS text) ILIKE ${p}
+        OR CAST(requested_time AS text) ILIKE ${p}
+        OR requested_by_name ILIKE ${p}
+        OR requested_department ILIKE ${p}
+        OR sales_order ILIKE ${p}
+        OR design_name ILIKE ${p}
+        OR recut_reason ILIKE ${p}
+        OR CAST(detail_number AS text) ILIKE ${p}
+        OR cap_style ILIKE ${p}
+        OR CAST(pieces AS text) ILIKE ${p}
+        OR operator ILIKE ${p}
+        OR deliver_to ILIKE ${p}
+      )
+    `);
+  }
+
+  addIlikeFilter(where, params, `CAST(recut_id AS text)`, filters.recutId);
+  addIlikeFilter(where, params, `CAST(requested_date AS text)`, filters.requestedDate);
+  addIlikeFilter(where, params, `CAST(requested_time AS text)`, filters.requestedTime);
+  addIlikeFilter(where, params, `requested_by_name`, filters.requestedByName);
+  addIlikeFilter(where, params, `requested_department`, filters.requestedDepartment);
+  addIlikeFilter(where, params, `sales_order`, filters.salesOrder);
+  addIlikeFilter(where, params, `design_name`, filters.designName);
+  addIlikeFilter(where, params, `recut_reason`, filters.recutReason);
+  addIlikeFilter(where, params, `CAST(detail_number AS text)`, filters.detailNumber);
+  addIlikeFilter(where, params, `cap_style`, filters.capStyle);
+  addIlikeFilter(where, params, `CAST(pieces AS text)`, filters.pieces);
+  addIlikeFilter(where, params, `operator`, filters.operator);
+  addIlikeFilter(where, params, `deliver_to`, filters.deliverTo);
+
+  if (typeof filters.supervisorApproved === "boolean") {
+    params.push(filters.supervisorApproved);
+    where.push(`supervisor_approved = $${params.length}`);
+  }
+
+  if (typeof filters.warehousePrinted === "boolean") {
+    params.push(filters.warehousePrinted);
+    where.push(`warehouse_printed = $${params.length}`);
+  }
+
+  return {
+    whereSql: where.length ? `WHERE ${where.join(" AND ")}` : "",
+    params,
+  };
+}
+
+function getOrderBy(sortBy?: string, sortDir?: SortDir) {
+  const dir = String(sortDir || "desc").toLowerCase() === "asc" ? "ASC" : "DESC";
+
+  const map: Record<string, string> = {
+    recutId: `recut_id ${dir}`,
+    requestedDate: `requested_date ${dir}, requested_time ${dir}`,
+    requestedTime: `requested_time ${dir}`,
+    requestedByName: `requested_by_name ${dir}`,
+    requestedDepartment: `requested_department ${dir}`,
+    salesOrder: `sales_order ${dir}`,
+    designName: `design_name ${dir}`,
+    recutReason: `recut_reason ${dir}`,
+    detailNumber: `detail_number ${dir}`,
+    capStyle: `cap_style ${dir}`,
+    pieces: `pieces ${dir}`,
+    operator: `operator ${dir}`,
+    deliverTo: `deliver_to ${dir}`,
+    supervisorApproved: `supervisor_approved ${dir}, requested_at DESC`,
+    warehousePrinted: `warehouse_printed ${dir}, requested_at DESC`,
+  };
+
+  return map[sortBy || ""] ?? `requested_at DESC, recut_id DESC`;
+}
+
 /* -------------------------------------------------------------------------- */
 /* LOOKUPS                                                                     */
 /* -------------------------------------------------------------------------- */
@@ -231,7 +314,6 @@ export async function listRecutReasons(): Promise<LookupRow[]> {
     ORDER BY sort_order ASC, label ASC
     `
   );
-
   return rows;
 }
 
@@ -249,7 +331,6 @@ export async function listRecutRequestedDepartments(): Promise<LookupRow[]> {
     ORDER BY sort_order ASC, label ASC
     `
   );
-
   return rows;
 }
 
@@ -267,7 +348,6 @@ export async function listRecutItems(): Promise<LookupRow[]> {
     ORDER BY sort_order ASC, item_code ASC
     `
   );
-
   return rows;
 }
 
@@ -365,7 +445,6 @@ export async function updateRecutRequest(input: UpdateRecutRequestInput): Promis
     UPDATE public.recut_requests
     SET
       requested_department = $2,
-
       sales_order = $3,
       design_name = $4,
       recut_reason = $5,
@@ -386,9 +465,7 @@ export async function updateRecutRequest(input: UpdateRecutRequestInput): Promis
     `,
     [
       input.id,
-
       input.requestedDepartment,
-
       input.salesOrder,
       input.designName,
       input.recutReason,
@@ -409,6 +486,27 @@ export async function updateRecutRequest(input: UpdateRecutRequestInput): Promis
   );
 }
 
+export async function canUserEditOwnRecutRequest(input: {
+  id: string;
+  employeeNumber: number;
+}): Promise<boolean> {
+  const { rows } = await db.query<{ ok: boolean }>(
+    `
+    SELECT EXISTS (
+      SELECT 1
+      FROM public.recut_requests
+      WHERE id = $1
+        AND requested_by_employee_number = $2
+        AND supervisor_approved = false
+        AND warehouse_printed = false
+    ) AS ok
+    `,
+    [input.id, input.employeeNumber]
+  );
+
+  return !!rows[0]?.ok;
+}
+
 /* -------------------------------------------------------------------------- */
 /* LISTS                                                                       */
 /* -------------------------------------------------------------------------- */
@@ -416,11 +514,28 @@ export async function updateRecutRequest(input: UpdateRecutRequestInput): Promis
 async function listPagedInternal(input: {
   employeeNumber?: number | null;
   q?: string;
+
+  recutId?: string | null;
+  requestedDate?: string | null;
+  requestedTime?: string | null;
+  requestedByName?: string | null;
+  requestedDepartment?: string | null;
+  salesOrder?: string | null;
+  designName?: string | null;
+  recutReason?: string | null;
+  detailNumber?: string | null;
+  capStyle?: string | null;
+  pieces?: string | null;
+  operator?: string | null;
+  deliverTo?: string | null;
+
   supervisorApproved?: boolean | null;
   warehousePrinted?: boolean | null;
-  requestedDepartment?: string | null;
+
   page?: number;
   pageSize?: number;
+  sortBy?: string;
+  sortDir?: SortDir;
 }): Promise<PagedRecutResult> {
   const page = toPositiveInt(input.page, 1);
   const pageSize = Math.min(toPositiveInt(input.pageSize, 25), 200);
@@ -429,10 +544,26 @@ async function listPagedInternal(input: {
   const { whereSql, params } = buildWhere({
     employeeNumber: input.employeeNumber,
     q: input.q,
+
+    recutId: input.recutId ?? null,
+    requestedDate: input.requestedDate ?? null,
+    requestedTime: input.requestedTime ?? null,
+    requestedByName: input.requestedByName ?? null,
+    requestedDepartment: input.requestedDepartment ?? null,
+    salesOrder: input.salesOrder ?? null,
+    designName: input.designName ?? null,
+    recutReason: input.recutReason ?? null,
+    detailNumber: input.detailNumber ?? null,
+    capStyle: input.capStyle ?? null,
+    pieces: input.pieces ?? null,
+    operator: input.operator ?? null,
+    deliverTo: input.deliverTo ?? null,
+
     supervisorApproved: input.supervisorApproved ?? null,
     warehousePrinted: input.warehousePrinted ?? null,
-    requestedDepartment: input.requestedDepartment ?? null,
   });
+
+  const orderBy = getOrderBy(input.sortBy, input.sortDir);
 
   const countRes = await db.query<{ total: string }>(
     `
@@ -447,7 +578,7 @@ async function listPagedInternal(input: {
     `
     ${baseSelectSql()}
     ${whereSql}
-    ORDER BY requested_at DESC, recut_id DESC
+    ORDER BY ${orderBy}
     LIMIT $${params.length + 1}
     OFFSET $${params.length + 2}
     `,
@@ -465,47 +596,67 @@ async function listPagedInternal(input: {
 export async function listRecutRequestsForUserPaged(input: {
   employeeNumber: number;
   q?: string;
+
+  recutId?: string | null;
+  requestedDate?: string | null;
+  requestedTime?: string | null;
+  requestedByName?: string | null;
+  requestedDepartment?: string | null;
+  salesOrder?: string | null;
+  designName?: string | null;
+  recutReason?: string | null;
+  detailNumber?: string | null;
+  capStyle?: string | null;
+  pieces?: string | null;
+  operator?: string | null;
+  deliverTo?: string | null;
+
   supervisorApproved?: boolean | null;
   warehousePrinted?: boolean | null;
-  requestedDepartment?: string | null;
+
   page?: number;
   pageSize?: number;
+  sortBy?: string;
+  sortDir?: SortDir;
 }): Promise<PagedRecutResult> {
   return listPagedInternal({
     employeeNumber: input.employeeNumber,
     q: input.q,
+
+    recutId: input.recutId ?? null,
+    requestedDate: input.requestedDate ?? null,
+    requestedTime: input.requestedTime ?? null,
+    requestedByName: input.requestedByName ?? null,
+    requestedDepartment: input.requestedDepartment ?? null,
+    salesOrder: input.salesOrder ?? null,
+    designName: input.designName ?? null,
+    recutReason: input.recutReason ?? null,
+    detailNumber: input.detailNumber ?? null,
+    capStyle: input.capStyle ?? null,
+    pieces: input.pieces ?? null,
+    operator: input.operator ?? null,
+    deliverTo: input.deliverTo ?? null,
+
     supervisorApproved: input.supervisorApproved ?? null,
     warehousePrinted: input.warehousePrinted ?? null,
-    requestedDepartment: input.requestedDepartment ?? null,
+
     page: input.page,
     pageSize: input.pageSize,
+    sortBy: input.sortBy,
+    sortDir: input.sortDir,
   });
 }
 
 export async function listRecutRequestsForReviewPaged(
   input: RecutListFilters
 ): Promise<PagedRecutResult> {
-  return listPagedInternal({
-    q: input.q,
-    supervisorApproved: input.supervisorApproved ?? null,
-    warehousePrinted: input.warehousePrinted ?? null,
-    requestedDepartment: input.requestedDepartment ?? null,
-    page: input.page,
-    pageSize: input.pageSize,
-  });
+  return listPagedInternal(input);
 }
 
 export async function listRecutRequestsForWarehousePaged(
   input: RecutListFilters
 ): Promise<PagedRecutResult> {
-  return listPagedInternal({
-    q: input.q,
-    supervisorApproved: input.supervisorApproved ?? null,
-    warehousePrinted: input.warehousePrinted ?? null,
-    requestedDepartment: input.requestedDepartment ?? null,
-    page: input.page,
-    pageSize: input.pageSize,
-  });
+  return listPagedInternal(input);
 }
 
 /* -------------------------------------------------------------------------- */

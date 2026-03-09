@@ -23,7 +23,15 @@ type MenuItem = {
   show?: boolean;
 };
 
-type OpenMenu = null | "production" | "maintenance" | "manager" | "admin" | "more" | "user";
+type OpenMenu =
+  | null
+  | "production"
+  | "recut"
+  | "maintenance"
+  | "manager"
+  | "admin"
+  | "more"
+  | "user";
 
 export default function NavBar() {
   const pathname = usePathname() || "";
@@ -32,23 +40,18 @@ export default function NavBar() {
   const [me, setMe] = useState<Me | null>(null);
   const [meLoaded, setMeLoaded] = useState(false);
 
-  // Global search state
   const [globalQ, setGlobalQ] = useState("");
-
-  // Dropdown state
   const [openMenu, setOpenMenu] = useState<OpenMenu>(null);
   const menusWrapRef = useRef<HTMLDivElement | null>(null);
 
-  // ✅ "More" menu behavior (simple + reliable responsive collapse)
   // wide: show all dropdowns
-  // medium: collapse Maintenance/Manager/Admin into More
-  // small: collapse Home + Maintenance/Manager/Admin into More
+  // medium: collapse Maintenance / Manager / Admin into More
+  // small: collapse Home + Recut + Maintenance / Manager / Admin into More
   const [navMode, setNavMode] = useState<"wide" | "medium" | "small">("wide");
 
   useEffect(() => {
     function compute() {
       const w = window.innerWidth || 1200;
-      // tweak these breakpoints as you like
       if (w < 900) setNavMode("small");
       else if (w < 1200) setNavMode("medium");
       else setNavMode("wide");
@@ -81,12 +84,10 @@ export default function NavBar() {
     }
   }, []);
 
-  // 1) initial load + 2) refetch on route change (covers login navigation)
   useEffect(() => {
     fetchMe();
   }, [fetchMe, pathname]);
 
-  // 3) refetch when tab becomes visible again or window regains focus
   useEffect(() => {
     function onFocus() {
       fetchMe();
@@ -104,7 +105,6 @@ export default function NavBar() {
     };
   }, [fetchMe]);
 
-  // Close menus on outside click / Escape
   useEffect(() => {
     function onDown(e: MouseEvent) {
       const el = menusWrapRef.current;
@@ -133,14 +133,26 @@ export default function NavBar() {
   const isAdmin = role === "ADMIN" || username === "admin";
   const isManager = isAdmin || role === "MANAGER" || role === "SUPERVISOR";
 
-  // Global search remains ADMIN/MANAGER only
   const canGlobalSearch = isAdmin || role === "MANAGER";
 
-  // ✅ CMMS Repair Requests visible to: ADMIN / MANAGER / SUPERVISOR
-  const canSeeRepairRequests = meLoaded && (isAdmin || role === "MANAGER" || role === "SUPERVISOR");
+  const canSeeRepairRequests =
+    meLoaded && (isAdmin || role === "MANAGER" || role === "SUPERVISOR");
 
-  // ✅ CMMS Tech/Admin page visible to: ADMIN / TECH
   const canSeeCMMS = meLoaded && (isAdmin || role === "TECH");
+
+  // Recut visibility
+  const canSeeRecuts =
+    meLoaded && (isAdmin || role === "MANAGER" || role === "SUPERVISOR" || role === "USER");
+
+  const canSeeRecutReview =
+    meLoaded && (isAdmin || role === "MANAGER" || role === "SUPERVISOR");
+
+  const canSeeWarehouseRecuts =
+    meLoaded &&
+    (isAdmin ||
+      role === "MANAGER" ||
+      role === "SUPERVISOR" ||
+      role === "WAREHOUSE");
 
   function runGlobalSearch() {
     const q = globalQ.trim();
@@ -164,20 +176,27 @@ export default function NavBar() {
     { href: "/laser-production", label: "Laser" },
   ];
 
+  const recutItems: MenuItem[] = [
+    { href: "/recuts", label: "Recuts", show: canSeeRecuts },
+    { href: "/recuts/supervisor-review", label: "Supervisor Review", show: canSeeRecutReview },
+    { href: "/recuts/warehouse", label: "Warehouse Recuts", show: canSeeWarehouseRecuts },
+  ].filter((x) => x.show !== false);
+
   const maintenanceItems: MenuItem[] = [
     { href: "/cmms/repair-requests", label: "Repair Requests", show: canSeeRepairRequests },
     { href: "/cmms", label: "CMMS", show: canSeeCMMS },
   ].filter((x) => x.show !== false);
 
-  const managerItems: MenuItem[] = [{ href: "/manager", label: "Manager", show: meLoaded && isManager }].filter(
-    (x) => x.show !== false
-  );
+  const managerItems: MenuItem[] = [
+    { href: "/manager", label: "Manager", show: meLoaded && isManager },
+  ].filter((x) => x.show !== false);
 
-  const adminItems: MenuItem[] = [{ href: "/admin", label: "Admin", show: meLoaded && isAdmin }].filter(
-    (x) => x.show !== false
-  );
+  const adminItems: MenuItem[] = [
+    { href: "/admin", label: "Admin", show: meLoaded && isAdmin },
+  ].filter((x) => x.show !== false);
 
   const productionActive = productionItems.some((i) => isActive(pathname, i.href));
+  const recutActive = recutItems.some((i) => isActive(pathname, i.href));
   const maintenanceActive = maintenanceItems.some((i) => isActive(pathname, i.href));
   const managerActive = managerItems.some((i) => isActive(pathname, i.href));
   const adminActive = adminItems.some((i) => isActive(pathname, i.href));
@@ -186,52 +205,69 @@ export default function NavBar() {
   // Quick Action: "+ New"
   // ----------------------------
   const quickAction = useMemo(() => {
-    // Production
-    if (pathname.startsWith("/daily-production")) return { href: "/daily-production/add", label: "New Embroidery Entry" };
-    if (pathname.startsWith("/qc-daily-production")) return { href: "/qc-daily-production/add", label: "New QC Entry" };
-    if (pathname.startsWith("/emblem-production")) return { href: "/emblem-production/add", label: "New Emblem Entry" };
-    if (pathname.startsWith("/laser-production")) return { href: "/laser-production/add", label: "New Laser Entry" };
+    if (pathname.startsWith("/daily-production")) {
+      return { href: "/daily-production/add", label: "New Embroidery Entry" };
+    }
+    if (pathname.startsWith("/qc-daily-production")) {
+      return { href: "/qc-daily-production/add", label: "New QC Entry" };
+    }
+    if (pathname.startsWith("/emblem-production")) {
+      return { href: "/emblem-production/add", label: "New Emblem Entry" };
+    }
+    if (pathname.startsWith("/laser-production")) {
+      return { href: "/laser-production/add", label: "New Laser Entry" };
+    }
 
-    // Maintenance
+    if (pathname.startsWith("/recuts")) {
+      if (!canSeeRecuts) return null;
+      return { href: "/recuts/add", label: "New Recut Request" };
+    }
+
     if (pathname.startsWith("/cmms/repair-requests")) {
       if (!canSeeRepairRequests) return null;
       return { href: "/cmms/repair-requests/add", label: "New Repair Request" };
     }
+
     if (pathname.startsWith("/cmms")) {
       if (!canSeeCMMS) return null;
       return { href: "/cmms/add", label: "New CMMS Work Order" };
     }
 
     return null;
-  }, [pathname, canSeeRepairRequests, canSeeCMMS]);
+  }, [pathname, canSeeRecuts, canSeeRepairRequests, canSeeCMMS]);
 
   function toggle(menu: OpenMenu) {
     setOpenMenu((cur) => (cur === menu ? null : menu));
   }
 
-  // ✅ Decide what to collapse into "More"
   const showHomeAsPrimary = navMode !== "small";
+  const showRecutAsPrimary = navMode !== "small";
   const showMaintenanceAsPrimary = navMode === "wide";
   const showManagerAsPrimary = navMode === "wide";
   const showAdminAsPrimary = navMode === "wide";
 
-  // Show "More" when anything is collapsed OR when you'd like it always present (currently: only when needed)
   const showMore =
     navMode !== "wide" ||
+    (!showRecutAsPrimary && recutItems.length > 0) ||
     (!showMaintenanceAsPrimary && maintenanceItems.length > 0) ||
     (!showManagerAsPrimary && managerItems.length > 0) ||
     (!showAdminAsPrimary && adminItems.length > 0);
 
-  // Build More menu content: only include what’s not shown as primary
   const moreSections = useMemo(() => {
     const sections: { title: string; items: MenuItem[] }[] = [];
 
     if (!showHomeAsPrimary) {
-      sections.push({ title: "Quick Links", items: [{ href: "/dashboard", label: "Home", show: true }] });
+      sections.push({
+        title: "Quick Links",
+        items: [{ href: "/dashboard", label: "Home", show: true }],
+      });
     }
 
-    // Production is still available as a dropdown, but it's helpful in More too on small screens
     sections.push({ title: "Production", items: productionItems });
+
+    if (!showRecutAsPrimary && recutItems.length > 0) {
+      sections.push({ title: "Recut", items: recutItems });
+    }
 
     if (!showMaintenanceAsPrimary && maintenanceItems.length > 0) {
       sections.push({ title: "Maintenance", items: maintenanceItems });
@@ -248,10 +284,12 @@ export default function NavBar() {
     return sections;
   }, [
     showHomeAsPrimary,
+    showRecutAsPrimary,
     showMaintenanceAsPrimary,
     showManagerAsPrimary,
     showAdminAsPrimary,
     productionItems,
+    recutItems,
     maintenanceItems,
     managerItems,
     adminItems,
@@ -260,9 +298,7 @@ export default function NavBar() {
   return (
     <nav style={nav}>
       <div ref={menusWrapRef} style={navInner}>
-        {/* Left: Brand + Primary Nav */}
         <div style={left}>
-          {/* ✅ Cap America Branding */}
           <Link href="/dashboard" style={brandWrap} title="Cap America - Cap MES">
             <Image
               src="/brand/ca-mark.jpg"
@@ -278,10 +314,8 @@ export default function NavBar() {
             </div>
           </Link>
 
-          {/* Home as a primary link (collapses into More on small) */}
           {showHomeAsPrimary ? <NavLink href="/dashboard" label="Home" pathname={pathname} /> : null}
 
-          {/* ✅ Grouped dropdowns */}
           <Dropdown
             label="Production"
             active={productionActive}
@@ -291,6 +325,19 @@ export default function NavBar() {
             pathname={pathname}
             onNavigate={() => setOpenMenu(null)}
           />
+
+          {showRecutAsPrimary ? (
+            <Dropdown
+              label="Recut"
+              active={recutActive}
+              open={openMenu === "recut"}
+              onToggle={() => toggle("recut")}
+              items={recutItems}
+              pathname={pathname}
+              onNavigate={() => setOpenMenu(null)}
+              disabled={recutItems.length === 0}
+            />
+          ) : null}
 
           {showMaintenanceAsPrimary ? (
             <Dropdown
@@ -305,7 +352,6 @@ export default function NavBar() {
             />
           ) : null}
 
-          {/* ✅ Split Manager dropdown */}
           {showManagerAsPrimary ? (
             <Dropdown
               label="Manager"
@@ -319,7 +365,6 @@ export default function NavBar() {
             />
           ) : null}
 
-          {/* ✅ Split Admin dropdown */}
           {showAdminAsPrimary ? (
             <Dropdown
               label="Admin"
@@ -333,11 +378,11 @@ export default function NavBar() {
             />
           ) : null}
 
-          {/* ✅ More menu */}
           {showMore ? (
             <MoreMenu
               open={openMenu === "more"}
               active={
+                (!showRecutAsPrimary && recutActive) ||
                 (!showMaintenanceAsPrimary && maintenanceActive) ||
                 (!showManagerAsPrimary && managerActive) ||
                 (!showAdminAsPrimary && adminActive) ||
@@ -351,7 +396,6 @@ export default function NavBar() {
           ) : null}
         </div>
 
-        {/* Center: Global search (ADMIN/MANAGER only) */}
         <div style={center}>
           {meLoaded && canGlobalSearch ? (
             <div style={searchWrap} title="Global search (Admin/Manager)">
@@ -369,9 +413,7 @@ export default function NavBar() {
           ) : null}
         </div>
 
-        {/* Right: Quick Action + User Menu */}
         <div style={right}>
-          {/* ✅ Quick Action button */}
           {quickAction ? (
             <Link
               href={quickAction.href}
@@ -383,7 +425,6 @@ export default function NavBar() {
             </Link>
           ) : null}
 
-          {/* ✅ User menu (Logout moved inside) */}
           <div style={{ position: "relative" }}>
             <button
               type="button"
@@ -562,7 +603,7 @@ function MoreMenu({
 
       {open ? (
         <div style={{ ...menuPanel, minWidth: 260 }} role="menu" aria-label="More menu">
-          {sections.map((sec) => (
+          {sections.map((sec, idx) => (
             <div key={sec.title} style={{ padding: "6px 6px 2px 6px" }}>
               <div style={menuSectionTitle}>{sec.title}</div>
               <div style={{ marginTop: 4 }}>
@@ -584,7 +625,7 @@ function MoreMenu({
                   );
                 })}
               </div>
-              <div style={menuDivider} />
+              {idx < sections.length - 1 ? <div style={menuDivider} /> : null}
             </div>
           ))}
         </div>
@@ -601,12 +642,9 @@ const nav: React.CSSProperties = {
   position: "sticky",
   top: 0,
   zIndex: 50,
-
   display: "flex",
   justifyContent: "center",
   padding: "12px 24px",
-
-  // Branding pieces:
   background: "linear-gradient(180deg,#ffffff 0%,#f9fafb 100%)",
   borderBottom: "2px solid #b91c1c",
 };
@@ -819,7 +857,6 @@ const menuItemDanger: React.CSSProperties = {
   border: "1px solid #fecaca",
 };
 
-/* Global search UI */
 const searchWrap: React.CSSProperties = {
   display: "flex",
   alignItems: "center",
