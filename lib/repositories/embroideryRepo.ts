@@ -20,6 +20,10 @@ export type EmbroideryEntry = {
   isKnit: boolean;
   detailComplete: boolean;
 
+  // ✅ NEW
+  annex?: boolean;
+  jobberSamplesRan?: number | null;
+
   notes: string | null;
 };
 
@@ -40,6 +44,10 @@ export type AddEmbroideryEntryInput = {
   is3d: boolean;
   isKnit: boolean;
   detailComplete: boolean;
+
+  // ✅ NEW (optional for legacy single-line insert)
+  annex?: boolean;
+  jobberSamplesRan?: number | null;
 
   notes: string | null;
 };
@@ -64,13 +72,15 @@ export type UpdateEmbroideryEntryInput = {
   isKnit: boolean;
   detailComplete: boolean;
 
+  // ✅ NEW
+  annex?: boolean;
+  jobberSamplesRan?: number | null;
+
   notes: string | null;
 };
 
 /** ✅ Existing: single-line insert (kept for compatibility) */
-export async function addEmbroideryEntry(
-  input: AddEmbroideryEntryInput
-): Promise<{ id: string }> {
+export async function addEmbroideryEntry(input: AddEmbroideryEntryInput): Promise<{ id: string }> {
   // shift_date is GENERATED in Postgres — do NOT insert it.
   const { rows } = await db.query<{ id: string }>(
     `
@@ -88,10 +98,12 @@ export async function addEmbroideryEntry(
       is_3d,
       is_knit,
       detail_complete,
+      annex,
+      jobber_samples_ran,
       notes
     )
     VALUES (
-      $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14
+      $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16
     )
     RETURNING id
     `,
@@ -109,6 +121,8 @@ export async function addEmbroideryEntry(
       input.is3d,
       input.isKnit,
       input.detailComplete,
+      !!input.annex,
+      input.jobberSamplesRan ?? null,
       input.notes,
     ]
   );
@@ -116,9 +130,7 @@ export async function addEmbroideryEntry(
   return rows[0];
 }
 
-export async function listEmbroideryEntriesByShiftDate(
-  shiftDate: string
-): Promise<EmbroideryEntry[]> {
+export async function listEmbroideryEntriesByShiftDate(shiftDate: string): Promise<EmbroideryEntry[]> {
   const { rows } = await db.query<EmbroideryEntry>(
     `
     SELECT
@@ -136,6 +148,8 @@ export async function listEmbroideryEntriesByShiftDate(
       is_3d AS "is3d",
       is_knit AS "isKnit",
       detail_complete AS "detailComplete",
+      annex,
+      jobber_samples_ran AS "jobberSamplesRan",
       notes
     FROM public.embroidery_daily_entries
     WHERE shift_date = $1
@@ -168,6 +182,8 @@ export async function listEmbroideryEntriesByUserAndShiftDate(
       is_3d AS "is3d",
       is_knit AS "isKnit",
       detail_complete AS "detailComplete",
+      annex,
+      jobber_samples_ran AS "jobberSamplesRan",
       notes
     FROM public.embroidery_daily_entries
     WHERE employee_number = $1
@@ -180,9 +196,7 @@ export async function listEmbroideryEntriesByUserAndShiftDate(
   return rows;
 }
 
-export async function getEmbroideryEntryById(
-  id: string
-): Promise<EmbroideryEntry | null> {
+export async function getEmbroideryEntryById(id: string): Promise<EmbroideryEntry | null> {
   const { rows } = await db.query<EmbroideryEntry>(
     `
     SELECT
@@ -200,6 +214,8 @@ export async function getEmbroideryEntryById(
       is_3d AS "is3d",
       is_knit AS "isKnit",
       detail_complete AS "detailComplete",
+      annex,
+      jobber_samples_ran AS "jobberSamplesRan",
       notes
     FROM public.embroidery_daily_entries
     WHERE id = $1
@@ -211,9 +227,7 @@ export async function getEmbroideryEntryById(
   return rows[0] ?? null;
 }
 
-export async function updateEmbroideryEntry(
-  input: UpdateEmbroideryEntryInput
-): Promise<void> {
+export async function updateEmbroideryEntry(input: UpdateEmbroideryEntryInput): Promise<void> {
   await db.query(
     `
     UPDATE public.embroidery_daily_entries
@@ -231,7 +245,9 @@ export async function updateEmbroideryEntry(
       is_3d = $12,
       is_knit = $13,
       detail_complete = $14,
-      notes = $15
+      annex = $15,
+      jobber_samples_ran = $16,
+      notes = $17
     WHERE id = $1
     `,
     [
@@ -249,13 +265,15 @@ export async function updateEmbroideryEntry(
       input.is3d,
       input.isKnit,
       input.detailComplete,
+      !!input.annex,
+      input.jobberSamplesRan ?? null,
       input.notes,
     ]
   );
 }
 
 /* ============================================================
-   ✅ NEW: Submission support (header + lines)
+   ✅ Submission support (header + lines)
    ============================================================ */
 
 export type EmbroiderySubmission = {
@@ -266,6 +284,10 @@ export type EmbroiderySubmission = {
   shift: string;
   machineNumber: number | null;
   salesOrder: number | null;
+
+  // ✅ NEW
+  annex: boolean;
+
   notes: string | null;
   createdAt: string;
   lineCount?: number;
@@ -283,14 +305,18 @@ export async function createEmbroiderySubmission(input: {
   shift: string;
   machineNumber: number | null;
   salesOrder: number | null;
+
+  // ✅ NEW
+  annex: boolean;
+
   notes: string | null;
 }): Promise<{ id: string }> {
   const { rows } = await db.query<{ id: string }>(
     `
     INSERT INTO public.embroidery_daily_submissions (
-      entry_ts, name, employee_number, shift, machine_number, sales_order, notes
+      entry_ts, name, employee_number, shift, machine_number, sales_order, annex, notes
     )
-    VALUES ($1,$2,$3,$4,$5,$6,$7)
+    VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
     RETURNING id
     `,
     [
@@ -300,6 +326,7 @@ export async function createEmbroiderySubmission(input: {
       input.shift,
       input.machineNumber,
       input.salesOrder,
+      !!input.annex,
       input.notes,
     ]
   );
@@ -317,11 +344,18 @@ export async function addEmbroideryEntriesBulk(input: {
   machineNumber: number | null;
   salesOrder: number | null;
 
+  // ✅ NEW: copied to each line row
+  annex: boolean;
+
   lines: Array<{
     detailNumber: number | null;
     embroideryLocation: string | null;
     stitches: number | null;
     pieces: number | null;
+
+    // ✅ NEW
+    jobberSamplesRan: number | null;
+
     is3d: boolean;
     isKnit: boolean;
     detailComplete: boolean;
@@ -333,11 +367,11 @@ export async function addEmbroideryEntriesBulk(input: {
   const values: any[] = [];
   const tuples: string[] = [];
 
-  // 15 columns per line insert
+  // ✅ Now 17 columns per line insert
   input.lines.forEach((l, i) => {
-    const base = i * 15;
+    const base = i * 17;
     tuples.push(
-      `($${base + 1},$${base + 2},$${base + 3},$${base + 4},$${base + 5},$${base + 6},$${base + 7},$${base + 8},$${base + 9},$${base + 10},$${base + 11},$${base + 12},$${base + 13},$${base + 14},$${base + 15})`
+      `($${base + 1},$${base + 2},$${base + 3},$${base + 4},$${base + 5},$${base + 6},$${base + 7},$${base + 8},$${base + 9},$${base + 10},$${base + 11},$${base + 12},$${base + 13},$${base + 14},$${base + 15},$${base + 16},$${base + 17})`
     );
 
     values.push(
@@ -355,6 +389,8 @@ export async function addEmbroideryEntriesBulk(input: {
       l.is3d,
       l.isKnit,
       l.detailComplete,
+      !!input.annex,
+      l.jobberSamplesRan ?? null,
       l.notes
     );
   });
@@ -376,6 +412,8 @@ export async function addEmbroideryEntriesBulk(input: {
       is_3d,
       is_knit,
       detail_complete,
+      annex,
+      jobber_samples_ran,
       notes
     )
     VALUES ${tuples.join(",")}
@@ -401,6 +439,7 @@ export async function listEmbroiderySubmissionsForUserAndSO(input: {
       s.shift,
       s.machine_number AS "machineNumber",
       s.sales_order AS "salesOrder",
+      s.annex AS "annex",
       s.notes,
       s.created_at AS "createdAt",
       COUNT(e.id)::int AS "lineCount"
@@ -418,9 +457,7 @@ export async function listEmbroiderySubmissionsForUserAndSO(input: {
   return rows;
 }
 
-export async function getEmbroiderySubmissionWithLines(
-  submissionId: string
-): Promise<SubmissionWithLines | null> {
+export async function getEmbroiderySubmissionWithLines(submissionId: string): Promise<SubmissionWithLines | null> {
   const sub = await db.query<EmbroiderySubmission>(
     `
     SELECT
@@ -431,6 +468,7 @@ export async function getEmbroiderySubmissionWithLines(
       shift,
       machine_number AS "machineNumber",
       sales_order AS "salesOrder",
+      annex,
       notes,
       created_at AS "createdAt"
     FROM public.embroidery_daily_submissions
@@ -460,6 +498,8 @@ export async function getEmbroiderySubmissionWithLines(
       is_3d AS "is3d",
       is_knit AS "isKnit",
       detail_complete AS "detailComplete",
+      annex,
+      jobber_samples_ran AS "jobberSamplesRan",
       notes
     FROM public.embroidery_daily_entries
     WHERE submission_id = $1
@@ -475,6 +515,10 @@ export async function replaceEmbroiderySubmission(input: {
   submissionId: string;
   entryTs: Date;
   machineNumber: number | null;
+
+  // ✅ NEW
+  annex: boolean;
+
   notes: string | null;
 
   lines: Array<{
@@ -482,6 +526,10 @@ export async function replaceEmbroiderySubmission(input: {
     embroideryLocation: string | null;
     stitches: number | null;
     pieces: number | null;
+
+    // ✅ NEW
+    jobberSamplesRan: number | null;
+
     is3d: boolean;
     isKnit: boolean;
     detailComplete: boolean;
@@ -494,10 +542,10 @@ export async function replaceEmbroiderySubmission(input: {
     await db.query(
       `
       UPDATE public.embroidery_daily_submissions
-      SET entry_ts = $2, machine_number = $3, notes = $4
+      SET entry_ts = $2, machine_number = $3, annex = $4, notes = $5
       WHERE id = $1
       `,
-      [input.submissionId, input.entryTs, input.machineNumber, input.notes]
+      [input.submissionId, input.entryTs, input.machineNumber, !!input.annex, input.notes]
     );
 
     // Load immutable header bits needed for line inserts
@@ -524,10 +572,7 @@ export async function replaceEmbroiderySubmission(input: {
     if (!s) throw new Error("Submission not found.");
 
     // Replace lines
-    await db.query(
-      `DELETE FROM public.embroidery_daily_entries WHERE submission_id = $1`,
-      [input.submissionId]
-    );
+    await db.query(`DELETE FROM public.embroidery_daily_entries WHERE submission_id = $1`, [input.submissionId]);
 
     await addEmbroideryEntriesBulk({
       submissionId: input.submissionId,
@@ -537,7 +582,11 @@ export async function replaceEmbroiderySubmission(input: {
       shift: s.shift,
       machineNumber: input.machineNumber,
       salesOrder: s.salesOrder,
-      lines: input.lines,
+      annex: !!input.annex,
+      lines: input.lines.map((l) => ({
+        ...l,
+        jobberSamplesRan: l.jobberSamplesRan ?? null,
+      })),
     });
 
     await db.query("COMMIT");
@@ -547,4 +596,3 @@ export async function replaceEmbroiderySubmission(input: {
     throw e;
   }
 }
-

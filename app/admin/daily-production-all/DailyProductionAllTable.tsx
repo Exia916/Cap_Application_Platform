@@ -19,6 +19,11 @@ type Row = {
   embroidery_location: string;
   stitches: number;
   pieces: number;
+
+  // ✅ NEW
+  annex: boolean;
+  jobber_samples_ran: number | null;
+
   is_3d: boolean;
   is_knit: boolean;
   detail_complete: boolean;
@@ -113,6 +118,8 @@ type SortKey =
   | "embroidery_location"
   | "stitches"
   | "pieces"
+  | "annex"
+  | "jobber_samples_ran"
   | "total_stitches"
   | "shift_stitches"
   | "shift_pieces"
@@ -175,7 +182,7 @@ export default function DailyProductionAllTable({
   const [start, setStart] = useState(defaultStart);
   const [end, setEnd] = useState(defaultEnd);
 
-  // ✅ NEW: global search
+  // ✅ global search
   const [q, setQ] = useState("");
 
   const [name, setName] = useState("");
@@ -185,6 +192,10 @@ export default function DailyProductionAllTable({
   const [location, setLocation] = useState("");
   const [employeeNumber, setEmployeeNumber] = useState("");
   const [shift, setShift] = useState("");
+
+  // ✅ NEW filters
+  const [annex, setAnnex] = useState<"" | "true" | "false">("");
+  const [jobberSamplesRan, setJobberSamplesRan] = useState("");
 
   const [is3d, setIs3d] = useState<"" | "true" | "false">("");
   const [isKnit, setIsKnit] = useState<"" | "true" | "false">("");
@@ -215,7 +226,6 @@ export default function DailyProductionAllTable({
       if (end) p.set("end", end);
     }
 
-    // ✅ NEW: global search query param
     if (q) p.set("q", q);
 
     if (name) p.set("name", name);
@@ -225,6 +235,9 @@ export default function DailyProductionAllTable({
     if (location) p.set("location", location);
     if (employeeNumber) p.set("employee_number", employeeNumber);
     if (shift) p.set("shift", shift);
+
+    if (annex) p.set("annex", annex);
+    if (jobberSamplesRan) p.set("jobber_samples_ran", jobberSamplesRan);
 
     if (is3d) p.set("is_3d", is3d);
     if (isKnit) p.set("is_knit", isKnit);
@@ -242,7 +255,7 @@ export default function DailyProductionAllTable({
     showAll,
     start,
     end,
-    q, // ✅ NEW
+    q,
     name,
     machineNumber,
     salesOrder,
@@ -250,6 +263,8 @@ export default function DailyProductionAllTable({
     location,
     employeeNumber,
     shift,
+    annex,
+    jobberSamplesRan,
     is3d,
     isKnit,
     detailComplete,
@@ -293,7 +308,7 @@ export default function DailyProductionAllTable({
     showAll,
     start,
     end,
-    q, // ✅ NEW
+    q,
     name,
     machineNumber,
     salesOrder,
@@ -301,6 +316,8 @@ export default function DailyProductionAllTable({
     location,
     employeeNumber,
     shift,
+    annex,
+    jobberSamplesRan,
     is3d,
     isKnit,
     detailComplete,
@@ -337,7 +354,6 @@ export default function DailyProductionAllTable({
     let raf = 0;
 
     const setInnerWidth = () => {
-      // match the horizontal scroll width of the table container
       inner.style.width = `${body.scrollWidth}px`;
     };
 
@@ -360,7 +376,6 @@ export default function DailyProductionAllTable({
 
     setInnerWidth();
 
-    // ResizeObserver (best), fallback to window resize
     let ro: ResizeObserver | null = null;
     const canRO = typeof ResizeObserver !== "undefined";
     if (canRO) {
@@ -443,7 +458,7 @@ export default function DailyProductionAllTable({
           </div>
         ) : null}
 
-        {/* ✅ NEW: Global Search */}
+        {/* Global Search */}
         <div style={controlBox}>
           <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
             <span style={label}>Search</span>
@@ -505,7 +520,7 @@ export default function DailyProductionAllTable({
       {error && <div style={{ color: "crimson", marginBottom: 10 }}>{error}</div>}
       {loading && <div style={{ marginBottom: 10, fontWeight: 700 }}>Loading…</div>}
 
-      {/* ✅ TOP horizontal scrollbar (always visible near the top of grid) */}
+      {/* TOP horizontal scrollbar */}
       <div
         ref={topScrollRef}
         style={{
@@ -535,7 +550,7 @@ export default function DailyProductionAllTable({
           background: "#fff",
         }}
       >
-        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, minWidth: 1900 }}>
+        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, minWidth: 2050 }}>
           <thead>
             <tr>
               <SortHeader label="Shift Date" sortKey="shift_date" activeSort={sort} activeDir={dir} onChange={toggleSort} />
@@ -548,14 +563,16 @@ export default function DailyProductionAllTable({
               <SortHeader label="Stitches" sortKey="stitches" activeSort={sort} activeDir={dir} onChange={toggleSort} />
               <SortHeader label="Pieces" sortKey="pieces" activeSort={sort} activeDir={dir} onChange={toggleSort} />
 
+              {/* ✅ NEW */}
+              <SortHeader label="Annex" sortKey="annex" activeSort={sort} activeDir={dir} onChange={toggleSort} />
+              <SortHeader label="Jobber Samples Ran" sortKey="jobber_samples_ran" activeSort={sort} activeDir={dir} onChange={toggleSort} />
+
               <th style={{ textAlign: "left", padding: 10, borderBottom: "1px solid #ddd", background: "#fafafa", whiteSpace: "nowrap" }}>3D</th>
               <th style={{ textAlign: "left", padding: 10, borderBottom: "1px solid #ddd", background: "#fafafa", whiteSpace: "nowrap" }}>Knit</th>
               <th style={{ textAlign: "left", padding: 10, borderBottom: "1px solid #ddd", background: "#fafafa", whiteSpace: "nowrap" }}>
                 Detail Complete
               </th>
-              <th style={{ textAlign: "left", padding: 10, borderBottom: "1px solid #ddd", background: "#fafafa", whiteSpace: "nowrap" }}>
-                Notes
-              </th>
+              <th style={{ textAlign: "left", padding: 10, borderBottom: "1px solid #ddd", background: "#fafafa", whiteSpace: "nowrap" }}>Notes</th>
 
               <SortHeader label="Total Stitches" sortKey="total_stitches" activeSort={sort} activeDir={dir} onChange={toggleSort} />
               <SortHeader label="Shift Stitches" sortKey="shift_stitches" activeSort={sort} activeDir={dir} onChange={toggleSort} />
@@ -617,6 +634,25 @@ export default function DailyProductionAllTable({
                 <input disabled placeholder="(view)" style={{ ...input, width: 80, opacity: 0.55 }} />
               </th>
 
+              {/* ✅ NEW: Annex filter */}
+              <th style={{ padding: 6, borderBottom: "1px solid #ddd", background: "#fff" }}>
+                <select value={annex} onChange={(e) => setAnnex(e.target.value as any)} style={{ ...select, width: 92 }}>
+                  <option value="">Any</option>
+                  <option value="true">TRUE</option>
+                  <option value="false">FALSE</option>
+                </select>
+              </th>
+
+              {/* ✅ NEW: Jobber Samples Ran filter */}
+              <th style={{ padding: 6, borderBottom: "1px solid #ddd", background: "#fff" }}>
+                <input
+                  value={jobberSamplesRan}
+                  onChange={(e) => setJobberSamplesRan(e.target.value)}
+                  placeholder="Jobber"
+                  style={{ ...input, width: 110 }}
+                />
+              </th>
+
               <th style={{ padding: 6, borderBottom: "1px solid #ddd", background: "#fff" }}>
                 <select value={is3d} onChange={(e) => setIs3d(e.target.value as any)} style={{ ...select, width: 92 }}>
                   <option value="">Any</option>
@@ -666,7 +702,12 @@ export default function DailyProductionAllTable({
               </th>
 
               <th style={{ padding: 6, borderBottom: "1px solid #ddd", background: "#fff" }}>
-                <input value={employeeNumber} onChange={(e) => setEmployeeNumber(e.target.value)} placeholder="Emp#" style={{ ...input, width: 95 }} />
+                <input
+                  value={employeeNumber}
+                  onChange={(e) => setEmployeeNumber(e.target.value)}
+                  placeholder="Emp#"
+                  style={{ ...input, width: 95 }}
+                />
               </th>
 
               <th style={{ padding: 6, borderBottom: "1px solid #ddd", background: "#fff" }}>
@@ -682,16 +723,21 @@ export default function DailyProductionAllTable({
                 <td style={{ padding: 10, borderBottom: "1px solid #eee", whiteSpace: "nowrap" }}>{fmtTimestamp(r.entry_ts)}</td>
                 <td style={{ padding: 10, borderBottom: "1px solid #eee" }}>{r.name}</td>
                 <td style={{ padding: 10, borderBottom: "1px solid #eee" }}>{fmtInt(r.machine_number)}</td>
-                {/* ✅ SO displayed with no commas */}
                 <td style={{ padding: 10, borderBottom: "1px solid #eee" }}>{fmtSalesOrderNoCommas(r.sales_order)}</td>
                 <td style={{ padding: 10, borderBottom: "1px solid #eee" }}>{fmtInt(r.detail_number)}</td>
                 <td style={{ padding: 10, borderBottom: "1px solid #eee" }}>{r.embroidery_location}</td>
                 <td style={{ padding: 10, borderBottom: "1px solid #eee" }}>{fmtInt(r.stitches)}</td>
                 <td style={{ padding: 10, borderBottom: "1px solid #eee" }}>{fmtInt(r.pieces)}</td>
+
+                {/* ✅ NEW */}
+                <td style={{ padding: 10, borderBottom: "1px solid #eee" }}>{r.annex ? "TRUE" : "FALSE"}</td>
+                <td style={{ padding: 10, borderBottom: "1px solid #eee" }}>{fmtInt(r.jobber_samples_ran)}</td>
+
                 <td style={{ padding: 10, borderBottom: "1px solid #eee" }}>{r.is_3d ? "TRUE" : "FALSE"}</td>
                 <td style={{ padding: 10, borderBottom: "1px solid #eee" }}>{r.is_knit ? "TRUE" : "FALSE"}</td>
                 <td style={{ padding: 10, borderBottom: "1px solid #eee" }}>{r.detail_complete ? "TRUE" : "FALSE"}</td>
                 <td style={{ padding: 10, borderBottom: "1px solid #eee", maxWidth: 520 }}>{r.notes || ""}</td>
+
                 <td style={{ padding: 10, borderBottom: "1px solid #eee" }}>{fmtInt(r.total_stitches)}</td>
                 <td style={{ padding: 10, borderBottom: "1px solid #eee" }}>{fmtInt(r.shift_stitches)}</td>
                 <td style={{ padding: 10, borderBottom: "1px solid #eee" }}>{fmtInt(r.shift_pieces)}</td>
@@ -705,7 +751,7 @@ export default function DailyProductionAllTable({
 
             {!loading && rows.length === 0 && (
               <tr>
-                <td colSpan={21} style={{ padding: 16, color: "#666" }}>
+                <td colSpan={23} style={{ padding: 16, color: "#666" }}>
                   No results for the current filters.
                 </td>
               </tr>

@@ -7,6 +7,11 @@ type MeResponse = {
   displayName?: string | null;
   employeeNumber?: number | null;
   role?: string | null;
+  shift?: string | null;
+
+  // ✅ Needed for Annex auto-check
+  department?: string | null;
+
   error?: string;
 };
 
@@ -17,27 +22,14 @@ export async function GET(req: NextRequest) {
     return NextResponse.json<MeResponse>({ error: "Not authenticated" }, { status: 401 });
   }
 
-  // Try common shapes without breaking if your auth object differs
-  const username = auth.username ?? null;
-  const displayName = auth.displayName ?? auth.display_name ?? null;
-
-  // Keep compatibility with your previous "employeeNumber" mapping
-  const employeeNumberRaw = auth.employeeNumber ?? auth.employee_number ?? auth.userId ?? auth.user_id ?? null;
-  const employeeNumber =
-    employeeNumberRaw === null || employeeNumberRaw === undefined
-      ? null
-      : Number.isFinite(Number(employeeNumberRaw))
-      ? Number(employeeNumberRaw)
-      : null;
-
-  const role = auth.role ?? auth.userRole ?? auth.user_role ?? null;
-
   return NextResponse.json<MeResponse>(
     {
-      username,
-      displayName,
-      employeeNumber,
-      role,
+      username: auth.username ?? null,
+      displayName: auth.displayName ?? null,
+      employeeNumber: Number.isFinite(Number(auth.employeeNumber)) ? Number(auth.employeeNumber) : null,
+      role: auth.role ?? null,
+      shift: auth.shift ?? null,
+      department: auth.department ?? null,
     },
     { status: 200 }
   );

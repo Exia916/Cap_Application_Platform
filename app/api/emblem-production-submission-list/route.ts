@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { cookies } from "next/headers";
-import { verifyJwt } from "@/lib/auth";
+import { getAuthFromRequest } from "@/lib/auth";
 import { db } from "@/lib/db";
 
 type Resp =
@@ -32,29 +31,19 @@ function ymdChicago(d: Date): string {
   return `${yyyy}-${mm}-${dd}`;
 }
 
-const ALLOWED_SORT = new Set([
-  "entryTs",
-  "entryDate",
-  "name",
-  "salesOrder",
-  "lineCount",
-  "totalPieces",
-]);
+const ALLOWED_SORT = new Set(["entryTs", "entryDate", "name", "salesOrder", "lineCount", "totalPieces"]);
 
 export async function GET(req: NextRequest) {
   try {
-    const cookieStore = await cookies();
-    const token = cookieStore.get("auth_token")?.value;
-    if (!token) return NextResponse.json<Resp>({ error: "Unauthorized" }, { status: 401 });
-
-    const payload = verifyJwt(token);
-    if (!payload) return NextResponse.json<Resp>({ error: "Unauthorized" }, { status: 401 });
+    // ✅ Use the same auth helper as the rest of the app
+    const auth = await getAuthFromRequest(req as any);
+    if (!auth) return NextResponse.json<Resp>({ error: "Unauthorized" }, { status: 401 });
 
     const sp = req.nextUrl.searchParams;
 
     // ----- Date range (default last 30 days)
-    const rawFrom = sp.get("entryDateFrom") ?? "";
-    const rawTo = sp.get("entryDateTo") ?? "";
+    const rawFrom = sp.get("entryDateFrom")?.trim() ?? "";
+    const rawTo = sp.get("entryDateTo")?.trim() ?? "";
 
     const today = ymdChicago(new Date());
     const d = new Date();
@@ -73,7 +62,7 @@ export async function GET(req: NextRequest) {
     const offset = clampInt(sp.get("offset"), 0, 0, 1_000_000);
 
     // ----- Sort
-    const sortByRaw = sp.get("sortBy") ?? "entryTs";
+    const sortByRaw = (sp.get("sortBy") ?? "entryTs").trim();
     const sortBy = ALLOWED_SORT.has(sortByRaw) ? sortByRaw : "entryTs";
     const sortDir = sp.get("sortDir") === "asc" ? "ASC" : "DESC";
 
@@ -85,8 +74,9 @@ export async function GET(req: NextRequest) {
     const params: any[] = [entryDateFrom, entryDateTo];
     let where = `s.entry_date BETWEEN $1::date AND $2::date`;
 
-    if (payload.role !== "ADMIN" && payload.employeeNumber) {
-      params.push(Number(payload.employeeNumber));
+    // ✅ Non-admin: restrict to their own submissions
+    if (String(auth.role || "").toUpperCase() !== "ADMIN") {
+      params.push(Number(auth.employeeNumber));
       where += ` AND s.employee_number = $${params.length}`;
     }
 
@@ -155,10 +145,7 @@ export async function GET(req: NextRequest) {
     const totalCount = rows.length ? Number(rows[0].totalCount) : 0;
     const clean = rows.map(({ totalCount: _tc, ...rest }: any) => rest);
 
-    return NextResponse.json<Resp>(
-      { submissions: clean, totalCount, limit, offset },
-      { status: 200 }
-    );
+    return NextResponse.json<Resp>({ submissions: clean, totalCount, limit, offset }, { status: 200 });
   } catch (err: any) {
     console.error("emblem-production-submission-list GET error:", err);
     return NextResponse.json<Resp>({ error: err?.message || "Server error" }, { status: 500 });

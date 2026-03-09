@@ -1,15 +1,18 @@
 import { NextResponse } from "next/server";
-import {
-  addEmbroideryEntriesBulk,
-  createEmbroiderySubmission,
-} from "@/lib/repositories/embroideryRepo";
+import { addEmbroideryEntriesBulk, createEmbroiderySubmission } from "@/lib/repositories/embroideryRepo";
 import { getAuthFromRequest } from "@/lib/auth";
+
+export const runtime = "nodejs";
 
 type LineBody = {
   detailNumber: string;
   embroideryLocation: string;
   stitches: string;
   pieces: string;
+
+  // ✅ only used when Annex is true
+  jobberSamplesRan?: string | null;
+
   is3d: boolean;
   isKnit: boolean;
   detailComplete: boolean;
@@ -21,6 +24,9 @@ type Body = {
   salesOrder?: string | null;
   machineNumber?: string | null;
   notes?: string | null; // header notes
+
+  annex?: boolean;
+
   lines: LineBody[];
 };
 
@@ -39,6 +45,12 @@ function toNonNegIntOrNull(value: unknown, fieldLabel: string): number | null {
   if (!Number.isFinite(n) || !Number.isInteger(n) || n < 0) {
     throw new Error(`${fieldLabel} must be a non-negative integer.`);
   }
+  return n;
+}
+
+function toNonNegIntRequired(value: unknown, fieldLabel: string): number {
+  const n = toNonNegIntOrNull(value, fieldLabel);
+  if (n === null) throw new Error(`${fieldLabel} is required.`);
   return n;
 }
 
@@ -69,6 +81,8 @@ export async function POST(req: Request) {
     const salesOrder = toNullableInt(body.salesOrder);
     const headerNotes = body.notes?.toString().trim() || null;
 
+    const annex = !!body.annex;
+
     const lines = body.lines.map((line, idx) => {
       const detailNumber = toNullableInt(line.detailNumber);
       const embroideryLocation = (line.embroideryLocation ?? "").toString().trim();
@@ -81,6 +95,12 @@ export async function POST(req: Request) {
         embroideryLocation,
         stitches: toNonNegIntOrNull(line.stitches, `Line ${idx + 1}: stitches`),
         pieces: toNonNegIntOrNull(line.pieces, `Line ${idx + 1}: pieces`),
+
+        // ✅ Required only when annex is true
+        jobberSamplesRan: annex
+          ? toNonNegIntRequired(line.jobberSamplesRan, `Line ${idx + 1}: Jobber Samples Ran`)
+          : null,
+
         is3d: !!line.is3d,
         isKnit: !!line.isKnit,
         detailComplete: !!line.detailComplete,
@@ -95,6 +115,7 @@ export async function POST(req: Request) {
       shift,
       machineNumber,
       salesOrder,
+      annex,
       notes: headerNotes,
     });
 
@@ -106,6 +127,7 @@ export async function POST(req: Request) {
       shift,
       machineNumber,
       salesOrder,
+      annex,
       lines,
     });
 
@@ -116,10 +138,6 @@ export async function POST(req: Request) {
       submissionId: submission.id,
     });
   } catch (err: any) {
-    return NextResponse.json(
-      { error: err?.message ?? "Failed to add daily production entry." },
-      { status: 400 }
-    );
+    return NextResponse.json({ error: err?.message ?? "Failed to add daily production entry." }, { status: 400 });
   }
 }
-

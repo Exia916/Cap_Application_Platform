@@ -163,7 +163,8 @@ export async function GET(req: NextRequest) {
           s.notes,
           s.created_at AS "createdAt",
           COUNT(e.id)::int AS "lineCount",
-          SUM(COALESCE(e.stitches,0))::int AS "totalStitches",
+          -- ✅ FIX: stitches per piece * pieces (summed across lines)
+          SUM(COALESCE(e.stitches,0) * COALESCE(e.pieces,0))::bigint AS "totalStitches",
           SUM(COALESCE(e.pieces,0))::int AS "totalPieces"
         FROM public.embroidery_daily_submissions s
         JOIN public.embroidery_daily_entries e
@@ -185,10 +186,7 @@ export async function GET(req: NextRequest) {
     const totalCount = rows.length > 0 ? Number(rows[0].totalCount) : 0;
     const submissions = rows.map(({ totalCount: _tc, ...rest }: any) => rest);
 
-    return NextResponse.json<Resp>(
-      { submissions, totalCount, limit, offset },
-      { status: 200 }
-    );
+    return NextResponse.json<Resp>({ submissions, totalCount, limit, offset }, { status: 200 });
   } catch (err) {
     console.error("daily-production-submission-list GET error:", err);
     return NextResponse.json<Resp>({ error: "Server error" }, { status: 500 });

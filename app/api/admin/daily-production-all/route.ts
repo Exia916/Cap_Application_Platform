@@ -42,7 +42,7 @@ export async function GET(req: Request) {
   const end = searchParams.get("end"); // YYYY-MM-DD
   const showAll = searchParams.get("all") === "1";
 
-  // ✅ NEW: Global search
+  // ✅ Global search
   const q = (searchParams.get("q") || "").trim();
 
   const shift = searchParams.get("shift");
@@ -56,6 +56,10 @@ export async function GET(req: Request) {
   const is3d = parseBoolFilter(searchParams.get("is_3d"));
   const isKnit = parseBoolFilter(searchParams.get("is_knit"));
   const detailComplete = parseBoolFilter(searchParams.get("detail_complete"));
+
+  // ✅ NEW: annex + jobber samples ran
+  const annexFilter = parseBoolFilter(searchParams.get("annex"));
+  const jobberSamplesRan = searchParams.get("jobber_samples_ran");
 
   const notes = searchParams.get("notes"); // contains
   const format = searchParams.get("format"); // "csv" or null
@@ -82,6 +86,10 @@ export async function GET(req: Request) {
     total_stitches: "e.total_stitches",
     dozens: "e.dozens",
 
+    // ✅ NEW
+    annex: "e.annex",
+    jobber_samples_ran: "e.jobber_samples_ran",
+
     // derived (window)
     shift_stitches: "shift_stitches",
     shift_pieces: "shift_pieces",
@@ -101,7 +109,6 @@ export async function GET(req: Request) {
   };
 
   // ✅ Default to last 30 days if no explicit start/end AND not showAll
-  // (keeps API safe even if UI breaks)
   if (!showAll) {
     if (start) add(`e.shift_date >= ?::date`, start);
     if (end) add(`e.shift_date <= ?::date`, end);
@@ -110,30 +117,8 @@ export async function GET(req: Request) {
     }
   }
 
-  // ✅ NEW: Global search across common fields
-  // - Uses ILIKE for text fields
-  // - Casts numeric fields to text
+  // ✅ Global search across common fields
   if (q) {
-    add(
-      `(
-        e.name ILIKE ?
-        OR e.shift ILIKE ?
-        OR e.embroidery_location ILIKE ?
-        OR COALESCE(e.notes, '') ILIKE ?
-        OR CAST(e.employee_number AS text) ILIKE ?
-        OR CAST(e.machine_number AS text) ILIKE ?
-        OR CAST(e.sales_order AS text) ILIKE ?
-        OR CAST(e.detail_number AS text) ILIKE ?
-      )`,
-      `%${q}%`
-    );
-
-    // The above add() only inserts ONE parameter, but we need 8.
-    // So we manually expand using additional adds with no extra where entries:
-    // We'll remove the last pushed WHERE and rebuild properly below.
-    where.pop();
-    params.pop();
-
     const like = `%${q}%`;
     const p1 = `$${params.length + 1}`;
     const p2 = `$${params.length + 2}`;
@@ -143,6 +128,8 @@ export async function GET(req: Request) {
     const p6 = `$${params.length + 6}`;
     const p7 = `$${params.length + 7}`;
     const p8 = `$${params.length + 8}`;
+    const p9 = `$${params.length + 9}`;
+    const p10 = `$${params.length + 10}`;
 
     where.push(`(
       e.name ILIKE ${p1}
@@ -153,8 +140,10 @@ export async function GET(req: Request) {
       OR CAST(e.machine_number AS text) ILIKE ${p6}
       OR CAST(e.sales_order AS text) ILIKE ${p7}
       OR CAST(e.detail_number AS text) ILIKE ${p8}
+      OR CAST(e.jobber_samples_ran AS text) ILIKE ${p9}
+      OR CAST(e.annex AS text) ILIKE ${p10}
     )`);
-    params.push(like, like, like, like, like, like, like, like);
+    params.push(like, like, like, like, like, like, like, like, like, like);
   }
 
   if (shift) add(`e.shift ILIKE ?`, `%${shift}%`);
@@ -168,6 +157,9 @@ export async function GET(req: Request) {
   if (is3d !== null) add(`e.is_3d = ?`, is3d);
   if (isKnit !== null) add(`e.is_knit = ?`, isKnit);
   if (detailComplete !== null) add(`e.detail_complete = ?`, detailComplete);
+
+  if (annexFilter !== null) add(`e.annex = ?`, annexFilter);
+  if (jobberSamplesRan) add(`CAST(e.jobber_samples_ran AS text) ILIKE ?`, `%${jobberSamplesRan}%`);
 
   if (notes) add(`COALESCE(e.notes, '') ILIKE ?`, `%${notes}%`);
 
@@ -191,6 +183,11 @@ export async function GET(req: Request) {
       e.is_3d,
       e.is_knit,
       e.detail_complete,
+
+      -- ✅ NEW
+      e.annex,
+      e.jobber_samples_ran,
+
       e.notes,
       e.total_stitches,
       e.dozens,
@@ -219,6 +216,11 @@ export async function GET(req: Request) {
       "embroidery_location",
       "stitches",
       "pieces",
+
+      // ✅ NEW
+      "annex",
+      "jobber_samples_ran",
+
       "is_3d",
       "is_knit",
       "detail_complete",
@@ -260,7 +262,11 @@ export async function GET(req: Request) {
     ${whereSql}
   `;
 
-  const [countRes, rowsRes, totalsRes] = await Promise.all([db.query(countSql, params), db.query(pagedSql, pagedParams), db.query(totalsSql, params)]);
+  const [countRes, rowsRes, totalsRes] = await Promise.all([
+    db.query(countSql, params),
+    db.query(pagedSql, pagedParams),
+    db.query(totalsSql, params),
+  ]);
 
   const totalCount = countRes.rows?.[0]?.count ?? 0;
 
