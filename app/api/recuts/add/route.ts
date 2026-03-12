@@ -4,9 +4,7 @@ import { createRecutRequest } from "@/lib/repositories/recutRepo";
 
 export const runtime = "nodejs";
 
-type Resp =
-  | { id: string; recutId: number }
-  | { error: string };
+type Resp = { id: string; recutId: number } | { error: string };
 
 const ALLOWED_ROLES = new Set(["ADMIN", "MANAGER", "SUPERVISOR", "USER"]);
 
@@ -55,6 +53,8 @@ export async function POST(req: NextRequest) {
     const pieces = Number((body as any).pieces);
     let operator = String((body as any).operator ?? "").trim();
     const deliverTo = String((body as any).deliverTo ?? "").trim();
+    const notes = String((body as any).notes ?? "").trim();
+    const event = !!(body as any).event;
 
     const supervisorApproved = !!(body as any).supervisorApproved;
     const warehousePrinted = !!(body as any).warehousePrinted;
@@ -100,10 +100,8 @@ export async function POST(req: NextRequest) {
       authRole === "ADMIN" || authRole === "MANAGER" || authRole === "SUPERVISOR";
 
     const result = await createRecutRequest({
-      requestedByUserId:
-        (auth as any).userId != null ? String((auth as any).userId) : null,
-      requestedByUsername:
-        (auth as any).username != null ? String((auth as any).username) : null,
+      requestedByUserId: (auth as any).userId != null ? String((auth as any).userId) : null,
+      requestedByUsername: (auth as any).username != null ? String((auth as any).username) : null,
       requestedByName: authName,
       requestedByEmployeeNumber:
         (auth as any).employeeNumber != null
@@ -121,6 +119,8 @@ export async function POST(req: NextRequest) {
       pieces,
       operator,
       deliverTo,
+      notes: notes || null,
+      event,
 
       supervisorApproved: canSetFlags ? supervisorApproved : false,
       supervisorApprovedAt: canSetFlags && supervisorApproved ? new Date() : null,
@@ -129,6 +129,10 @@ export async function POST(req: NextRequest) {
       warehousePrinted: canSetFlags ? warehousePrinted : false,
       warehousePrintedAt: canSetFlags && warehousePrinted ? new Date() : null,
       warehousePrintedBy: canSetFlags && warehousePrinted ? authName : null,
+
+      doNotPull: false,
+      doNotPullAt: null,
+      doNotPullBy: null,
     });
 
     return NextResponse.json<Resp>(result, { status: 201 });

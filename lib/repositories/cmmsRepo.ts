@@ -296,21 +296,27 @@ export type WorkOrderById = {
   operatorInitials: string | null;
   issueDialogue: string;
 
-  // ✅ who + when
+  // who + when
   requestedAt: string;
   requestedByUserId: string | null;
   requestedByName: string;
 
-  // ✅ labels for display
+  // display labels
   department: string;
   asset: string;
   priority: string;
   commonIssue: string;
 
-  // tech-side fields
+  // tech-side ids
   typeId: number | null;
   techId: number | null;
   statusId: number;
+
+  // tech-side labels
+  workOrderType: string | null;
+  tech: string | null;
+  status: string | null;
+
   downTimeRecorded: string | null;
   resolution: string | null;
 };
@@ -328,21 +334,23 @@ export async function getWorkOrderById(workOrderId: number): Promise<WorkOrderBy
       wo.operator_initials::text AS "operatorInitials",
       wo.issue_dialogue::text AS "issueDialogue",
 
-      -- ✅ who + when
       wo.requested_at::text AS "requestedAt",
       wo.requested_by_user_id::text AS "requestedByUserId",
       coalesce(wo.requested_by_name,'')::text AS "requestedByName",
 
-      -- ✅ labels for UI display
       d.name::text AS "department",
       a.name::text AS "asset",
       pr.name::text AS "priority",
       ic.name::text AS "commonIssue",
 
-      -- tech-side
       wo.type_id::int AS "typeId",
       wo.tech_id::int AS "techId",
       wo.status_id::int AS "statusId",
+
+      wt.name::text AS "workOrderType",
+      t.name::text AS "tech",
+      st.name::text AS "status",
+
       wo.down_time_recorded::text AS "downTimeRecorded",
       wo.resolution::text AS "resolution"
     FROM ${S}.work_orders wo
@@ -350,6 +358,9 @@ export async function getWorkOrderById(workOrderId: number): Promise<WorkOrderBy
     JOIN ${S}.assets a ON a.id = wo.asset_id
     JOIN ${S}.priorities pr ON pr.id = wo.priority_id
     JOIN ${S}.issue_catalog ic ON ic.id = wo.common_issue_id
+    LEFT JOIN ${S}.wo_types wt ON wt.id = wo.type_id
+    LEFT JOIN ${S}.techs t ON t.id = wo.tech_id
+    JOIN ${S}.statuses st ON st.id = wo.status_id
     WHERE wo.work_order_id = $1
     LIMIT 1
   `;

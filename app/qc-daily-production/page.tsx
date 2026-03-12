@@ -271,7 +271,7 @@ export default function QCDailyProductionPage() {
       {
         key: "edit",
         header: "",
-        render: (r) => <Link href={`/qc-daily-production/${r.id}`}>Edit</Link>,
+        render: (r) => <Link href={`/qc-daily-production/${r.id}/edit`}>Edit</Link>,
       },
     ],
     [entryDateFrom, entryDateTo]

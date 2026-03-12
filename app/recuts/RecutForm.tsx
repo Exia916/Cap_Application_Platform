@@ -35,6 +35,9 @@ type RecutEntry = {
   pieces: number;
   operator: string;
   deliverTo: string;
+  notes: string | null;
+  event: boolean;
+  doNotPull: boolean;
   supervisorApproved: boolean;
   warehousePrinted: boolean;
 };
@@ -114,14 +117,9 @@ function CapStyleCombobox({
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
+    const allCodes = items.map((x) => String(x.itemCode ?? "").trim()).filter(Boolean);
 
-    const allCodes = items
-      .map((x) => String(x.itemCode ?? "").trim())
-      .filter(Boolean);
-
-    if (!q) {
-      return allCodes.slice(0, 25);
-    }
+    if (!q) return allCodes.slice(0, 25);
 
     const startsWith = allCodes.filter((code) => code.toLowerCase().startsWith(q));
     const contains = allCodes.filter(
@@ -151,7 +149,6 @@ function CapStyleCombobox({
         onKeyDown={(e) => {
           if (e.key === "Enter") {
             e.preventDefault();
-
             const exact = filtered.find(
               (x) => x.toLowerCase() === String(query || "").trim().toLowerCase()
             );
@@ -166,9 +163,7 @@ function CapStyleCombobox({
             }
           }
 
-          if (e.key === "Escape") {
-            setOpen(false);
-          }
+          if (e.key === "Escape") setOpen(false);
         }}
         placeholder="Type cap style..."
         style={inputStyle(!!error)}
@@ -222,6 +217,9 @@ export default function RecutForm({ mode, initialId }: Props) {
   const [pieces, setPieces] = useState("");
   const [operator, setOperator] = useState("");
   const [deliverTo, setDeliverTo] = useState("");
+  const [notes, setNotes] = useState("");
+  const [event, setEvent] = useState(false);
+  const [doNotPull, setDoNotPull] = useState(false);
   const [supervisorApproved, setSupervisorApproved] = useState(false);
   const [warehousePrinted, setWarehousePrinted] = useState(false);
 
@@ -310,6 +308,9 @@ export default function RecutForm({ mode, initialId }: Props) {
         setPieces(String(row.pieces ?? ""));
         setOperator(row.operator ?? "");
         setDeliverTo(row.deliverTo ?? "");
+        setNotes(String(row.notes ?? ""));
+        setEvent(!!row.event);
+        setDoNotPull(!!row.doNotPull);
         setSupervisorApproved(!!row.supervisorApproved);
         setWarehousePrinted(!!row.warehousePrinted);
       } catch {
@@ -322,6 +323,8 @@ export default function RecutForm({ mode, initialId }: Props) {
 
   const role = useMemo(() => String(me?.role ?? "").trim().toUpperCase(), [me?.role]);
   const canSeeApprovalFlags =
+    role === "ADMIN" || role === "MANAGER" || role === "SUPERVISOR";
+  const canEditDoNotPull =
     role === "ADMIN" || role === "MANAGER" || role === "SUPERVISOR";
 
   const hideOperatorField = isEmbDept(me?.department);
@@ -442,6 +445,9 @@ export default function RecutForm({ mode, initialId }: Props) {
         pieces: Number(pieces),
         operator: operator.trim(),
         deliverTo: deliverTo.trim(),
+        notes: notes.trim(),
+        event,
+        doNotPull,
         supervisorApproved,
         warehousePrinted,
       };
@@ -472,7 +478,7 @@ export default function RecutForm({ mode, initialId }: Props) {
       setSuccessMsg(mode === "add" ? "Recut request created." : "Recut request updated.");
 
       setTimeout(() => {
-        router.push("/recuts");
+        router.push(mode === "edit" ? "/recuts/supervisor-review" : "/recuts");
         router.refresh();
       }, 500);
     } catch {
@@ -494,6 +500,12 @@ export default function RecutForm({ mode, initialId }: Props) {
           Create or update a single recut request.
         </p>
       </div>
+
+      {mode === "edit" && warehousePrinted ? (
+        <div style={warningBox}>
+          Warning: this recut request has already been marked as Warehouse Printed.
+        </div>
+      ) : null}
 
       {serverError ? <div style={errorBox}>{serverError}</div> : null}
       {successMsg ? <div style={successBox}>{successMsg}</div> : null}
@@ -602,6 +614,31 @@ export default function RecutForm({ mode, initialId }: Props) {
             />
           </FieldBlock>
 
+          <FieldBlock label="Notes">
+            <textarea
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              rows={4}
+              style={{ ...inputStyle(false), resize: "vertical" }}
+            />
+          </FieldBlock>
+
+          <CheckboxBlock
+            label="Event"
+            checked={event}
+            onChange={setEvent}
+          />
+
+          {canEditDoNotPull ? (
+            <CheckboxBlock
+              label="Do Not Pull"
+              checked={doNotPull}
+              onChange={setDoNotPull}
+            />
+          ) : (
+            <ReadOnlyField label="Do Not Pull" value={doNotPull ? "Yes" : "No"} />
+          )}
+
           {canSeeApprovalFlags ? (
             <>
               <CheckboxBlock
@@ -625,7 +662,7 @@ export default function RecutForm({ mode, initialId }: Props) {
 
           <button
             type="button"
-            onClick={() => router.push("/recuts")}
+            onClick={() => router.push(mode === "edit" ? "/recuts/supervisor-review" : "/recuts")}
             style={btnSecondary}
           >
             Cancel
@@ -733,6 +770,16 @@ const errorBox: React.CSSProperties = {
   border: "1px solid #fecaca",
   background: "#fef2f2",
   color: "#991b1b",
+};
+
+const warningBox: React.CSSProperties = {
+  marginBottom: 16,
+  padding: 12,
+  borderRadius: 8,
+  border: "1px solid #fde68a",
+  background: "#fffbeb",
+  color: "#92400e",
+  fontWeight: 600,
 };
 
 const successBox: React.CSSProperties = {
