@@ -66,7 +66,7 @@ function boolFilter(
   );
 }
 
-export default function RecutsPage() {
+export default function RecutSupervisorReviewPage() {
   const [rows, setRows] = useState<Row[]>([]);
   const [totalCount, setTotalCount] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -76,6 +76,8 @@ export default function RecutsPage() {
   const [sortDir, setSortDir] = useState<SortDir>("desc");
   const [pageIndex, setPageIndex] = useState(0);
   const [pageSize, setPageSize] = useState(25);
+
+  const [approvingId, setApprovingId] = useState<string | null>(null);
 
   const [filters, setFilters] = useState<Record<string, string>>({
     recutId: "",
@@ -98,64 +100,92 @@ export default function RecutsPage() {
     warehousePrinted: "",
   });
 
-  useEffect(() => {
-    (async () => {
-      setLoading(true);
-      setError(null);
+  async function loadRows() {
+    setLoading(true);
+    setError(null);
 
-      try {
-        const qs = new URLSearchParams({
-          page: String(pageIndex + 1),
-          pageSize: String(pageSize),
-          sortBy,
-          sortDir,
-          q: "",
-          recutId: filters.recutId || "",
-          requestedDate: filters.requestedDate || "",
-          requestedTime: filters.requestedTime || "",
-          requestedByName: filters.requestedByName || "",
-          requestedDepartment: filters.requestedDepartment || "",
-          salesOrder: filters.salesOrder || "",
-          designName: filters.designName || "",
-          recutReason: filters.recutReason || "",
-          detailNumber: filters.detailNumber || "",
-          capStyle: filters.capStyle || "",
-          pieces: filters.pieces || "",
-          operator: filters.operator || "",
-          deliverTo: filters.deliverTo || "",
-          notes: filters.notes || "",
-          event: filters.event || "",
-          doNotPull: filters.doNotPull || "",
-          supervisorApproved: filters.supervisorApproved || "",
-          warehousePrinted: filters.warehousePrinted || "",
-        });
+    try {
+      const qs = new URLSearchParams({
+        page: String(pageIndex + 1),
+        pageSize: String(pageSize),
+        sortBy,
+        sortDir,
+        q: "",
+        recutId: filters.recutId || "",
+        requestedDate: filters.requestedDate || "",
+        requestedTime: filters.requestedTime || "",
+        requestedByName: filters.requestedByName || "",
+        requestedDepartment: filters.requestedDepartment || "",
+        salesOrder: filters.salesOrder || "",
+        designName: filters.designName || "",
+        recutReason: filters.recutReason || "",
+        detailNumber: filters.detailNumber || "",
+        capStyle: filters.capStyle || "",
+        pieces: filters.pieces || "",
+        operator: filters.operator || "",
+        deliverTo: filters.deliverTo || "",
+        notes: filters.notes || "",
+        event: filters.event || "",
+        doNotPull: filters.doNotPull || "",
+        supervisorApproved: filters.supervisorApproved || "",
+        warehousePrinted: filters.warehousePrinted || "",
+      });
 
-        const res = await fetch(`/api/recuts/list?${qs.toString()}`, {
-          cache: "no-store",
-          credentials: "include",
-        });
+      const res = await fetch(`/api/recuts/review-list?${qs.toString()}`, {
+        cache: "no-store",
+        credentials: "include",
+      });
 
-        const data = (await res.json()) as ApiResp;
+      const data = (await res.json()) as ApiResp;
 
-        if (!res.ok || "error" in data) {
-          setError("error" in data ? data.error : "Failed to load recuts.");
-          setRows([]);
-          setTotalCount(0);
-          setLoading(false);
-          return;
-        }
-
-        setRows(data.rows);
-        setTotalCount(data.total);
-      } catch {
-        setError("Failed to load recuts.");
+      if (!res.ok || "error" in data) {
+        setError("error" in data ? data.error : "Failed to load review list.");
         setRows([]);
         setTotalCount(0);
-      } finally {
         setLoading(false);
+        return;
       }
-    })();
+
+      setRows(data.rows);
+      setTotalCount(data.total);
+    } catch {
+      setError("Failed to load review list.");
+      setRows([]);
+      setTotalCount(0);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    loadRows();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filters, pageIndex, pageSize, sortBy, sortDir]);
+
+  async function approveRow(id: string) {
+    setApprovingId(id);
+    setError(null);
+
+    try {
+      const res = await fetch(`/api/recuts/${encodeURIComponent(id)}/approve`, {
+        method: "POST",
+        credentials: "include",
+      });
+
+      const data = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        setError((data as any).error || "Failed to approve recut request.");
+        return;
+      }
+
+      await loadRows();
+    } catch {
+      setError("Failed to approve recut request.");
+    } finally {
+      setApprovingId(null);
+    }
+  }
 
   function onFilterChange(key: string, value: string) {
     setFilters((prev) => ({ ...prev, [key]: value }));
@@ -165,13 +195,13 @@ export default function RecutsPage() {
   const columns = useMemo<Column<Row>[]>(() => {
     return [
       { key: "recutId", header: "Recut ID", sortable: true, filterable: true, placeholder: "Recut ID", render: (r) => r.recutId },
-      { key: "requestedDate", header: "Date Requested", sortable: true, filterable: true, placeholder: "Date", render: (r) => formatDate(r.requestedDate) },
-      { key: "requestedTime", header: "Time Requested", sortable: true, filterable: true, placeholder: "Time", render: (r) => formatTime(r.requestedTime) },
+      { key: "requestedDate", header: "Date Requested", sortable: true, filterable: true, placeholder: "Date Requested", render: (r) => formatDate(r.requestedDate) },
+      { key: "requestedTime", header: "Time Requested", sortable: true, filterable: true, placeholder: "Time Requested", render: (r) => formatTime(r.requestedTime) },
       { key: "requestedByName", header: "Name", sortable: true, filterable: true, placeholder: "Name", render: (r) => r.requestedByName },
-      { key: "requestedDepartment", header: "Requested Department", sortable: true, filterable: true, placeholder: "Department", render: (r) => r.requestedDepartment },
+      { key: "requestedDepartment", header: "Requested Department", sortable: true, filterable: true, placeholder: "Requested Department", render: (r) => r.requestedDepartment },
       { key: "salesOrder", header: "Sales Order #", sortable: true, filterable: true, placeholder: "Sales Order #", render: (r) => r.salesOrder },
       { key: "designName", header: "Design Name", sortable: true, filterable: true, placeholder: "Design Name", render: (r) => r.designName },
-      { key: "recutReason", header: "Recut Reason", sortable: true, filterable: true, placeholder: "Reason", render: (r) => r.recutReason },
+      { key: "recutReason", header: "Recut Reason", sortable: true, filterable: true, placeholder: "Recut Reason", render: (r) => r.recutReason },
       { key: "detailNumber", header: "Detail #", sortable: true, filterable: true, placeholder: "Detail #", render: (r) => r.detailNumber },
       { key: "capStyle", header: "Cap Style", sortable: true, filterable: true, placeholder: "Cap Style", render: (r) => r.capStyle },
       { key: "pieces", header: "Pieces", sortable: true, filterable: true, placeholder: "Pieces", render: (r) => r.pieces },
@@ -216,7 +246,27 @@ export default function RecutsPage() {
           (v) => onFilterChange("warehousePrinted", v),
           "Warehouse Printed"
         ),
-        render: (r) => boolText(r.warehousePrinted),
+        render: (r) => (r.warehousePrinted ? <span style={printedBadge}>Printed</span> : "No"),
+      },
+      {
+        key: "approve",
+        header: "Approve",
+        sortable: false,
+        filterable: false,
+        serverSortable: false,
+        render: (r) =>
+          r.supervisorApproved ? (
+            <span style={{ color: "#166534", fontWeight: 700 }}>Approved</span>
+          ) : (
+            <button
+              type="button"
+              onClick={() => approveRow(r.id)}
+              disabled={approvingId === r.id}
+              style={approveBtn}
+            >
+              {approvingId === r.id ? "Approving..." : "Approve"}
+            </button>
+          ),
       },
       {
         key: "edit",
@@ -224,17 +274,14 @@ export default function RecutsPage() {
         sortable: false,
         filterable: false,
         serverSortable: false,
-        render: (r) =>
-          r.supervisorApproved || r.warehousePrinted ? (
-            <span style={{ color: "#6b7280" }}>Locked</span>
-          ) : (
-            <Link href={`/recuts/${r.id}/edit`} style={{ color: "#2563eb", textDecoration: "none", fontWeight: 600 }}>
-              Edit
-            </Link>
-          ),
+        render: (r) => (
+          <Link href={`/recuts/${r.id}`} style={{ color: "#2563eb", textDecoration: "none", fontWeight: 600 }}>
+            Edit
+          </Link>
+        ),
       },
     ];
-  }, [filters]);
+  }, [filters, approvingId]);
 
   function onToggleSort(key: string) {
     if (sortBy === key) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
@@ -247,11 +294,11 @@ export default function RecutsPage() {
 
   return (
     <div style={{ padding: 16 }}>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+      <div style={headerRow}>
         <div>
-          <h1 style={{ margin: 0 }}>Recuts</h1>
+          <h1 style={{ margin: 0 }}>Supervisor Review</h1>
           <p style={{ margin: "8px 0 0", color: "#6b7280" }}>
-            Your submitted recut requests.
+            Review, approve, and edit all recut requests.
           </p>
         </div>
 
@@ -260,11 +307,13 @@ export default function RecutsPage() {
         </Link>
       </div>
 
+      {error ? <div style={errorBox}>{error}</div> : null}
+
       <DataTable<Row>
         columns={columns}
         rows={rows}
         loading={loading}
-        error={error}
+        error={null}
         sortBy={sortBy}
         sortDir={sortDir}
         onToggleSort={onToggleSort}
@@ -279,7 +328,7 @@ export default function RecutsPage() {
           setPageIndex(0);
         }}
         rowKey={(r) => r.id}
-        csvFilename="recuts.csv"
+        csvFilename="recuts-supervisor-review.csv"
         rowToCsv={(r) => ({
           "Recut ID": r.recutId,
           "Date Requested": formatDate(r.requestedDate),
@@ -305,6 +354,14 @@ export default function RecutsPage() {
   );
 }
 
+const headerRow: React.CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "space-between",
+  gap: 12,
+  marginBottom: 12,
+};
+
 const btnSecondary: React.CSSProperties = {
   display: "inline-flex",
   alignItems: "center",
@@ -316,6 +373,36 @@ const btnSecondary: React.CSSProperties = {
   background: "#fff",
   color: "#111827",
   fontWeight: 600,
+};
+
+const approveBtn: React.CSSProperties = {
+  border: "none",
+  background: "#111827",
+  color: "#fff",
+  borderRadius: 6,
+  padding: "6px 10px",
+  cursor: "pointer",
+  fontWeight: 600,
+  fontSize: 12,
+};
+
+const printedBadge: React.CSSProperties = {
+  display: "inline-block",
+  padding: "3px 8px",
+  borderRadius: 999,
+  background: "#fef3c7",
+  color: "#92400e",
+  fontWeight: 700,
+  fontSize: 12,
+};
+
+const errorBox: React.CSSProperties = {
+  marginBottom: 12,
+  padding: 12,
+  borderRadius: 8,
+  border: "1px solid #fecaca",
+  background: "#fef2f2",
+  color: "#991b1b",
 };
 
 const filterSelect: React.CSSProperties = {

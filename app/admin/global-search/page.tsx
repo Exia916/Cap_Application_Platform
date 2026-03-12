@@ -11,8 +11,10 @@ type Me = {
   role: string | null;
 };
 
+type SectionKey = "daily" | "qc" | "emblem" | "laser" | "recut" | "workOrders";
+
 type Section = {
-  key: "daily" | "qc" | "emblem" | "laser";
+  key: SectionKey;
   title: string;
   count: number;
   rows: any[];
@@ -28,14 +30,26 @@ type ApiResponse = {
 };
 
 const nf0 = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
+
 function fmtInt(v: any) {
   const n = Number(v);
   if (!Number.isFinite(n)) return "";
   return nf0.format(n);
 }
 
-const dateFmt = new Intl.DateTimeFormat("en-US", { year: "numeric", month: "2-digit", day: "2-digit" });
-const tsFmt = new Intl.DateTimeFormat("en-US", { year: "numeric", month: "2-digit", day: "2-digit", hour: "numeric", minute: "2-digit" });
+const dateFmt = new Intl.DateTimeFormat("en-US", {
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+});
+
+const tsFmt = new Intl.DateTimeFormat("en-US", {
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+  hour: "numeric",
+  minute: "2-digit",
+});
 
 function fmtDateOnly(value: any) {
   if (!value) return "";
@@ -56,13 +70,49 @@ function fmtTimestamp(value: any) {
   return tsFmt.format(dt);
 }
 
+function getOpenUrl(sectionKey: SectionKey, q: string) {
+  if (sectionKey === "daily") return `/admin/daily-production-all?q=${encodeURIComponent(q)}`;
+  if (sectionKey === "qc") return `/admin/qc-daily-production-all?q=${encodeURIComponent(q)}`;
+  if (sectionKey === "emblem") return `/admin/emblem-production-all?q=${encodeURIComponent(q)}`;
+  if (sectionKey === "laser") return `/admin/laser-production-all?q=${encodeURIComponent(q)}`;
+  if (sectionKey === "recut") return `/recuts?q=${encodeURIComponent(q)}`;
+  return `/cmms?q=${encodeURIComponent(q)}`;
+}
+
+function getRowUrl(sectionKey: SectionKey, r: any): string | null {
+  if (sectionKey === "daily") {
+    const id = r?.submission_id ?? r?.id;
+    return id ? `/daily-production/${encodeURIComponent(String(id))}` : null;
+  }
+
+  if (sectionKey === "qc") {
+    const id = r?.submission_id ?? r?.id;
+    return id ? `/qc-daily-production/${encodeURIComponent(String(id))}` : null;
+  }
+
+  if (sectionKey === "emblem") {
+    const id = r?.submission_id ?? r?.id;
+    return id ? `/emblem-production/${encodeURIComponent(String(id))}` : null;
+  }
+
+  if (sectionKey === "laser") {
+    return r?.id ? `/laser-production/${encodeURIComponent(String(r.id))}` : null;
+  }
+
+  if (sectionKey === "recut") {
+    return r?.id ? `/recuts/${encodeURIComponent(String(r.id))}` : null;
+  }
+
+  const workOrderId = r?.work_order_id ?? r?.id;
+  return workOrderId ? `/cmms/${encodeURIComponent(String(workOrderId))}` : null;
+}
+
 export default function GlobalSearchPage() {
   const router = useRouter();
   const sp = useSearchParams();
 
   const q = (sp.get("q") || "").trim();
 
-  // Optional: support date range later (kept simple now)
   const [showAll, setShowAll] = useState(false);
   const [start, setStart] = useState("");
   const [end, setEnd] = useState("");
@@ -77,9 +127,9 @@ export default function GlobalSearchPage() {
   const role = useMemo(() => (me?.role ?? "").trim().toUpperCase(), [me?.role]);
   const canAccess = role === "ADMIN" || role === "MANAGER";
 
-  // Fetch me
   useEffect(() => {
     let alive = true;
+
     (async () => {
       setMeLoaded(false);
       try {
@@ -90,6 +140,7 @@ export default function GlobalSearchPage() {
           setMeLoaded(true);
           return;
         }
+
         const j = (await res.json()) as Me;
         if (!alive) return;
         setMe(j);
@@ -100,17 +151,16 @@ export default function GlobalSearchPage() {
         setMeLoaded(true);
       }
     })();
+
     return () => {
       alive = false;
     };
   }, []);
 
-  // Load search results
   useEffect(() => {
     if (!meLoaded) return;
     if (!canAccess) return;
 
-    // No query => blank page, no call
     if (!q) {
       setData(null);
       setError(null);
@@ -120,13 +170,15 @@ export default function GlobalSearchPage() {
     const p = new URLSearchParams();
     p.set("q", q);
 
-    if (showAll) p.set("all", "1");
-    else {
+    if (showAll) {
+      p.set("all", "1");
+    } else {
       if (start) p.set("start", start);
       if (end) p.set("end", end);
     }
 
     let alive = true;
+
     (async () => {
       setLoading(true);
       setError(null);
@@ -205,9 +257,7 @@ export default function GlobalSearchPage() {
       {error && <div style={{ color: "crimson", marginBottom: 10 }}>{error}</div>}
       {loading && <div style={{ marginBottom: 10, fontWeight: 800 }}>Searching…</div>}
 
-      {!q ? (
-        <div style={{ color: "#6b7280" }}>Type a value in the navbar search and press Enter / Search.</div>
-      ) : null}
+      {!q ? <div style={{ color: "#6b7280" }}>Type a value in the navbar search and press Enter / Search.</div> : null}
 
       {data?.sections?.map((sec) => (
         <div key={sec.key} style={sectionCard}>
@@ -215,22 +265,11 @@ export default function GlobalSearchPage() {
             <div style={{ fontWeight: 900 }}>{sec.title}</div>
             <div style={{ color: "#6b7280", fontSize: 12 }}>Matches: {fmtInt(sec.count)}</div>
 
-            {/* Quick links to module pages using q filter you already added */}
             <button
-              onClick={() => {
-                const url =
-                  sec.key === "daily"
-                    ? `/admin/daily-production-all?q=${encodeURIComponent(q)}`
-                    : sec.key === "qc"
-                      ? `/admin/qc-daily-production-all?q=${encodeURIComponent(q)}`
-                      : sec.key === "emblem"
-                        ? `/admin/emblem-production-all?q=${encodeURIComponent(q)}`
-                        : `/admin/laser-production-all?q=${encodeURIComponent(q)}`;
-                router.push(url);
-              }}
+              onClick={() => router.push(getOpenUrl(sec.key, q))}
               style={btnGhost}
             >
-              Open {sec.key.toUpperCase()} (All)
+              Open {sec.title}
             </button>
           </div>
 
@@ -250,18 +289,38 @@ export default function GlobalSearchPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {sec.rows.map((r: any, idx: number) => (
-                    <tr key={`${sec.key}-${idx}`}>
-                      <td style={td}>{fmtTimestamp(r.entry_ts)}</td>
-                      <td style={td}>{fmtDateOnly(r.entry_date)}</td>
-                      <td style={td}>{r.name ?? ""}</td>
-                      <td style={td}>{r.employee_number ?? ""}</td>
-                      <td style={td}>
-                        <KeyFields sectionKey={sec.key} r={r} />
-                      </td>
-                      <td style={{ ...td, maxWidth: 520 }}>{r.notes ?? ""}</td>
-                    </tr>
-                  ))}
+                  {sec.rows.map((r: any, idx: number) => {
+                    const rowUrl = getRowUrl(sec.key, r);
+                    const clickable = Boolean(rowUrl);
+
+                    return (
+                      <tr
+                        key={`${sec.key}-${idx}`}
+                        onClick={() => {
+                          if (rowUrl) router.push(rowUrl);
+                        }}
+                        style={clickable ? rowClickable : undefined}
+                        title={clickable ? "Open record" : undefined}
+                        onKeyDown={(e) => {
+                          if (!rowUrl) return;
+                          if (e.key === "Enter" || e.key === " ") {
+                            e.preventDefault();
+                            router.push(rowUrl);
+                          }
+                        }}
+                        tabIndex={clickable ? 0 : -1}
+                      >
+                        <td style={td}>{fmtTimestamp(r.entry_ts)}</td>
+                        <td style={td}>{fmtDateOnly(r.entry_date)}</td>
+                        <td style={td}>{r.name ?? ""}</td>
+                        <td style={td}>{r.employee_number ?? ""}</td>
+                        <td style={td}>
+                          <KeyFields sectionKey={sec.key} r={r} />
+                        </td>
+                        <td style={{ ...td, maxWidth: 520, whiteSpace: "pre-wrap" }}>{r.notes ?? ""}</td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -272,13 +331,12 @@ export default function GlobalSearchPage() {
   );
 }
 
-function KeyFields({ sectionKey, r }: { sectionKey: Section["key"]; r: any }) {
+function KeyFields({ sectionKey, r }: { sectionKey: SectionKey; r: any }) {
   if (sectionKey === "daily") {
     return (
       <span>
-        SO: <b>{r.sales_order ?? ""}</b> · Detail: <b>{r.detail_number ?? ""}</b> · Loc:{" "}
-        <b>{r.embroidery_location ?? ""}</b> · Pieces: <b>{r.pieces ?? ""}</b> · Shift: <b>{r.shift ?? ""}</b> · Machine:{" "}
-        <b>{r.machine_number ?? ""}</b>
+        SO: <b>{r.sales_order ?? ""}</b> · Detail: <b>{r.detail_number ?? ""}</b> · Loc: <b>{r.embroidery_location ?? ""}</b> ·
+        Pieces: <b>{r.pieces ?? ""}</b> · Stitches: <b>{r.stitches ?? ""}</b> · Shift: <b>{r.shift ?? ""}</b> · Machine: <b>{r.machine_number ?? ""}</b>
       </span>
     );
   }
@@ -286,9 +344,8 @@ function KeyFields({ sectionKey, r }: { sectionKey: Section["key"]; r: any }) {
   if (sectionKey === "qc") {
     return (
       <span>
-        SO: <b>{r.sales_order ?? ""}</b> · Detail: <b>{r.detail_number ?? ""}</b> · Flat/3D: <b>{r.flat_or_3d ?? ""}</b>{" "}
-        · Inspected: <b>{r.inspected_quantity ?? ""}</b> · Rejected: <b>{r.rejected_quantity ?? ""}</b> · Shipped:{" "}
-        <b>{r.quantity_shipped ?? ""}</b>
+        SO: <b>{r.sales_order ?? ""}</b> · Detail: <b>{r.detail_number ?? ""}</b> · Flat/3D: <b>{r.flat_or_3d ?? ""}</b> ·
+        Inspected: <b>{r.inspected_quantity ?? ""}</b> · Rejected: <b>{r.rejected_quantity ?? ""}</b> · Shipped: <b>{r.quantity_shipped ?? ""}</b>
       </span>
     );
   }
@@ -296,21 +353,39 @@ function KeyFields({ sectionKey, r }: { sectionKey: Section["key"]; r: any }) {
   if (sectionKey === "emblem") {
     return (
       <span>
-        SO: <b>{r.sales_order ?? ""}</b> · Detail: <b>{r.detail_number ?? ""}</b> · Type: <b>{r.emblem_type ?? ""}</b>{" "}
-        · Logo: <b>{r.logo_name ?? ""}</b> · Pieces: <b>{r.pieces ?? ""}</b>
+        SO: <b>{r.sales_order ?? ""}</b> · Detail: <b>{r.detail_number ?? ""}</b> · Type: <b>{r.emblem_type ?? ""}</b> ·
+        Logo: <b>{r.logo_name ?? ""}</b> · Pieces: <b>{r.pieces ?? ""}</b>
       </span>
     );
   }
 
-  // laser
+  if (sectionKey === "laser") {
+    return (
+      <span>
+        SO: <b>{r.sales_order ?? ""}</b> · Leather: <b>{r.leather_style_color ?? ""}</b> · Pieces Cut: <b>{r.pieces_cut ?? ""}</b>
+      </span>
+    );
+  }
+
+  if (sectionKey === "recut") {
+    return (
+      <span>
+        Recut ID: <b>{r.recut_id ?? ""}</b> · SO: <b>{r.sales_order ?? ""}</b> · Detail: <b>{r.detail_number ?? ""}</b> ·
+        Design: <b>{r.design_name ?? ""}</b> · Reason: <b>{r.recut_reason ?? ""}</b> · Style: <b>{r.cap_style ?? ""}</b> ·
+        Pieces: <b>{r.pieces ?? ""}</b> · Deliver To: <b>{r.deliver_to ?? ""}</b> · Dept: <b>{r.requested_department ?? ""}</b>
+      </span>
+    );
+  }
+
   return (
     <span>
-      SO: <b>{r.sales_order ?? ""}</b> · Leather: <b>{r.leather_style_color ?? ""}</b> · Pieces Cut: <b>{r.pieces_cut ?? ""}</b>
+      WO#: <b>{r.work_order_id ?? r.id ?? ""}</b> · Dept: <b>{r.department ?? ""}</b> · Asset: <b>{r.asset ?? ""}</b> ·
+      Priority: <b>{r.priority ?? ""}</b> · Issue: <b>{r.common_issue ?? ""}</b> · Status: <b>{r.status ?? ""}</b> ·
+      Tech: <b>{r.tech ?? ""}</b> · Type: <b>{r.work_order_type ?? ""}</b>
     </span>
   );
 }
 
-/* styles */
 const input: React.CSSProperties = {
   height: 34,
   borderRadius: 10,
@@ -353,5 +428,9 @@ const btnGhost: React.CSSProperties = {
   color: "#111827",
   fontWeight: 800,
   fontSize: 12,
+  cursor: "pointer",
+};
+
+const rowClickable: React.CSSProperties = {
   cursor: "pointer",
 };

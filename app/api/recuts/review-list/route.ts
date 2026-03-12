@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAuthFromRequest } from "@/lib/auth";
-import { listRecutRequestsForUserPaged, type SortDir } from "@/lib/repositories/recutRepo";
+import { listRecutRequestsForReviewPaged, type SortDir } from "@/lib/repositories/recutRepo";
 
 export const runtime = "nodejs";
 
@@ -13,7 +13,7 @@ type Resp =
     }
   | { error: string };
 
-const ALLOWED_ROLES = new Set(["ADMIN", "MANAGER", "SUPERVISOR", "USER"]);
+const ALLOWED_ROLES = new Set(["ADMIN", "MANAGER", "SUPERVISOR"]);
 
 function roleOk(role: string | null | undefined) {
   return ALLOWED_ROLES.has(String(role || "").trim().toUpperCase());
@@ -36,20 +36,6 @@ export async function GET(req: NextRequest) {
 
     if (!roleOk((auth as any).role)) {
       return NextResponse.json<Resp>({ error: "Forbidden" }, { status: 403 });
-    }
-
-    const employeeNumber =
-      (auth as any).employeeNumber != null
-        ? Number((auth as any).employeeNumber)
-        : (auth as any).userId != null
-          ? Number((auth as any).userId)
-          : null;
-
-    if (!employeeNumber || !Number.isFinite(employeeNumber)) {
-      return NextResponse.json<Resp>(
-        { error: "Missing employee number in auth payload." },
-        { status: 400 }
-      );
     }
 
     const page = Number(req.nextUrl.searchParams.get("page") || "1");
@@ -79,8 +65,7 @@ export async function GET(req: NextRequest) {
     const sortBy = req.nextUrl.searchParams.get("sortBy") || "requestedDate";
     const sortDir = (req.nextUrl.searchParams.get("sortDir") || "desc") as SortDir;
 
-    const result = await listRecutRequestsForUserPaged({
-      employeeNumber,
+    const result = await listRecutRequestsForReviewPaged({
       page,
       pageSize,
       q,
@@ -108,7 +93,7 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json<Resp>(result, { status: 200 });
   } catch (err) {
-    console.error("recuts list GET error:", err);
+    console.error("recuts review list GET error:", err);
     return NextResponse.json<Resp>({ error: "Server error" }, { status: 500 });
   }
 }

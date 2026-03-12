@@ -291,7 +291,7 @@ export default function CMMSPage() {
         sortable: false,
         serverSortable: false,
         render: (r) => (
-          <Link href={`/cmms/${r.workOrderId}`} style={btnSecondary}>
+          <Link href={`/cmms/${r.workOrderId}/edit`} style={btnSecondary}>
             Open
           </Link>
         ),

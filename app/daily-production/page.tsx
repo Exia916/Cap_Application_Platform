@@ -321,7 +321,7 @@ export default function DailyProductionPage() {
       {
         key: "edit",
         header: "",
-        render: (r) => <Link href={`/daily-production/${r.id}`}>Edit</Link>,
+        render: (r) => <Link href={`/daily-production/${r.id}/edit`}>Edit</Link>,
       },
     ],
     [shiftDateFrom, shiftDateTo]

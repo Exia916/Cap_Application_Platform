@@ -304,7 +304,7 @@ export default function LaserProductionListPage() {
         placeholder: "Notes",
         render: (r) => <span style={{ whiteSpace: "normal" }}>{r.notes ?? ""}</span>,
       },
-      { key: "edit", header: "", render: (r) => <Link href={`/laser-production/${r.id}`}>Edit</Link> },
+      { key: "edit", header: "", render: (r) => <Link href={`/laser-production/${r.id}/edit`}>Edit</Link> },
     ],
     [entryDateFrom, entryDateTo]
   );

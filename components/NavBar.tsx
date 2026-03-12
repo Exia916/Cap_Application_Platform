@@ -41,19 +41,20 @@ export default function NavBar() {
   const [meLoaded, setMeLoaded] = useState(false);
 
   const [globalQ, setGlobalQ] = useState("");
+  const [searchFocused, setSearchFocused] = useState(false);
   const [openMenu, setOpenMenu] = useState<OpenMenu>(null);
   const menusWrapRef = useRef<HTMLDivElement | null>(null);
 
-  // wide: show all dropdowns
-  // medium: collapse Maintenance / Manager / Admin into More
-  // small: collapse Home + Recut + Maintenance / Manager / Admin into More
+  // wide (≥1400): show all dropdowns on one row
+  // medium (900–1399): collapse Maintenance / Manager / Admin into More
+  // small (<900): collapse Home + Recut + Maintenance / Manager / Admin into More
   const [navMode, setNavMode] = useState<"wide" | "medium" | "small">("wide");
 
   useEffect(() => {
     function compute() {
-      const w = window.innerWidth || 1200;
+      const w = window.innerWidth || 1400;
       if (w < 900) setNavMode("small");
-      else if (w < 1200) setNavMode("medium");
+      else if (w < 1400) setNavMode("medium"); // ← raised from 1200 to 1400
       else setNavMode("wide");
     }
     compute();
@@ -140,7 +141,6 @@ export default function NavBar() {
 
   const canSeeCMMS = meLoaded && (isAdmin || role === "TECH");
 
-  // Recut visibility
   const canSeeRecuts =
     meLoaded && (isAdmin || role === "MANAGER" || role === "SUPERVISOR" || role === "USER");
 
@@ -217,22 +217,18 @@ export default function NavBar() {
     if (pathname.startsWith("/laser-production")) {
       return { href: "/laser-production/add", label: "New Laser Entry" };
     }
-
     if (pathname.startsWith("/recuts")) {
       if (!canSeeRecuts) return null;
       return { href: "/recuts/add", label: "New Recut Request" };
     }
-
     if (pathname.startsWith("/cmms/repair-requests")) {
       if (!canSeeRepairRequests) return null;
       return { href: "/cmms/repair-requests/add", label: "New Repair Request" };
     }
-
     if (pathname.startsWith("/cmms")) {
       if (!canSeeCMMS) return null;
       return { href: "/cmms/add", label: "New CMMS Work Order" };
     }
-
     return null;
   }, [pathname, canSeeRecuts, canSeeRepairRequests, canSeeCMMS]);
 
@@ -297,21 +293,22 @@ export default function NavBar() {
 
   return (
     <nav style={nav}>
+      {/* Single row — no flex wrap */}
       <div ref={menusWrapRef} style={navInner}>
+
+        {/* LEFT: brand + nav links */}
         <div style={left}>
           <Link href="/dashboard" style={brandWrap} title="Cap America - Cap MES">
             <Image
               src="/brand/ca-mark.jpg"
               alt="Cap America"
-              width={36}
-              height={36}
+              width={32}
+              height={32}
               priority
               style={{ objectFit: "contain" }}
             />
-            <div style={brandTextWrap}>
-              <div style={brandTitle}>Cap MES</div>
-              <div style={brandSubtitle}>Cap America Manufacturing Platform</div>
-            </div>
+            {/* ↓ Subtitle removed — reduces brand width ~100px */}
+            <span style={brandTitle}>Cap MES</span>
           </Link>
 
           {showHomeAsPrimary ? <NavLink href="/dashboard" label="Home" pathname={pathname} /> : null}
@@ -396,14 +393,24 @@ export default function NavBar() {
           ) : null}
         </div>
 
-        <div style={center}>
+        {/* RIGHT: search + "+ New" grouped together, then user pill alone */}
+        <div style={right}>
           {meLoaded && canGlobalSearch ? (
-            <div style={searchWrap} title="Global search (Admin/Manager)">
+            <div
+              style={{
+                ...searchWrap,
+                width: searchFocused ? 360 : 240,
+                transition: "width 0.2s ease",
+              }}
+              title="Global search (Admin/Manager)"
+            >
               <input
                 value={globalQ}
                 onChange={(e) => setGlobalQ(e.target.value)}
                 onKeyDown={onGlobalKeyDown}
-                placeholder="Global search… (SO, name, notes, etc.)"
+                onFocus={() => setSearchFocused(true)}
+                onBlur={() => setSearchFocused(false)}
+                placeholder="Search SO, name, notes…"
                 style={searchInput}
               />
               <button onClick={runGlobalSearch} style={searchBtn}>
@@ -411,9 +418,8 @@ export default function NavBar() {
               </button>
             </div>
           ) : null}
-        </div>
 
-        <div style={right}>
+          {/* "+ New" lives next to search, both action-oriented */}
           {quickAction ? (
             <Link
               href={quickAction.href}
@@ -425,6 +431,7 @@ export default function NavBar() {
             </Link>
           ) : null}
 
+          {/* User pill alone on the far right */}
           <div style={{ position: "relative" }}>
             <button
               type="button"
@@ -437,11 +444,9 @@ export default function NavBar() {
               aria-haspopup="menu"
               title="User menu"
             >
-              <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+              <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
                 <span style={userPillText}>{meLoaded ? display || "Unknown" : "…"}</span>
-                <span style={chev} aria-hidden>
-                  ▾
-                </span>
+                <span style={chev} aria-hidden>▾</span>
               </span>
             </button>
 
@@ -476,20 +481,13 @@ export default function NavBar() {
 }
 
 /* ---------------------------- */
-/* Components                    */
+/* Sub-components                */
 /* ---------------------------- */
 
 function NavLink({ href, label, pathname }: { href: string; label: string; pathname: string }) {
   const active = isActive(pathname, href);
-
   return (
-    <Link
-      href={href}
-      style={{
-        ...link,
-        ...(active ? activeLink : {}),
-      }}
-    >
+    <Link href={href} style={{ ...link, ...(active ? activeLink : {}) }}>
       {label}
     </Link>
   );
@@ -532,11 +530,9 @@ function Dropdown({
         aria-haspopup="menu"
         disabled={disabled}
       >
-        <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+        <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
           {label}
-          <span style={chev} aria-hidden>
-            ▾
-          </span>
+          <span style={chev} aria-hidden>▾</span>
         </span>
       </button>
 
@@ -549,10 +545,7 @@ function Dropdown({
                 key={it.href}
                 href={it.href}
                 role="menuitem"
-                style={{
-                  ...menuItem,
-                  ...(a ? menuItemActive : {}),
-                }}
+                style={{ ...menuItem, ...(a ? menuItemActive : {}) }}
                 onClick={onNavigate}
               >
                 {it.label}
@@ -593,11 +586,9 @@ function MoreMenu({
         aria-expanded={open}
         aria-haspopup="menu"
       >
-        <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+        <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
           More
-          <span style={chev} aria-hidden>
-            ▾
-          </span>
+          <span style={chev} aria-hidden>▾</span>
         </span>
       </button>
 
@@ -614,10 +605,7 @@ function MoreMenu({
                       key={`${sec.title}:${it.href}`}
                       href={it.href}
                       role="menuitem"
-                      style={{
-                        ...menuItem,
-                        ...(a ? menuItemActive : {}),
-                      }}
+                      style={{ ...menuItem, ...(a ? menuItemActive : {}) }}
                       onClick={onNavigate}
                     >
                       {it.label}
@@ -644,7 +632,7 @@ const nav: React.CSSProperties = {
   zIndex: 50,
   display: "flex",
   justifyContent: "center",
-  padding: "12px 24px",
+  padding: "10px 24px",
   background: "linear-gradient(180deg,#ffffff 0%,#f9fafb 100%)",
   borderBottom: "2px solid #b91c1c",
 };
@@ -656,88 +644,77 @@ const navInner: React.CSSProperties = {
   justifyContent: "space-between",
   alignItems: "center",
   gap: 16,
+  // No flexWrap — everything must stay on one row; More menu handles overflow
 };
 
 const left: React.CSSProperties = {
   display: "flex",
   alignItems: "center",
-  gap: 12,
-  minWidth: 520,
-  flexWrap: "wrap",
-};
-
-const center: React.CSSProperties = {
-  flex: 1,
-  display: "flex",
-  justifyContent: "center",
-  minWidth: 320,
+  gap: 4, // ↓ tighter gap between nav items (was 12)
+  flexShrink: 0,
 };
 
 const right: React.CSSProperties = {
   display: "flex",
   alignItems: "center",
-  gap: 12,
-  minWidth: 260,
-  justifyContent: "flex-end",
+  gap: 10,
+  flexShrink: 0,
 };
 
+// ↓ Simplified brand — no subtitle, slightly smaller logo
 const brandWrap: React.CSSProperties = {
   display: "flex",
   alignItems: "center",
-  gap: 10,
-  marginRight: 6,
+  gap: 8,
+  marginRight: 8,
   textDecoration: "none",
-  paddingRight: 12,
+  paddingRight: 14,
   borderRight: "1px solid #e5e7eb",
 };
 
-const brandTextWrap: React.CSSProperties = {
-  display: "flex",
-  flexDirection: "column",
-  lineHeight: 1.1,
-};
-
+// ↓ Standalone brand title (subtitle removed)
 const brandTitle: React.CSSProperties = {
   fontWeight: 900,
-  fontSize: 16,
+  fontSize: 15,
   color: "#111827",
   letterSpacing: 0.2,
+  whiteSpace: "nowrap",
 };
 
-const brandSubtitle: React.CSSProperties = {
-  fontWeight: 700,
-  fontSize: 11,
-  color: "#6b7280",
-  marginTop: 2,
-};
-
+// ↓ Nav links: weight dropped to 600 for inactive state (was 900)
 const link: React.CSSProperties = {
   textDecoration: "none",
   padding: "7px 10px",
   borderRadius: 10,
-  color: "#111827",
-  fontWeight: 800,
+  color: "#374151",
+  fontWeight: 600,
+  fontSize: 14,
+  whiteSpace: "nowrap",
 };
 
 const activeLink: React.CSSProperties = {
   backgroundColor: "#111827",
   color: "#ffffff",
-  fontWeight: 900,
+  fontWeight: 800, // ↑ active state gets heavier weight
 };
 
+// ↓ Dropdown buttons: weight 600 inactive, 800 active (was 900 both)
 const dropBtn: React.CSSProperties = {
   padding: "7px 10px",
   borderRadius: 10,
   border: "1px solid transparent",
   background: "transparent",
-  color: "#111827",
-  fontWeight: 900,
+  color: "#374151",
+  fontWeight: 600, // ↓ was 900
+  fontSize: 14,
   cursor: "pointer",
+  whiteSpace: "nowrap",
 };
 
 const dropBtnActive: React.CSSProperties = {
   background: "#111827",
   color: "#ffffff",
+  fontWeight: 800,
 };
 
 const dropBtnOpen: React.CSSProperties = {
@@ -746,34 +723,34 @@ const dropBtnOpen: React.CSSProperties = {
 };
 
 const dropBtnDisabled: React.CSSProperties = {
-  opacity: 0.45,
+  opacity: 0.4,
   cursor: "not-allowed",
 };
 
 const chev: React.CSSProperties = {
-  fontSize: 12,
-  lineHeight: "12px",
-  opacity: 0.9,
+  fontSize: 11,
+  lineHeight: "11px",
+  opacity: 0.7,
 };
 
 const quickActionBtn: React.CSSProperties = {
   textDecoration: "none",
-  padding: "8px 12px",
+  padding: "7px 14px",
   borderRadius: 999,
   border: "1px solid #111827",
   background: "#111827",
   color: "#ffffff",
-  fontWeight: 900,
+  fontWeight: 700, // ↓ was 900
   fontSize: 13,
   cursor: "pointer",
-  boxShadow: "0 1px 0 rgba(0,0,0,0.04)",
+  whiteSpace: "nowrap",
 };
 
 const userPillBtn: React.CSSProperties = {
   border: "1px solid #e5e7eb",
   background: "#ffffff",
   borderRadius: 999,
-  padding: "7px 10px",
+  padding: "7px 12px",
   cursor: "pointer",
   boxShadow: "0 1px 0 rgba(0,0,0,0.04)",
 };
@@ -784,10 +761,10 @@ const pillOpen: React.CSSProperties = {
 };
 
 const userPillText: React.CSSProperties = {
-  fontSize: 12,
-  fontWeight: 900,
+  fontSize: 13,
+  fontWeight: 600, // ↓ was 900
   color: "#111827",
-  minWidth: 110,
+  minWidth: 80,
   textAlign: "center",
 };
 
@@ -809,14 +786,14 @@ const menuHeader: React.CSSProperties = {
 };
 
 const menuUserName: React.CSSProperties = {
-  fontWeight: 900,
+  fontWeight: 800,
   fontSize: 13,
   color: "#111827",
 };
 
 const menuUserMeta: React.CSSProperties = {
   marginTop: 2,
-  fontWeight: 800,
+  fontWeight: 600,
   fontSize: 11,
   color: "#6b7280",
 };
@@ -829,8 +806,8 @@ const menuDivider: React.CSSProperties = {
 
 const menuSectionTitle: React.CSSProperties = {
   fontSize: 11,
-  fontWeight: 900,
-  color: "#6b7280",
+  fontWeight: 700,
+  color: "#9ca3af",
   textTransform: "uppercase",
   letterSpacing: 0.6,
   padding: "0 6px",
@@ -842,12 +819,13 @@ const menuItem: React.CSSProperties = {
   padding: "9px 10px",
   borderRadius: 10,
   color: "#111827",
-  fontWeight: 800,
+  fontWeight: 600, // ↓ was 800
   fontSize: 13,
 };
 
 const menuItemActive: React.CSSProperties = {
   background: "#f3f4f6",
+  fontWeight: 700,
 };
 
 const menuItemDanger: React.CSSProperties = {
@@ -857,34 +835,39 @@ const menuItemDanger: React.CSSProperties = {
   border: "1px solid #fecaca",
 };
 
+// ↓ Search no longer has minWidth; width is controlled dynamically via inline style
 const searchWrap: React.CSSProperties = {
   display: "flex",
   alignItems: "center",
-  gap: 8,
-  padding: 6,
+  gap: 6,
+  padding: "4px 4px 4px 10px",
   borderRadius: 999,
   border: "1px solid #e5e7eb",
   background: "#ffffff",
-  minWidth: 420,
   boxShadow: "0 1px 0 rgba(0,0,0,0.04)",
+  overflow: "hidden",
 };
 
 const searchInput: React.CSSProperties = {
   border: "none",
   outline: "none",
   fontSize: 13,
-  padding: "6px 10px",
-  width: 330,
+  padding: "4px 0",
+  flex: 1,
+  minWidth: 0,
+  color: "#111827",
+  background: "transparent",
 };
 
 const searchBtn: React.CSSProperties = {
-  height: 30,
+  height: 28,
   padding: "0 12px",
   borderRadius: 999,
   border: "1px solid #111827",
   background: "#111827",
   color: "#fff",
-  fontWeight: 900,
+  fontWeight: 700, // ↓ was 900
   fontSize: 12,
   cursor: "pointer",
+  flexShrink: 0,
 };

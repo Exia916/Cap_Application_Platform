@@ -1,17 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getAuthFromRequest } from "@/lib/auth";
 import {
   canUserEditOwnRecutRequest,
   getRecutRequestById,
   updateRecutRequest,
 } from "@/lib/repositories/recutRepo";
+import { getAuthFromRequest } from "@/lib/auth";
 
 export const runtime = "nodejs";
 
-type Resp =
-  | { entry: any }
-  | { ok: true }
-  | { error: string };
+type Resp = { entry: any } | { ok: true } | { error: string };
 
 const VIEW_ROLES = new Set(["ADMIN", "MANAGER", "SUPERVISOR", "USER", "WAREHOUSE"]);
 const EDIT_MANAGER_ROLES = new Set(["ADMIN", "MANAGER", "SUPERVISOR"]);
@@ -142,9 +139,12 @@ export async function PUT(
     const pieces = Number((body as any).pieces);
     let operator = String((body as any).operator ?? "").trim();
     const deliverTo = String((body as any).deliverTo ?? "").trim();
+    const notes = String((body as any).notes ?? "").trim();
+    const event = !!(body as any).event;
 
     let supervisorApproved = !!(body as any).supervisorApproved;
     let warehousePrinted = !!(body as any).warehousePrinted;
+    let doNotPull = !!(body as any).doNotPull;
 
     if (!requestedDepartment) {
       return NextResponse.json<Resp>({ error: "Requested Department is required." }, { status: 400 });
@@ -182,6 +182,7 @@ export async function PUT(
     if (!isManager) {
       supervisorApproved = current.supervisorApproved;
       warehousePrinted = current.warehousePrinted;
+      doNotPull = current.doNotPull;
     }
 
     await updateRecutRequest({
@@ -195,6 +196,8 @@ export async function PUT(
       pieces,
       operator,
       deliverTo,
+      notes: notes || null,
+      event,
 
       supervisorApproved,
       supervisorApprovedAt:
@@ -219,6 +222,20 @@ export async function PUT(
         warehousePrinted && !current.warehousePrinted
           ? authName
           : current.warehousePrintedBy,
+
+      doNotPull,
+      doNotPullAt:
+        doNotPull && !current.doNotPull
+          ? new Date()
+          : current.doNotPullAt
+            ? new Date(current.doNotPullAt)
+            : null,
+      doNotPullBy:
+        doNotPull && !current.doNotPull
+          ? authName
+          : !doNotPull
+            ? null
+            : current.doNotPullBy,
     });
 
     return NextResponse.json<Resp>({ ok: true }, { status: 200 });

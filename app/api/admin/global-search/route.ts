@@ -9,6 +9,7 @@ function toInt(v: string | null, fallback: number) {
   const n = Number(v);
   return Number.isFinite(n) ? Math.trunc(n) : fallback;
 }
+
 function clamp(n: number, min: number, max: number) {
   return Math.max(min, Math.min(max, n));
 }
@@ -20,8 +21,8 @@ export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
 
   const q = (searchParams.get("q") || "").trim();
-  const start = searchParams.get("start"); // YYYY-MM-DD
-  const end = searchParams.get("end"); // YYYY-MM-DD
+  const start = searchParams.get("start");
+  const end = searchParams.get("end");
   const showAll = searchParams.get("all") === "1";
 
   const limit = clamp(toInt(searchParams.get("limit"), 50), 5, 200);
@@ -32,19 +33,20 @@ export async function GET(req: Request) {
       start,
       end,
       all: showAll,
+      limit,
       sections: [
         { key: "daily", title: "Daily Production", count: 0, rows: [] },
         { key: "qc", title: "QC Daily Production", count: 0, rows: [] },
         { key: "emblem", title: "Emblem Production", count: 0, rows: [] },
         { key: "laser", title: "Laser Production", count: 0, rows: [] },
+        { key: "recut", title: "Recut Requests", count: 0, rows: [] },
+        { key: "workOrders", title: "CMMS Work Orders", count: 0, rows: [] },
       ],
     });
   }
 
   const like = `%${q}%`;
 
-  // Date filters: default last 30 days unless showAll or explicit start/end.
-  // We apply per-module date field.
   const dateClause = (fieldSql: string) => {
     const parts: string[] = [];
     const params: any[] = [];
@@ -66,44 +68,60 @@ export async function GET(req: Request) {
     return { sql: parts.length ? `AND ${parts.join(" AND ")}` : "", params };
   };
 
-  // -------------------------
-  // Daily Production (embroidery_daily_entries)
-  // -------------------------
+  // ---------------------------------------------------------------------------
+  // Daily Production
+  // NOTE: return submission_id, not line id
+  // ---------------------------------------------------------------------------
   const dailyDate = dateClause("e.shift_date");
 
   const dailySql = `
     SELECT
-      e.id,
-      e.entry_ts,
+      s.id AS submission_id,
+      s.id AS id,
+      s.entry_ts,
       e.shift_date AS entry_date,
-      e.name,
-      e.employee_number,
-      e.shift,
-      e.machine_number,
-      e.sales_order,
+      s.name,
+      s.employee_number,
+      s.shift,
+      s.machine_number,
+      s.sales_order,
       e.detail_number,
       e.embroidery_location,
       e.pieces,
+      e.stitches,
+      e.is_3d,
+      e.is_knit,
+      e.detail_complete,
+      e.annex,
+      e.jobber_samples_ran,
       e.notes
-    FROM embroidery_daily_entries e
+    FROM public.embroidery_daily_entries e
+    JOIN public.embroidery_daily_submissions s
+      ON s.id = e.submission_id
     WHERE
       (
-        e.name ILIKE $1
-        OR e.shift ILIKE $2
-        OR e.embroidery_location ILIKE $3
+        s.name ILIKE $1
+        OR s.shift ILIKE $2
+        OR COALESCE(e.embroidery_location, '') ILIKE $3
         OR COALESCE(e.notes, '') ILIKE $4
-        OR CAST(e.employee_number AS text) ILIKE $5
-        OR CAST(e.machine_number AS text) ILIKE $6
-        OR CAST(e.sales_order AS text) ILIKE $7
-        OR CAST(e.detail_number AS text) ILIKE $8
-        OR CAST(e.shift_date AS text) ILIKE $9
+        OR COALESCE(s.notes, '') ILIKE $5
+        OR CAST(s.employee_number AS text) ILIKE $6
+        OR CAST(s.machine_number AS text) ILIKE $7
+        OR CAST(s.sales_order AS text) ILIKE $8
+        OR CAST(e.detail_number AS text) ILIKE $9
+        OR CAST(e.shift_date AS text) ILIKE $10
+        OR CAST(e.stitches AS text) ILIKE $11
+        OR CAST(e.pieces AS text) ILIKE $12
       )
       ${dailyDate.sql}
-    ORDER BY e.entry_ts DESC
-    LIMIT $${9 + dailyDate.params.length + 1}
+    ORDER BY s.entry_ts DESC, e.id DESC
+    LIMIT $${12 + dailyDate.params.length + 1}
   `;
 
   const dailyParams = [
+    like,
+    like,
+    like,
     like,
     like,
     like,
@@ -117,19 +135,21 @@ export async function GET(req: Request) {
     limit,
   ];
 
-  // -------------------------
-  // QC Daily (qc_daily_entries)
-  // -------------------------
+  // ---------------------------------------------------------------------------
+  // QC Daily
+  // NOTE: return submission_id, not line id
+  // ---------------------------------------------------------------------------
   const qcDate = dateClause("q.entry_date");
 
   const qcSql = `
     SELECT
-      q.id,
-      q.entry_ts,
+      s.id AS submission_id,
+      s.id AS id,
+      s.entry_ts,
       q.entry_date,
-      q.name,
-      q.employee_number,
-      q.sales_order,
+      s.name,
+      s.employee_number,
+      s.sales_order,
       q.detail_number,
       q.flat_or_3d,
       q.order_quantity,
@@ -137,27 +157,31 @@ export async function GET(req: Request) {
       q.rejected_quantity,
       q.quantity_shipped,
       q.notes
-    FROM qc_daily_entries q
+    FROM public.qc_daily_entries q
+    JOIN public.qc_daily_submissions s
+      ON s.id = q.submission_id
     WHERE
       (
-        q.name ILIKE $1
+        s.name ILIKE $1
         OR COALESCE(q.flat_or_3d, '') ILIKE $2
         OR COALESCE(q.notes, '') ILIKE $3
-        OR CAST(q.employee_number AS text) ILIKE $4
-        OR CAST(q.sales_order AS text) ILIKE $5
-        OR CAST(q.detail_number AS text) ILIKE $6
-        OR CAST(q.order_quantity AS text) ILIKE $7
-        OR CAST(q.inspected_quantity AS text) ILIKE $8
-        OR CAST(q.rejected_quantity AS text) ILIKE $9
-        OR CAST(q.quantity_shipped AS text) ILIKE $10
-        OR CAST(q.entry_date AS text) ILIKE $11
+        OR COALESCE(s.notes, '') ILIKE $4
+        OR CAST(s.employee_number AS text) ILIKE $5
+        OR CAST(s.sales_order AS text) ILIKE $6
+        OR CAST(q.detail_number AS text) ILIKE $7
+        OR CAST(q.order_quantity AS text) ILIKE $8
+        OR CAST(q.inspected_quantity AS text) ILIKE $9
+        OR CAST(q.rejected_quantity AS text) ILIKE $10
+        OR CAST(q.quantity_shipped AS text) ILIKE $11
+        OR CAST(q.entry_date AS text) ILIKE $12
       )
       ${qcDate.sql}
-    ORDER BY q.entry_ts DESC
-    LIMIT $${11 + qcDate.params.length + 1}
+    ORDER BY s.entry_ts DESC, q.id DESC
+    LIMIT $${12 + qcDate.params.length + 1}
   `;
 
   const qcParams = [
+    like,
     like,
     like,
     like,
@@ -173,14 +197,15 @@ export async function GET(req: Request) {
     limit,
   ];
 
-  // -------------------------
-  // Emblem (lines + submissions)
-  // -------------------------
+  // ---------------------------------------------------------------------------
+  // Emblem
+  // ---------------------------------------------------------------------------
   const emDate = dateClause("s.entry_date");
 
   const emblemSql = `
     SELECT
       s.id AS submission_id,
+      s.id AS id,
       s.entry_ts,
       s.entry_date,
       s.name,
@@ -191,8 +216,8 @@ export async function GET(req: Request) {
       l.logo_name,
       l.pieces,
       l.line_notes AS notes
-    FROM emblem_daily_submission_lines l
-    JOIN emblem_daily_submissions s ON s.id = l.submission_id
+    FROM public.emblem_daily_submission_lines l
+    JOIN public.emblem_daily_submissions s ON s.id = l.submission_id
     WHERE
       (
         s.name ILIKE $1
@@ -204,13 +229,15 @@ export async function GET(req: Request) {
         OR COALESCE(l.logo_name, '') ILIKE $7
         OR CAST(l.pieces AS text) ILIKE $8
         OR COALESCE(l.line_notes, '') ILIKE $9
+        OR COALESCE(s.notes, '') ILIKE $10
       )
       ${emDate.sql}
     ORDER BY s.entry_ts DESC
-    LIMIT $${9 + emDate.params.length + 1}
+    LIMIT $${10 + emDate.params.length + 1}
   `;
 
   const emblemParams = [
+    like,
     like,
     like,
     like,
@@ -224,9 +251,9 @@ export async function GET(req: Request) {
     limit,
   ];
 
-  // -------------------------
-  // Laser (laser_entries)
-  // -------------------------
+  // ---------------------------------------------------------------------------
+  // Laser
+  // ---------------------------------------------------------------------------
   const lzDate = dateClause("l.entry_date");
 
   const laserSql = `
@@ -240,7 +267,7 @@ export async function GET(req: Request) {
       l.leather_style_color,
       l.pieces_cut,
       l.notes
-    FROM laser_entries l
+    FROM public.laser_entries l
     WHERE
       (
         l.name ILIKE $1
@@ -258,11 +285,160 @@ export async function GET(req: Request) {
 
   const laserParams = [like, like, like, like, like, like, like, ...lzDate.params, limit];
 
-  const [dailyRes, qcRes, emblemRes, laserRes] = await Promise.all([
+  // ---------------------------------------------------------------------------
+  // Recut
+  // ---------------------------------------------------------------------------
+  const recutDate = dateClause("r.requested_date");
+
+  const recutSql = `
+    SELECT
+      r.id,
+      r.requested_at AS entry_ts,
+      r.requested_date AS entry_date,
+      r.requested_by_name AS name,
+      r.requested_by_employee_number AS employee_number,
+      r.recut_id,
+      r.requested_department,
+      r.sales_order,
+      r.design_name,
+      r.recut_reason,
+      r.detail_number,
+      r.cap_style,
+      r.pieces,
+      r.operator,
+      r.deliver_to,
+      r.supervisor_approved,
+      r.warehouse_printed,
+      r.event,
+      r.do_not_pull,
+      r.notes
+    FROM public.recut_requests r
+    WHERE
+      (
+        COALESCE(r.requested_by_name, '') ILIKE $1
+        OR COALESCE(r.requested_by_username, '') ILIKE $2
+        OR COALESCE(r.requested_department, '') ILIKE $3
+        OR COALESCE(r.sales_order, '') ILIKE $4
+        OR COALESCE(r.design_name, '') ILIKE $5
+        OR COALESCE(r.recut_reason, '') ILIKE $6
+        OR COALESCE(r.cap_style, '') ILIKE $7
+        OR COALESCE(r.operator, '') ILIKE $8
+        OR COALESCE(r.deliver_to, '') ILIKE $9
+        OR COALESCE(r.notes, '') ILIKE $10
+        OR CAST(r.recut_id AS text) ILIKE $11
+        OR CAST(r.requested_by_employee_number AS text) ILIKE $12
+        OR CAST(r.detail_number AS text) ILIKE $13
+        OR CAST(r.pieces AS text) ILIKE $14
+        OR CAST(r.requested_date AS text) ILIKE $15
+      )
+      ${recutDate.sql}
+    ORDER BY r.requested_at DESC
+    LIMIT $${15 + recutDate.params.length + 1}
+  `;
+
+  const recutParams = [
+    like,
+    like,
+    like,
+    like,
+    like,
+    like,
+    like,
+    like,
+    like,
+    like,
+    like,
+    like,
+    like,
+    like,
+    like,
+    ...recutDate.params,
+    limit,
+  ];
+
+  // ---------------------------------------------------------------------------
+  // Work Orders
+  // ---------------------------------------------------------------------------
+  const woDate = dateClause("wo.requested_at::date");
+
+  const workOrdersSql = `
+    SELECT
+      wo.work_order_id::int AS id,
+      wo.work_order_id::int AS work_order_id,
+      wo.requested_at AS entry_ts,
+      wo.requested_at::date AS entry_date,
+      COALESCE(wo.requested_by_name, '') AS name,
+      NULL::int AS employee_number,
+      d.name AS department,
+      a.name AS asset,
+      pr.name AS priority,
+      wo.operator_initials,
+      wt.name AS work_order_type,
+      t.name AS tech,
+      ic.name AS common_issue,
+      st.name AS status,
+      wo.issue_dialogue,
+      wo.resolution,
+      wo.down_time_recorded,
+      COALESCE(wo.resolution, wo.issue_dialogue, '') AS notes
+    FROM cmms.work_orders wo
+    JOIN cmms.departments d ON d.id = wo.department_id
+    JOIN cmms.assets a ON a.id = wo.asset_id
+    JOIN cmms.priorities pr ON pr.id = wo.priority_id
+    JOIN cmms.issue_catalog ic ON ic.id = wo.common_issue_id
+    JOIN cmms.statuses st ON st.id = wo.status_id
+    LEFT JOIN cmms.techs t ON t.id = wo.tech_id
+    LEFT JOIN cmms.wo_types wt ON wt.id = wo.type_id
+    WHERE
+      (
+        COALESCE(wo.requested_by_name, '') ILIKE $1
+        OR COALESCE(wo.requested_by_user_id, '') ILIKE $2
+        OR COALESCE(wo.operator_initials, '') ILIKE $3
+        OR COALESCE(wo.issue_dialogue, '') ILIKE $4
+        OR COALESCE(wo.resolution, '') ILIKE $5
+        OR COALESCE(wo.down_time_recorded, '') ILIKE $6
+        OR COALESCE(d.name, '') ILIKE $7
+        OR COALESCE(a.name, '') ILIKE $8
+        OR COALESCE(pr.name, '') ILIKE $9
+        OR COALESCE(ic.name, '') ILIKE $10
+        OR COALESCE(st.name, '') ILIKE $11
+        OR COALESCE(t.name, '') ILIKE $12
+        OR COALESCE(wt.name, '') ILIKE $13
+        OR CAST(wo.work_order_id AS text) ILIKE $14
+        OR CAST(wo.requested_at::date AS text) ILIKE $15
+      )
+      ${woDate.sql}
+    ORDER BY wo.requested_at DESC, wo.work_order_id DESC
+    LIMIT $${15 + woDate.params.length + 1}
+  `;
+
+  const workOrdersParams = [
+    like,
+    like,
+    like,
+    like,
+    like,
+    like,
+    like,
+    like,
+    like,
+    like,
+    like,
+    like,
+    like,
+    like,
+    like,
+    ...woDate.params,
+    limit,
+  ];
+
+  const [dailyRes, qcRes, emblemRes, laserRes, recutRes, workOrdersRes] = await Promise.all([
     db.query(dailySql, dailyParams),
     db.query(qcSql, qcParams),
     db.query(emblemSql, emblemParams),
     db.query(laserSql, laserParams),
+    db.query(recutSql, recutParams),
+    db.query(workOrdersSql, workOrdersParams),
   ]);
 
   return NextResponse.json({
@@ -276,6 +452,8 @@ export async function GET(req: Request) {
       { key: "qc", title: "QC Daily Production", count: qcRes.rows.length, rows: qcRes.rows },
       { key: "emblem", title: "Emblem Production", count: emblemRes.rows.length, rows: emblemRes.rows },
       { key: "laser", title: "Laser Production", count: laserRes.rows.length, rows: laserRes.rows },
+      { key: "recut", title: "Recut Requests", count: recutRes.rows.length, rows: recutRes.rows },
+      { key: "workOrders", title: "CMMS Work Orders", count: workOrdersRes.rows.length, rows: workOrdersRes.rows },
     ],
   });
 }

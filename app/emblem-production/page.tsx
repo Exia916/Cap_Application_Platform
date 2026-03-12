@@ -265,7 +265,7 @@ export default function EmblemProductionListPage() {
         render: (r) => <span style={{ whiteSpace: "normal" }}>{r.notes ?? ""}</span>,
         getSearchText: (r) => r.notes ?? "",
       },
-      { key: "edit", header: "", render: (r) => <Link href={`/emblem-production/${r.id}`}>Edit</Link> },
+      { key: "edit", header: "", render: (r) => <Link href={`/emblem-production/${r.id}/edit`}>Edit</Link> },
     ],
     [entryDateFrom, entryDateTo]
   );
