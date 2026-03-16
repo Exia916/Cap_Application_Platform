@@ -20,6 +20,34 @@ function toInt(v: unknown): number | null {
   return null;
 }
 
+function buildActivityActor(auth: ReturnType<typeof getAuthFromRequest>) {
+  const rawEmp =
+    (auth as any)?.employeeNumber ??
+    (auth as any)?.employee_number ??
+    null;
+
+  const empNum = Number(rawEmp);
+
+  return {
+    userId: String(
+      (auth as any)?.userId ??
+        (auth as any)?.id ??
+        (auth as any)?.username ??
+        ""
+    ).trim() || null,
+
+    userName:
+      String(
+        (auth as any)?.displayName ??
+          (auth as any)?.name ??
+          (auth as any)?.username ??
+          ""
+      ).trim() || null,
+
+    employeeNumber: Number.isFinite(empNum) ? Math.trunc(empNum) : null,
+  };
+}
+
 export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   let auth: ReturnType<typeof getAuthFromRequest> | null = null;
   let id: number | null = null;
@@ -92,6 +120,8 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
     const resolution = String((body as any).resolution || "").trim() || null;
     const downTimeRecorded = String((body as any).downTimeRecorded || "").trim() || null;
 
+    const activityActor = buildActivityActor(auth);
+
     const updated = await updateWorkOrderTechFields({
       id,
       typeId: typeId ?? null,
@@ -99,6 +129,7 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
       statusId: statusId ?? null,
       resolution,
       downTimeRecorded,
+      activityActor,
     });
 
     await logAuditEvent({

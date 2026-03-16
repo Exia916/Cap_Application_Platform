@@ -26,6 +26,34 @@ function toBool(v: string | null): boolean {
   return s === "true" || s === "1" || s === "yes";
 }
 
+function buildActivityActor(auth: ReturnType<typeof getAuthFromRequest>) {
+  const rawEmp =
+    (auth as any)?.employeeNumber ??
+    (auth as any)?.employee_number ??
+    null;
+
+  const empNum = Number(rawEmp);
+
+  return {
+    userId: String(
+      (auth as any)?.userId ??
+        (auth as any)?.id ??
+        (auth as any)?.username ??
+        ""
+    ).trim() || null,
+
+    userName:
+      String(
+        (auth as any)?.displayName ??
+          (auth as any)?.name ??
+          (auth as any)?.username ??
+          ""
+      ).trim() || null,
+
+    employeeNumber: Number.isFinite(empNum) ? Math.trunc(empNum) : null,
+  };
+}
+
 export async function GET(req: NextRequest) {
   let auth: ReturnType<typeof getAuthFromRequest> | null = null;
 
@@ -170,10 +198,18 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const requestedByUserId = (auth as any).userId ?? (auth as any).id ?? null;
+    const requestedByUserId =
+      String((auth as any).userId ?? (auth as any).id ?? "").trim() || null;
+
     const requestedByName =
-      String((auth as any).displayName ?? (auth as any).name ?? (auth as any).username ?? "").trim() ||
-      "Unknown";
+      String(
+        (auth as any).displayName ??
+          (auth as any).name ??
+          (auth as any).username ??
+          ""
+      ).trim() || "Unknown";
+
+    const activityActor = buildActivityActor(auth);
 
     const result = await createWorkOrder({
       requestedByUserId,
@@ -184,6 +220,7 @@ export async function POST(req: NextRequest) {
       commonIssueId,
       operatorInitials,
       issueDialogue,
+      activityActor,
     });
 
     await logAuditEvent({

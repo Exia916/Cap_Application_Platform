@@ -246,7 +246,31 @@ export default function RecutSupervisorReviewPage() {
           (v) => onFilterChange("warehousePrinted", v),
           "Warehouse Printed"
         ),
-        render: (r) => (r.warehousePrinted ? <span style={printedBadge}>Printed</span> : "No"),
+        render: (r) => (r.warehousePrinted ? <span className="badge badge-warning">Printed</span> : "No"),
+      },
+      {
+        key: "view",
+        header: "View",
+        sortable: false,
+        filterable: false,
+        serverSortable: false,
+        render: (r) => (
+          <Link href={`/recuts/${r.id}`} className="btn btn-secondary btn-sm">
+            View
+          </Link>
+        ),
+      },
+      {
+        key: "edit",
+        header: "Edit",
+        sortable: false,
+        filterable: false,
+        serverSortable: false,
+        render: (r) => (
+          <Link href={`/recuts/${r.id}/edit`} className="btn btn-primary btn-sm">
+            Edit
+          </Link>
+        ),
       },
       {
         key: "approve",
@@ -256,29 +280,19 @@ export default function RecutSupervisorReviewPage() {
         serverSortable: false,
         render: (r) =>
           r.supervisorApproved ? (
-            <span style={{ color: "#166534", fontWeight: 700 }}>Approved</span>
+            <span className="text-success" style={{ fontWeight: 700 }}>
+              Approved
+            </span>
           ) : (
             <button
               type="button"
               onClick={() => approveRow(r.id)}
               disabled={approvingId === r.id}
-              style={approveBtn}
+              className="btn btn-secondary btn-sm"
             >
               {approvingId === r.id ? "Approving..." : "Approve"}
             </button>
           ),
-      },
-      {
-        key: "edit",
-        header: "Edit",
-        sortable: false,
-        filterable: false,
-        serverSortable: false,
-        render: (r) => (
-          <Link href={`/recuts/${r.id}`} style={{ color: "#2563eb", textDecoration: "none", fontWeight: 600 }}>
-            Edit
-          </Link>
-        ),
       },
     ];
   }, [filters, approvingId]);
@@ -293,21 +307,19 @@ export default function RecutSupervisorReviewPage() {
   }
 
   return (
-    <div style={{ padding: 16 }}>
-      <div style={headerRow}>
-        <div>
-          <h1 style={{ margin: 0 }}>Supervisor Review</h1>
-          <p style={{ margin: "8px 0 0", color: "#6b7280" }}>
-            Review, approve, and edit all recut requests.
-          </p>
+    <div className="page-shell-wide">
+      <div className="page-header">
+        <div className="page-header-title-wrap">
+          <h1 className="page-title">Supervisor Review</h1>
+          <p className="page-subtitle">Review, approve, and edit all recut requests.</p>
         </div>
 
-        <Link href="/recuts/add" style={btnSecondary}>
+        <Link href="/recuts/add" className="btn btn-primary">
           + New Recut Request
         </Link>
       </div>
 
-      {error ? <div style={errorBox}>{error}</div> : null}
+      {error ? <div className="alert alert-danger" style={{ marginBottom: 12 }}>{error}</div> : null}
 
       <DataTable<Row>
         columns={columns}
@@ -353,57 +365,6 @@ export default function RecutSupervisorReviewPage() {
     </div>
   );
 }
-
-const headerRow: React.CSSProperties = {
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "space-between",
-  gap: 12,
-  marginBottom: 12,
-};
-
-const btnSecondary: React.CSSProperties = {
-  display: "inline-flex",
-  alignItems: "center",
-  justifyContent: "center",
-  textDecoration: "none",
-  padding: "10px 14px",
-  borderRadius: 8,
-  border: "1px solid #d1d5db",
-  background: "#fff",
-  color: "#111827",
-  fontWeight: 600,
-};
-
-const approveBtn: React.CSSProperties = {
-  border: "none",
-  background: "#111827",
-  color: "#fff",
-  borderRadius: 6,
-  padding: "6px 10px",
-  cursor: "pointer",
-  fontWeight: 600,
-  fontSize: 12,
-};
-
-const printedBadge: React.CSSProperties = {
-  display: "inline-block",
-  padding: "3px 8px",
-  borderRadius: 999,
-  background: "#fef3c7",
-  color: "#92400e",
-  fontWeight: 700,
-  fontSize: 12,
-};
-
-const errorBox: React.CSSProperties = {
-  marginBottom: 12,
-  padding: 12,
-  borderRadius: 8,
-  border: "1px solid #fecaca",
-  background: "#fef2f2",
-  color: "#991b1b",
-};
 
 const filterSelect: React.CSSProperties = {
   width: "100%",

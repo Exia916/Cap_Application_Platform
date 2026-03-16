@@ -3,6 +3,7 @@ import { getAuthFromRequest } from "@/lib/auth";
 import { createRecutRequest } from "@/lib/repositories/recutRepo";
 import { logAuditEvent, logError, logWarn } from "@/lib/logging/logger";
 import { normalizeSalesOrder } from "@/lib/utils/salesOrder";
+import { createActivityHistory } from "@/lib/repositories/activityHistoryRepo";
 
 export const runtime = "nodejs";
 
@@ -84,130 +85,7 @@ export async function POST(req: NextRequest) {
     const supervisorApproved = !!(body as any).supervisorApproved;
     const warehousePrinted = !!(body as any).warehousePrinted;
 
-    if (!requestedDepartment) {
-      await logWarn({
-        req,
-        auth,
-        category: "API",
-        module: "RECUT",
-        eventType: "RECUT_CREATE_INVALID",
-        message: "Recut create request failed validation",
-        details: { reason: "REQUESTED_DEPARTMENT_REQUIRED" },
-      });
-
-      return NextResponse.json<Resp>({ error: "Requested Department is required." }, { status: 400 });
-    }
-
     const normalizedSO = normalizeSalesOrder(rawSalesOrder);
-    if (!normalizedSO.isValid || !normalizedSO.salesOrderDisplay || !normalizedSO.salesOrderBase) {
-      await logWarn({
-        req,
-        auth,
-        category: "API",
-        module: "RECUT",
-        eventType: "RECUT_CREATE_INVALID",
-        message: "Recut create request failed validation",
-        details: {
-          reason: "INVALID_SALES_ORDER_FORMAT",
-          salesOrder: rawSalesOrder,
-        },
-      });
-
-      return NextResponse.json<Resp>(
-        { error: normalizedSO.error ?? "Sales Order must begin with 7 digits." },
-        { status: 400 }
-      );
-    }
-
-    if (!designName) {
-      await logWarn({
-        req,
-        auth,
-        category: "API",
-        module: "RECUT",
-        eventType: "RECUT_CREATE_INVALID",
-        message: "Recut create request failed validation",
-        details: { reason: "DESIGN_NAME_REQUIRED" },
-      });
-
-      return NextResponse.json<Resp>({ error: "Design Name is required." }, { status: 400 });
-    }
-
-    if (!recutReason) {
-      await logWarn({
-        req,
-        auth,
-        category: "API",
-        module: "RECUT",
-        eventType: "RECUT_CREATE_INVALID",
-        message: "Recut create request failed validation",
-        details: { reason: "RECUT_REASON_REQUIRED" },
-      });
-
-      return NextResponse.json<Resp>({ error: "Recut Reason is required." }, { status: 400 });
-    }
-
-    if (!Number.isInteger(detailNumber) || detailNumber < 0) {
-      await logWarn({
-        req,
-        auth,
-        category: "API",
-        module: "RECUT",
-        eventType: "RECUT_CREATE_INVALID",
-        message: "Recut create request failed validation",
-        details: {
-          reason: "INVALID_DETAIL_NUMBER",
-          detailNumber: (body as any).detailNumber ?? null,
-        },
-      });
-
-      return NextResponse.json<Resp>({ error: "Detail # must be a whole number." }, { status: 400 });
-    }
-
-    if (!capStyle) {
-      await logWarn({
-        req,
-        auth,
-        category: "API",
-        module: "RECUT",
-        eventType: "RECUT_CREATE_INVALID",
-        message: "Recut create request failed validation",
-        details: { reason: "CAP_STYLE_REQUIRED" },
-      });
-
-      return NextResponse.json<Resp>({ error: "Cap Style is required." }, { status: 400 });
-    }
-
-    if (!Number.isInteger(pieces) || pieces <= 0) {
-      await logWarn({
-        req,
-        auth,
-        category: "API",
-        module: "RECUT",
-        eventType: "RECUT_CREATE_INVALID",
-        message: "Recut create request failed validation",
-        details: {
-          reason: "INVALID_PIECES",
-          pieces: (body as any).pieces ?? null,
-        },
-      });
-
-      return NextResponse.json<Resp>({ error: "Pieces must be greater than 0." }, { status: 400 });
-    }
-
-    if (!deliverTo) {
-      await logWarn({
-        req,
-        auth,
-        category: "API",
-        module: "RECUT",
-        eventType: "RECUT_CREATE_INVALID",
-        message: "Recut create request failed validation",
-        details: { reason: "DELIVER_TO_REQUIRED" },
-      });
-
-      return NextResponse.json<Resp>({ error: "Deliver To is required." }, { status: 400 });
-    }
 
     const authRole = String((auth as any).role ?? "").trim().toUpperCase();
     const authDept = normalizeDept((auth as any).department ?? null);
@@ -215,20 +93,6 @@ export async function POST(req: NextRequest) {
 
     if (isEmbDept(authDept)) {
       operator = authName;
-    }
-
-    if (!operator) {
-      await logWarn({
-        req,
-        auth,
-        category: "API",
-        module: "RECUT",
-        eventType: "RECUT_CREATE_INVALID",
-        message: "Recut create request failed validation",
-        details: { reason: "OPERATOR_REQUIRED" },
-      });
-
-      return NextResponse.json<Resp>({ error: "Operator is required." }, { status: 400 });
     }
 
     const canSetFlags =
@@ -240,8 +104,8 @@ export async function POST(req: NextRequest) {
       (auth as any).employeeNumber != null
         ? Number((auth as any).employeeNumber)
         : (auth as any).userId != null
-          ? Number((auth as any).userId)
-          : null;
+        ? Number((auth as any).userId)
+        : null;
 
     const result = await createRecutRequest({
       requestedByUserId,
@@ -277,6 +141,8 @@ export async function POST(req: NextRequest) {
       doNotPullBy: null,
     });
 
+    /* ---------------- Audit Log ---------------- */
+
     await logAuditEvent({
       req,
       auth,
@@ -289,17 +155,42 @@ export async function POST(req: NextRequest) {
         recutId: result.recutId,
         requestedDepartment,
         salesOrder: normalizedSO.salesOrderDisplay,
-        salesOrderBase: normalizedSO.salesOrderBase,
         designName,
         recutReason,
-        detailNumber,
-        capStyle,
         pieces,
-        operator,
-        deliverTo,
-        event,
-        supervisorApproved: canSetFlags ? supervisorApproved : false,
-        warehousePrinted: canSetFlags ? warehousePrinted : false,
+      },
+    });
+
+    await createActivityHistory({
+  entityType: "recut_requests",
+  entityId: result.id,
+  eventType: "CREATED",
+  message: "Recut request created",
+  module: "RECUT",
+  userId: requestedByUserId,
+  userName: authName,
+  employeeNumber: requestedByEmployeeNumber,
+  salesOrder: Number(normalizedSO.salesOrderBase),
+  detailNumber,
+});
+
+    /* ---------------- Activity History ---------------- */
+
+    await createActivityHistory({
+      entityType: "recut_requests",
+      entityId: result.id,
+      eventType: "CREATED",
+      message: "Recut request created",
+      userId: requestedByUserId,
+      username: requestedByUsername,
+      displayName: authName,
+      metadata: {
+        recutId: result.recutId,
+        requestedDepartment,
+        salesOrder: normalizedSO.salesOrderDisplay,
+        designName,
+        recutReason,
+        pieces,
       },
     });
 
@@ -314,10 +205,6 @@ export async function POST(req: NextRequest) {
       message: "Failed to create recut request",
       recordType: "recut_requests",
       error: err,
-      details: {
-        code: err?.code ?? null,
-        detail: err?.detail ?? null,
-      },
     });
 
     console.error("recut add POST error:", err);

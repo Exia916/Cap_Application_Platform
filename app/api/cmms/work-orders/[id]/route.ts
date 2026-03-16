@@ -20,6 +20,34 @@ function toInt(v: unknown): number | null {
   return null;
 }
 
+function buildActivityActor(auth: ReturnType<typeof getAuthFromRequest>) {
+  const rawEmp =
+    (auth as any)?.employeeNumber ??
+    (auth as any)?.employee_number ??
+    null;
+
+  const empNum = Number(rawEmp);
+
+  return {
+    userId: String(
+      (auth as any)?.userId ??
+        (auth as any)?.id ??
+        (auth as any)?.username ??
+        ""
+    ).trim() || null,
+
+    userName:
+      String(
+        (auth as any)?.displayName ??
+          (auth as any)?.name ??
+          (auth as any)?.username ??
+          ""
+      ).trim() || null,
+
+    employeeNumber: Number.isFinite(empNum) ? Math.trunc(empNum) : null,
+  };
+}
+
 export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   let auth: ReturnType<typeof getAuthFromRequest> | null = null;
   let id: number | null = null;
@@ -149,8 +177,13 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
         },
       });
 
-      return NextResponse.json({ error: `Missing/invalid fields: ${missing.join(", ")}` }, { status: 400 });
+      return NextResponse.json(
+        { error: `Missing/invalid fields: ${missing.join(", ")}` },
+        { status: 400 }
+      );
     }
+
+    const activityActor = buildActivityActor(auth);
 
     const updated = await updateWorkOrderRequesterFields({
       id,
@@ -160,6 +193,7 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
       commonIssueId,
       operatorInitials,
       issueDialogue,
+      activityActor,
     });
 
     await logAuditEvent({
@@ -199,7 +233,13 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
 
     console.error("CMMS PATCH /work-orders/[id] failed:", e);
 
-    const msg = e?.detail ? `${e?.message || "Update failed"} — ${e.detail}` : e?.message || "Update failed";
-    return NextResponse.json({ error: msg, code: e?.code, detail: e?.detail }, { status: 500 });
+    const msg = e?.detail
+      ? `${e?.message || "Update failed"} — ${e.detail}`
+      : e?.message || "Update failed";
+
+    return NextResponse.json(
+      { error: msg, code: e?.code, detail: e?.detail },
+      { status: 500 }
+    );
   }
 }

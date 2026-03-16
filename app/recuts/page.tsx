@@ -219,8 +219,20 @@ export default function RecutsPage() {
         render: (r) => boolText(r.warehousePrinted),
       },
       {
+        key: "view",
+        header: "View",
+        sortable: false,
+        filterable: false,
+        serverSortable: false,
+        render: (r) => (
+          <Link href={`/recuts/${r.id}`} className="btn btn-secondary btn-sm">
+            View
+          </Link>
+        ),
+      },
+      {
         key: "edit",
-        header: "",
+        header: "Edit",
         sortable: false,
         filterable: false,
         serverSortable: false,

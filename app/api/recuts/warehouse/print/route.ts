@@ -9,6 +9,7 @@ import {
   markRecutRequestsPrinted,
   type RecutRequestRow,
 } from "@/lib/repositories/recutRepo";
+import { createActivityHistory } from "@/lib/repositories/activityHistoryRepo";
 import { logAuditEvent, logError, logWarn } from "@/lib/logging/logger";
 
 export const runtime = "nodejs";
@@ -35,6 +36,14 @@ function barcodeValue(salesOrder: string) {
 
 function safeText(value: unknown) {
   return String(value ?? "").trim();
+}
+
+function parseSalesOrderNumber(value: string | null | undefined): number | null {
+  const s = String(value ?? "").trim();
+  const m = s.match(/^(\d{7})/);
+  if (!m) return null;
+  const n = Number(m[1]);
+  return Number.isFinite(n) ? n : null;
 }
 
 function drawWrappedText(
@@ -125,63 +134,43 @@ function drawTicket(
     y,
     width: w,
     height: h,
-    borderWidth: 1,
+    borderWidth: 1.25,
     borderColor: rgb(0.82, 0.84, 0.88),
     color: rgb(1, 1, 1),
   });
 
-  page.drawRectangle({
-    x,
-    y: y + h - 30,
-    width: w,
-    height: 30,
-    color: rgb(0.96, 0.97, 0.98),
-  });
-
-  page.drawText("Recut Pick Ticket", {
+  page.drawText("CAP AMERICA | RECUT PICK TICKET", {
     x: x + 14,
-    y: y + h - 20,
-    size: 15,
+    y: y + h - 24,
+    size: 14,
     font: bold,
     color: rgb(0.07, 0.1, 0.15),
   });
 
-  page.drawText(`Recut ID ${row.recutId}`, {
-    x: x + w - 110,
-    y: y + h - 20,
-    size: 12,
+  page.drawText(`Recut ID: ${row.recutId}`, {
+    x: x + w - 125,
+    y: y + h - 22,
+    size: 11,
     font: bold,
-    color: rgb(0.72, 0.11, 0.11),
+    color: rgb(0.07, 0.1, 0.15),
   });
 
+  page.drawText(`Requested: ${formatDate(row.requestedDate)} ${formatTime(row.requestedTime)}`.trim(), {
+    x: x + 14,
+    y: y + h - 42,
+    size: 10,
+    font: regular,
+    color: rgb(0.36, 0.4, 0.46),
+  });
+
+  let topY = y + h - 70;
   const leftX = x + 14;
   const rightX = x + w / 2 + 8;
-  let topY = y + h - 48;
 
   drawLabelValue(page, {
     x: leftX,
     y: topY,
-    label: "Date Requested",
-    value: formatDate(row.requestedDate),
-    labelFont: bold,
-    valueFont: regular,
-  });
-
-  drawLabelValue(page, {
-    x: rightX,
-    y: topY,
-    label: "Time Requested",
-    value: formatTime(row.requestedTime),
-    labelFont: bold,
-    valueFont: regular,
-  });
-
-  topY -= 34;
-
-  drawLabelValue(page, {
-    x: leftX,
-    y: topY,
-    label: "Name",
+    label: "Requested By",
     value: safeText(row.requestedByName),
     labelFont: bold,
     valueFont: regular,
@@ -316,6 +305,26 @@ function drawTicket(
     font: regular,
     color: rgb(0.45, 0.49, 0.55),
   });
+
+  if (row.notes) {
+    page.drawText("Notes", {
+      x: rightX,
+      y: topY + 10,
+      size: 10,
+      font: bold,
+      color: rgb(0.36, 0.4, 0.46),
+    });
+
+    drawWrappedText(
+      page,
+      safeText(row.notes),
+      rightX,
+      topY - 8,
+      w / 2 - 26,
+      regular,
+      11
+    );
+  }
 }
 
 async function buildPdf(rows: RecutRequestRow[]) {
@@ -450,6 +459,25 @@ export async function POST(req: NextRequest) {
         printedBy,
       },
     });
+
+    for (const row of rows) {
+      await createActivityHistory({
+        entityType: "recut_requests",
+        entityId: row.id,
+        eventType: "WAREHOUSE_PRINTED",
+        fieldName: "warehousePrinted",
+        previousValue: !!row.warehousePrinted,
+        newValue: true,
+        message: "Warehouse ticket printed",
+        module: "RECUT",
+        userId: (auth as any).userId != null ? String((auth as any).userId) : null,
+        userName: printedBy,
+        employeeNumber:
+          (auth as any).employeeNumber != null ? Number((auth as any).employeeNumber) : null,
+        salesOrder: parseSalesOrderNumber(row.salesOrder),
+        detailNumber: row.detailNumber,
+      });
+    }
 
     return new NextResponse(pdfBytes as BodyInit, {
       status: 200,

@@ -44,8 +44,6 @@ function defaultFromTo() {
   return { from: ymdChicago(from), to: ymdChicago(now) };
 }
 
-// --- Status highlighting helpers ---------------------------------------------
-
 function normStatus(s: unknown) {
   return String(s ?? "").trim().toLowerCase();
 }
@@ -283,6 +281,18 @@ export default function CMMSPage() {
         filterable: true,
         placeholder: "Resolution…",
         render: cell("resolution"),
+      },
+      {
+        key: "view",
+        header: "",
+        filterable: false,
+        sortable: false,
+        serverSortable: false,
+        render: (r) => (
+          <Link href={`/cmms/${r.workOrderId}`} className="btn btn-secondary btn-sm">
+            View
+          </Link>
+        ),
       },
       {
         key: "edit",

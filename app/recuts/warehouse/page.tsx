@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import DataTable, { type Column, type SortDir } from "@/components/DataTable";
 
 type Row = {
@@ -371,7 +372,7 @@ export default function RecutWarehousePage() {
           (v) => onFilterChange("warehousePrinted", v),
           "Warehouse Printed"
         ),
-        render: (r) => (r.warehousePrinted ? <span style={printedBadge}>Printed</span> : "No"),
+        render: (r) => (r.warehousePrinted ? <span className="badge badge-warning">Printed</span> : "No"),
       },
       {
         key: "warehousePrintedAt",
@@ -390,6 +391,18 @@ export default function RecutWarehousePage() {
         render: (r) => r.warehousePrintedBy || "",
       },
       {
+        key: "view",
+        header: "View",
+        sortable: false,
+        filterable: false,
+        serverSortable: false,
+        render: (r) => (
+          <Link href={`/recuts/${r.id}`} className="btn btn-secondary btn-sm">
+            View
+          </Link>
+        ),
+      },
+      {
         key: "dnpAction",
         header: "Do Not Pull Action",
         sortable: false,
@@ -400,7 +413,7 @@ export default function RecutWarehousePage() {
             type="button"
             onClick={() => toggleDoNotPull(r.id, !r.doNotPull)}
             disabled={togglingId === r.id}
-            style={dnpBtn}
+            className="btn btn-secondary btn-sm"
           >
             {togglingId === r.id
               ? "Saving..."
@@ -423,17 +436,15 @@ export default function RecutWarehousePage() {
   }
 
   return (
-    <div style={{ padding: 16 }}>
-      <div style={headerRow}>
-        <div>
-          <h1 style={{ margin: 0 }}>Warehouse Recuts</h1>
-          <p style={{ margin: "8px 0 0", color: "#6b7280" }}>
-            Select recut requests to generate warehouse pick tickets.
-          </p>
+    <div className="page-shell-wide">
+      <div className="page-header">
+        <div className="page-header-title-wrap">
+          <h1 className="page-title">Warehouse Recuts</h1>
+          <p className="page-subtitle">Select recut requests to generate warehouse pick tickets.</p>
         </div>
       </div>
 
-      {error ? <div style={errorBox}>{error}</div> : null}
+      {error ? <div className="alert alert-danger" style={{ marginBottom: 12 }}>{error}</div> : null}
 
       <DataTable<Row>
         columns={columns}
@@ -480,44 +491,6 @@ export default function RecutWarehousePage() {
     </div>
   );
 }
-
-const headerRow: React.CSSProperties = {
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "space-between",
-  gap: 12,
-  marginBottom: 12,
-};
-
-const printedBadge: React.CSSProperties = {
-  display: "inline-block",
-  padding: "3px 8px",
-  borderRadius: 999,
-  background: "#fef3c7",
-  color: "#92400e",
-  fontWeight: 700,
-  fontSize: 12,
-};
-
-const dnpBtn: React.CSSProperties = {
-  border: "none",
-  background: "#111827",
-  color: "#fff",
-  borderRadius: 6,
-  padding: "6px 10px",
-  cursor: "pointer",
-  fontWeight: 600,
-  fontSize: 12,
-};
-
-const errorBox: React.CSSProperties = {
-  marginBottom: 12,
-  padding: 12,
-  borderRadius: 8,
-  border: "1px solid #fecaca",
-  background: "#fef2f2",
-  color: "#991b1b",
-};
 
 const filterSelect: React.CSSProperties = {
   width: "100%",
