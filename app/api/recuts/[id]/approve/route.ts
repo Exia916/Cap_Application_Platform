@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAuthFromRequest } from "@/lib/auth";
 import { getRecutRequestById, updateRecutRequest } from "@/lib/repositories/recutRepo";
+import { createActivityHistory } from "@/lib/repositories/activityHistoryRepo";
 import { logAuditEvent, logError, logWarn } from "@/lib/logging/logger";
 
 export const runtime = "nodejs";
@@ -11,6 +12,14 @@ const ALLOWED_ROLES = new Set(["ADMIN", "MANAGER", "SUPERVISOR"]);
 
 function roleOk(role: string | null | undefined) {
   return ALLOWED_ROLES.has(String(role || "").trim().toUpperCase());
+}
+
+function parseSalesOrderNumber(value: string | null | undefined): number | null {
+  const s = String(value ?? "").trim();
+  const m = s.match(/^(\d{7})/);
+  if (!m) return null;
+  const n = Number(m[1]);
+  return Number.isFinite(n) ? n : null;
 }
 
 export async function POST(
@@ -138,6 +147,23 @@ export async function POST(
         designName: current.designName,
         requestedDepartment: current.requestedDepartment,
       },
+    });
+
+    await createActivityHistory({
+      entityType: "recut_requests",
+      entityId: id,
+      eventType: "SUPERVISOR_APPROVED",
+      fieldName: "supervisorApproved",
+      previousValue: false,
+      newValue: true,
+      message: "Recut request supervisor approved",
+      module: "RECUT",
+      userId: (auth as any).userId != null ? String((auth as any).userId) : null,
+      userName: authName,
+      employeeNumber:
+        (auth as any).employeeNumber != null ? Number((auth as any).employeeNumber) : null,
+      salesOrder: parseSalesOrderNumber(current.salesOrder),
+      detailNumber: current.detailNumber,
     });
 
     return NextResponse.json<Resp>({ ok: true }, { status: 200 });

@@ -1,4 +1,5 @@
 import { db } from "@/lib/db";
+import { createActivityHistory } from "@/lib/repositories/activityHistoryRepo";
 
 const S = "cmms";
 
@@ -9,6 +10,21 @@ function toInt(v: any): number | null {
   const n = Number.parseInt(String(v ?? ""), 10);
   return Number.isFinite(n) ? n : null;
 }
+
+function jsonComparable(v: unknown): string {
+  return JSON.stringify(v ?? null);
+}
+
+function trimmedOrNull(v: string | null | undefined): string | null {
+  const s = String(v ?? "").trim();
+  return s ? s : null;
+}
+
+export type ActivityActor = {
+  userId?: string | null;
+  userName?: string | null;
+  employeeNumber?: number | null;
+};
 
 /* -------------------------------------------------------------------------- */
 /* LOOKUPS                                                                     */
@@ -269,6 +285,7 @@ export async function createWorkOrder(args: {
   operatorInitials: string | null;
   commonIssueId: number;
   issueDialogue: string;
+  activityActor?: ActivityActor | null;
 }): Promise<{ workOrderId: number }> {
   const statusId = await getOpenStatusId();
 
@@ -312,7 +329,18 @@ export async function createWorkOrder(args: {
     statusId,
   ]);
 
-  return res.rows[0] as { workOrderId: number };
+  const out = res.rows[0] as { workOrderId: number };
+
+  try {
+    const snapshot = await getWorkOrderHistorySnapshot(out.workOrderId);
+    if (snapshot) {
+      await logCmmsWorkOrderCreated(snapshot, args.activityActor ?? null);
+    }
+  } catch {
+    // do not block create if activity logging fails
+  }
+
+  return out;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -394,6 +422,245 @@ export async function getWorkOrderById(workOrderId: number): Promise<WorkOrderBy
 }
 
 /* -------------------------------------------------------------------------- */
+/* WORK ORDERS - ACTIVITY HISTORY HELPERS                                      */
+/* -------------------------------------------------------------------------- */
+
+export type WorkOrderHistorySnapshot = {
+  workOrderId: number;
+  requestedAt: string;
+  requestedByUserId: string | null;
+  requestedByName: string;
+  departmentId: number;
+  department: string;
+  assetId: number;
+  asset: string;
+  priorityId: number;
+  priority: string;
+  operatorInitials: string | null;
+  typeId: number | null;
+  type: string | null;
+  techId: number | null;
+  tech: string | null;
+  commonIssueId: number;
+  commonIssue: string;
+  issueDialogue: string;
+  statusId: number;
+  status: string;
+  resolution: string | null;
+  downTimeRecorded: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export async function getWorkOrderHistorySnapshot(
+  workOrderId: number
+): Promise<WorkOrderHistorySnapshot | null> {
+  const { rows } = await db.query(
+    `
+      SELECT
+        w.work_order_id::int AS "workOrderId",
+        w.requested_at::text AS "requestedAt",
+        w.requested_by_user_id::text AS "requestedByUserId",
+        coalesce(w.requested_by_name,'')::text AS "requestedByName",
+        w.department_id::int AS "departmentId",
+        d.name::text AS "department",
+        w.asset_id::int AS "assetId",
+        a.name::text AS "asset",
+        w.priority_id::int AS "priorityId",
+        p.name::text AS "priority",
+        w.operator_initials::text AS "operatorInitials",
+        w.type_id::int AS "typeId",
+        wt.name::text AS "type",
+        w.tech_id::int AS "techId",
+        tech.name::text AS "tech",
+        w.common_issue_id::int AS "commonIssueId",
+        i.name::text AS "commonIssue",
+        w.issue_dialogue::text AS "issueDialogue",
+        w.status_id::int AS "statusId",
+        s.name::text AS "status",
+        w.resolution::text AS "resolution",
+        w.down_time_recorded::text AS "downTimeRecorded",
+        w.created_at::text AS "createdAt",
+        w.updated_at::text AS "updatedAt"
+      FROM ${S}.work_orders w
+      JOIN ${S}.departments d ON d.id = w.department_id
+      JOIN ${S}.assets a ON a.id = w.asset_id
+      JOIN ${S}.priorities p ON p.id = w.priority_id
+      JOIN ${S}.issue_catalog i ON i.id = w.common_issue_id
+      JOIN ${S}.statuses s ON s.id = w.status_id
+      LEFT JOIN ${S}.wo_types wt ON wt.id = w.type_id
+      LEFT JOIN ${S}.techs tech ON tech.id = w.tech_id
+      WHERE w.work_order_id = $1
+      LIMIT 1
+    `,
+    [workOrderId]
+  );
+
+  return (rows[0] as WorkOrderHistorySnapshot | undefined) ?? null;
+}
+
+function buildCmmsFieldChanges(
+  before: WorkOrderHistorySnapshot,
+  after: WorkOrderHistorySnapshot
+): Array<{
+  fieldName: string;
+  before: unknown;
+  after: unknown;
+  message: string;
+  eventType?: string;
+}> {
+  const changes: Array<{
+    fieldName: string;
+    before: unknown;
+    after: unknown;
+    message: string;
+    eventType?: string;
+  }> = [];
+
+  const pushIfChanged = (
+    fieldName: string,
+    oldVal: unknown,
+    newVal: unknown,
+    message: string,
+    eventType?: string
+  ) => {
+    if (jsonComparable(oldVal) !== jsonComparable(newVal)) {
+      changes.push({
+        fieldName,
+        before: oldVal ?? null,
+        after: newVal ?? null,
+        message,
+        eventType,
+      });
+    }
+  };
+
+  pushIfChanged(
+    "department_id",
+    before.department,
+    after.department,
+    `Department changed from "${before.department}" to "${after.department}".`
+  );
+
+  pushIfChanged(
+    "asset_id",
+    before.asset,
+    after.asset,
+    `Asset changed from "${before.asset}" to "${after.asset}".`
+  );
+
+  pushIfChanged(
+    "priority_id",
+    before.priority,
+    after.priority,
+    `Priority changed from "${before.priority}" to "${after.priority}".`
+  );
+
+  pushIfChanged(
+    "operator_initials",
+    before.operatorInitials,
+    after.operatorInitials,
+    `Operator initials changed from "${before.operatorInitials ?? "Blank"}" to "${after.operatorInitials ?? "Blank"}".`
+  );
+
+  pushIfChanged(
+    "common_issue_id",
+    before.commonIssue,
+    after.commonIssue,
+    `Issue changed from "${before.commonIssue}" to "${after.commonIssue}".`
+  );
+
+  pushIfChanged(
+    "issue_dialogue",
+    before.issueDialogue,
+    after.issueDialogue,
+    `Issue details were updated.`
+  );
+
+  pushIfChanged(
+    "type_id",
+    before.type,
+    after.type,
+    `Work order type changed from "${before.type ?? "Unassigned"}" to "${after.type ?? "Unassigned"}".`
+  );
+
+  pushIfChanged(
+    "tech_id",
+    before.tech,
+    after.tech,
+    `Tech changed from "${before.tech ?? "Unassigned"}" to "${after.tech ?? "Unassigned"}".`,
+    "assigned"
+  );
+
+  pushIfChanged(
+    "status_id",
+    before.status,
+    after.status,
+    `Status changed from "${before.status}" to "${after.status}".`,
+    "status_changed"
+  );
+
+  pushIfChanged(
+    "resolution",
+    before.resolution,
+    after.resolution,
+    `Resolution was updated.`,
+    "resolution_updated"
+  );
+
+  pushIfChanged(
+    "down_time_recorded",
+    before.downTimeRecorded,
+    after.downTimeRecorded,
+    `Down time recorded was updated.`
+  );
+
+  return changes;
+}
+
+export async function logCmmsWorkOrderCreated(
+  snapshot: WorkOrderHistorySnapshot,
+  actor?: ActivityActor | null
+): Promise<void> {
+  await createActivityHistory({
+    entityType: "cmms_work_order",
+    entityId: String(snapshot.workOrderId),
+    eventType: "created",
+    message: `Work order #${snapshot.workOrderId} created for asset "${snapshot.asset}".`,
+    module: "cmms",
+    userId: trimmedOrNull(actor?.userId) ?? snapshot.requestedByUserId ?? null,
+    userName: trimmedOrNull(actor?.userName) ?? snapshot.requestedByName ?? null,
+    employeeNumber: actor?.employeeNumber ?? null,
+    newValue: snapshot,
+  });
+}
+
+export async function logCmmsWorkOrderUpdates(
+  before: WorkOrderHistorySnapshot,
+  after: WorkOrderHistorySnapshot,
+  actor?: ActivityActor | null
+): Promise<void> {
+  const changes = buildCmmsFieldChanges(before, after);
+  if (!changes.length) return;
+
+  for (const change of changes) {
+    await createActivityHistory({
+      entityType: "cmms_work_order",
+      entityId: String(after.workOrderId),
+      eventType: change.eventType ?? "updated",
+      fieldName: change.fieldName,
+      previousValue: change.before,
+      newValue: change.after,
+      message: change.message,
+      module: "cmms",
+      userId: trimmedOrNull(actor?.userId) ?? null,
+      userName: trimmedOrNull(actor?.userName) ?? null,
+      employeeNumber: actor?.employeeNumber ?? null,
+    });
+  }
+}
+
+/* -------------------------------------------------------------------------- */
 /* WORK ORDERS - REQUESTER PATCH (protect tech fields)                         */
 /* -------------------------------------------------------------------------- */
 
@@ -405,7 +672,10 @@ export async function updateWorkOrderRequesterFields(args: {
   commonIssueId: number;
   operatorInitials: string | null;
   issueDialogue: string;
+  activityActor?: ActivityActor | null;
 }): Promise<{ workOrderId: number }> {
+  const before = await getWorkOrderHistorySnapshot(args.id);
+
   const sql = `
     UPDATE ${S}.work_orders
     SET
@@ -430,7 +700,18 @@ export async function updateWorkOrderRequesterFields(args: {
     args.issueDialogue,
   ]);
 
-  return res.rows[0] as { workOrderId: number };
+  const out = res.rows[0] as { workOrderId: number };
+
+  try {
+    const after = await getWorkOrderHistorySnapshot(out.workOrderId);
+    if (before && after) {
+      await logCmmsWorkOrderUpdates(before, after, args.activityActor ?? null);
+    }
+  } catch {
+    // do not block update if activity logging fails
+  }
+
+  return out;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -587,7 +868,10 @@ export async function updateWorkOrderTechFields(args: {
   statusId: number | null;
   resolution: string | null;
   downTimeRecorded: string | null;
+  activityActor?: ActivityActor | null;
 }): Promise<{ workOrderId: number }> {
+  const before = await getWorkOrderHistorySnapshot(args.id);
+
   const sql = `
     UPDATE ${S}.work_orders
     SET
@@ -610,5 +894,16 @@ export async function updateWorkOrderTechFields(args: {
     args.downTimeRecorded ?? "",
   ]);
 
-  return res.rows[0] as { workOrderId: number };
+  const out = res.rows[0] as { workOrderId: number };
+
+  try {
+    const after = await getWorkOrderHistorySnapshot(out.workOrderId);
+    if (before && after) {
+      await logCmmsWorkOrderUpdates(before, after, args.activityActor ?? null);
+    }
+  } catch {
+    // do not block update if activity logging fails
+  }
+
+  return out;
 }

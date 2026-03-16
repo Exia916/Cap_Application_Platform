@@ -40,8 +40,6 @@ function endOfMonth(d: Date) {
   return new Date(d.getFullYear(), d.getMonth() + 1, 0);
 }
 
-// --- Status highlighting helpers ---------------------------------------------
-
 function normStatus(s: unknown) {
   return String(s ?? "").trim().toLowerCase();
 }
@@ -211,7 +209,6 @@ export default function RepairRequestsPage() {
       setPageIndex(0);
       return;
     }
-    // prevMonth
     const prev = new Date(now.getFullYear(), now.getMonth() - 1, 1);
     setRequestedFrom(ymdLocal(startOfMonth(prev)));
     setRequestedTo(ymdLocal(endOfMonth(prev)));
@@ -333,6 +330,19 @@ export default function RepairRequestsPage() {
           const label = r.status == null ? "" : String(r.status);
           return <span style={statusPillStyle(label)}>{label}</span>;
         },
+      },
+      {
+        key: "view",
+        header: "",
+        width: 90,
+        sortable: false,
+        serverSortable: false,
+        filterable: false,
+        render: (r) => (
+          <Link href={`/cmms/${r.workOrderId}`} className="btn btn-secondary btn-sm">
+            View
+          </Link>
+        ),
       },
       {
         key: "edit",
