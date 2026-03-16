@@ -1317,3 +1317,237 @@ table {
     padding: 14px;
   }
 }
+
+/* -------------------------------------------------------------------------- */
+/* SALES ORDER LOOKUP                                                         */
+/* -------------------------------------------------------------------------- */
+
+.so-lookup-form {
+  display: flex;
+  align-items: end;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.so-lookup-input-wrap {
+  flex: 1 1 420px;
+  min-width: 280px;
+}
+
+.so-lookup-button-wrap {
+  display: flex;
+  align-items: end;
+}
+
+.so-alert-spacer {
+  margin-top: 12px;
+}
+
+.so-action-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.so-summary-grid,
+.so-detail-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 16px;
+}
+
+.so-kv-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.so-kv-row {
+  display: grid;
+  grid-template-columns: 180px minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+}
+
+.so-kv-label {
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--text-soft);
+}
+
+.so-kv-value {
+  color: var(--text);
+  word-break: break-word;
+}
+
+.so-card-header-pad {
+  padding: 14px 16px 0 16px;
+}
+
+.so-inner-card {
+  padding: 14px;
+}
+
+.so-list {
+  margin: 0;
+  padding-left: 18px;
+  color: var(--text);
+}
+
+.so-list li + li {
+  margin-top: 6px;
+}
+
+.so-print-shell {
+  width: 100%;
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 20px;
+}
+
+.so-print-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.so-print-page {
+  background: #fff;
+  color: #111;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  box-shadow: var(--shadow-sm);
+  padding: 18px;
+  margin-bottom: 18px;
+  break-after: page;
+}
+
+.so-print-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.so-print-header h1 {
+  margin: 0 0 6px 0;
+  font-size: 26px;
+}
+
+.so-print-header-right {
+  text-align: right;
+}
+
+.so-print-so-label,
+.so-print-line-label {
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-soft);
+}
+
+.so-print-so-value {
+  font-size: 28px;
+  font-weight: 800;
+  margin-bottom: 8px;
+}
+
+.so-print-grid-2 {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.so-print-card {
+  padding: 14px;
+}
+
+.so-print-card-title {
+  font-size: 13px;
+  font-weight: 800;
+  margin-bottom: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--text-soft);
+}
+
+.so-print-meta-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 16px;
+  margin-bottom: 16px;
+  font-size: 13px;
+}
+
+.so-print-table-wrap {
+  margin-bottom: 16px;
+}
+
+.so-print-item-table th,
+.so-print-item-table td {
+  font-size: 12px;
+}
+
+.so-print-footer {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 16px;
+  font-size: 12px;
+  color: var(--text-soft);
+}
+
+@media (min-width: 900px) {
+  .so-summary-grid,
+  .so-detail-grid,
+  .so-print-grid-2 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 768px) {
+  .so-kv-row {
+    grid-template-columns: 1fr;
+    gap: 4px;
+  }
+
+  .so-print-header,
+  .so-print-footer,
+  .so-print-toolbar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .so-print-header-right {
+    text-align: left;
+  }
+
+  .so-print-meta-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media print {
+  .so-print-shell {
+    max-width: none;
+    padding: 0;
+  }
+
+  .so-print-toolbar {
+    display: none !important;
+  }
+
+  .so-print-page {
+    border: none;
+    box-shadow: none;
+    border-radius: 0;
+    margin: 0 0 12px 0;
+    padding: 0;
+  }
+}
