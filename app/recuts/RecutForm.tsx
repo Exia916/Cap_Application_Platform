@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
 
 type LookupOption = {
   id: string;
@@ -49,6 +49,7 @@ type RecutEntry = {
 type Props = {
   mode: "add" | "edit";
   initialId?: string;
+  initialReturnTo?: string;
 };
 
 type FormErrors = {
@@ -227,15 +228,17 @@ function CapStyleCombobox({
   );
 }
 
-export default function RecutForm({ mode, initialId }: Props) {
+export default function RecutForm({
+  mode,
+  initialId,
+  initialReturnTo,
+}: Props) {
   const router = useRouter();
-  const pathname = usePathname();
-  const searchParams = useSearchParams();
 
   const fallbackBackHref = mode === "edit" ? "/recuts/supervisor-review" : "/recuts";
   const returnTo = useMemo(
-    () => sanitizeReturnTo(searchParams.get("returnTo"), fallbackBackHref),
-    [searchParams, fallbackBackHref]
+    () => sanitizeReturnTo(initialReturnTo, fallbackBackHref),
+    [initialReturnTo, fallbackBackHref]
   );
 
   const [me, setMe] = useState<MeResponse | null>(null);
@@ -282,7 +285,10 @@ export default function RecutForm({ mode, initialId }: Props) {
         const [meRes, reasonsRes, deptRes, itemsRes] = await Promise.all([
           fetch("/api/me", { cache: "no-store", credentials: "include" }),
           fetch("/api/recuts/lookups/reasons", { cache: "no-store", credentials: "include" }),
-          fetch("/api/recuts/lookups/requested-departments", { cache: "no-store", credentials: "include" }),
+          fetch("/api/recuts/lookups/requested-departments", {
+            cache: "no-store",
+            credentials: "include",
+          }),
           fetch("/api/recuts/lookups/items", { cache: "no-store", credentials: "include" }),
         ]);
 
@@ -339,12 +345,12 @@ export default function RecutForm({ mode, initialId }: Props) {
         const data = await res.json().catch(() => ({}));
 
         if (!res.ok) {
-          setServerError((data as any).error || "Failed to load recut request.");
+          setServerError((data as { error?: string }).error || "Failed to load recut request.");
           setLoading(false);
           return;
         }
 
-        const row = (data as any).entry as RecutEntry;
+        const row = (data as { entry: RecutEntry }).entry;
 
         setRecutId(row.recutId ?? null);
         setRequestedDate(row.requestedDate ?? "");
@@ -451,23 +457,30 @@ export default function RecutForm({ mode, initialId }: Props) {
   function validate(): FormErrors {
     const next: FormErrors = {};
 
-    if (!requestedDepartment.trim()) next.requestedDepartment = "Requested Department is required.";
+    if (!requestedDepartment.trim()) {
+      next.requestedDepartment = "Requested Department is required.";
+    }
 
-    if (!salesOrder.trim()) next.salesOrder = "Sales Order # is required.";
-    else if (!isValidSalesOrder(salesOrder)) {
+    if (!salesOrder.trim()) {
+      next.salesOrder = "Sales Order # is required.";
+    } else if (!isValidSalesOrder(salesOrder)) {
       next.salesOrder = "Sales Order must begin with 7 digits.";
     }
 
     if (!designName.trim()) next.designName = "Design Name is required.";
     if (!recutReason.trim()) next.recutReason = "Recut Reason is required.";
 
-    if (!detailNumber.trim()) next.detailNumber = "Detail # is required.";
-    else if (!isWholeNumberString(detailNumber)) next.detailNumber = "Detail # must be a whole number.";
+    if (!detailNumber.trim()) {
+      next.detailNumber = "Detail # is required.";
+    } else if (!isWholeNumberString(detailNumber)) {
+      next.detailNumber = "Detail # must be a whole number.";
+    }
 
     if (!capStyle.trim()) next.capStyle = "Cap Style is required.";
 
-    if (!pieces.trim()) next.pieces = "Pieces is required.";
-    else if (!isWholeNumberString(pieces) || Number(pieces) <= 0) {
+    if (!pieces.trim()) {
+      next.pieces = "Pieces is required.";
+    } else if (!isWholeNumberString(pieces) || Number(pieces) <= 0) {
       next.pieces = "Pieces must be a whole number greater than 0.";
     }
 
@@ -530,7 +543,7 @@ export default function RecutForm({ mode, initialId }: Props) {
       const data = await res.json().catch(() => ({}));
 
       if (!res.ok) {
-        setServerError((data as any).error || "Save failed.");
+        setServerError((data as { error?: string }).error || "Save failed.");
         setSaving(false);
         return;
       }
@@ -587,9 +600,21 @@ export default function RecutForm({ mode, initialId }: Props) {
           <div style={{ fontWeight: 700, marginBottom: 6 }}>
             This recut request has been voided and is read-only.
           </div>
-          {voidedAt ? <div><strong>Voided At:</strong> {fmtTs(voidedAt)}</div> : null}
-          {voidedBy ? <div><strong>Voided By:</strong> {voidedBy}</div> : null}
-          {voidReason ? <div><strong>Reason:</strong> {voidReason}</div> : null}
+          {voidedAt ? (
+            <div>
+              <strong>Voided At:</strong> {fmtTs(voidedAt)}
+            </div>
+          ) : null}
+          {voidedBy ? (
+            <div>
+              <strong>Voided By:</strong> {voidedBy}
+            </div>
+          ) : null}
+          {voidReason ? (
+            <div>
+              <strong>Reason:</strong> {voidReason}
+            </div>
+          ) : null}
         </div>
       ) : null}
 
