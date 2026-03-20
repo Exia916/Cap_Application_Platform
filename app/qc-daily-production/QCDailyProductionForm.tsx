@@ -103,12 +103,16 @@ export default function QCDailyProductionForm({ initialSubmissionId }: Props) {
   const rejectedRefs = useRef<(HTMLInputElement | null)[]>([]);
   const shippedRefs = useRef<(HTMLInputElement | null)[]>([]);
 
-  const errTextClass = "mt-1 text-xs font-semibold text-red-700";
-  const inputBaseClass = "mt-1 w-full rounded border px-3 py-2";
-  const inputErrorClass = "border-red-500 ring-2 ring-red-200";
-
   function inputClass(hasErr?: boolean) {
-    return `${inputBaseClass} ${hasErr ? inputErrorClass : ""}`;
+    return hasErr ? "input input-error" : "input";
+  }
+
+  function selectClass(hasErr?: boolean) {
+    return hasErr ? "select select-error" : "select";
+  }
+
+  function textareaClass(hasErr?: boolean) {
+    return hasErr ? "textarea textarea-error" : "textarea";
   }
 
   function updateLine(index: number, patch: Partial<Line>) {
@@ -397,22 +401,42 @@ export default function QCDailyProductionForm({ initialSubmissionId }: Props) {
   }
 
   return (
-    <>
-      <div className="mb-4">
-        <button
-          type="button"
-          className="btn btn-secondary"
-          onClick={() => router.push("/qc-daily-production")}
-        >
-          ← Back to List
-        </button>
+    <div className="section-stack">
+      <div className="page-header">
+        <div className="page-header-title-wrap">
+          <h1 className="page-title">
+            {isEditRoute ? "Edit QC Daily Production Submission" : "QC Daily Production Entry"}
+          </h1>
+          <p className="page-subtitle">
+            Enter submission details and QC line results. Required fields are marked with *.
+          </p>
+        </div>
+
+        <div>
+          <button
+            type="button"
+            className="btn btn-secondary"
+            onClick={() => router.push("/qc-daily-production")}
+          >
+            ← Back to List
+          </button>
+        </div>
       </div>
 
-      <form onSubmit={onSubmit} className="space-y-6">
-        <div className="rounded border p-4 space-y-4">
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+      <form onSubmit={onSubmit} className="section-stack">
+        <section className="card card-lg">
+          <div className="section-card-header">
             <div>
-              <label className="block text-sm font-medium">
+              <h2 className="mb-1 text-lg font-bold">Submission Details</h2>
+              <p className="text-sm text-soft m-0">
+                Enter the sales order and any submission-level notes.
+              </p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-12">
+            <div className="md:col-span-5">
+              <label className="field-label">
                 Sales Order <span className="text-red-600">*</span>
               </label>
               <input
@@ -426,39 +450,53 @@ export default function QCDailyProductionForm({ initialSubmissionId }: Props) {
                 className={inputClass(!!errors.salesOrder)}
                 placeholder="1234567 or 1234567.001"
               />
-              {errors.salesOrder ? <div className={errTextClass}>{errors.salesOrder}</div> : null}
-              <div className="mt-1 text-xs opacity-70">
+              {errors.salesOrder ? <div className="field-error">{errors.salesOrder}</div> : null}
+              <div className="field-help">
                 Enter the order reference. The system uses the first 7 digits as the base Sales Order.
               </div>
             </div>
 
-            <div className="md:col-span-3">
-              <label className="block text-sm font-medium">Header Notes</label>
-              <input
+            <div className="md:col-span-7">
+              <label className="field-label">Header Notes</label>
+              <textarea
                 value={headerNotes}
                 onChange={(e) => setHeaderNotes(e.target.value)}
-                className={inputClass(false)}
-                placeholder="Optional"
+                className={textareaClass(false)}
+                placeholder="Optional notes that apply to the whole submission"
+                rows={3}
               />
             </div>
           </div>
-        </div>
+        </section>
 
-        <div className="rounded border p-4">
-          <div className="flex items-center justify-between">
-            <h3 className="text-base font-semibold">Lines</h3>
-            <button type="button" onClick={addLine} className="btn btn-secondary btn-sm">
+        <section className="card card-lg">
+          <div className="section-card-header">
+            <div>
+              <h2 className="mb-1 text-lg font-bold">QC Lines</h2>
+              <p className="text-sm text-soft m-0">
+                Add one or more QC line results for this submission.
+              </p>
+            </div>
+
+            <button type="button" onClick={addLine} className="btn btn-secondary">
               + Add Line
             </button>
           </div>
 
-          <div className="mt-4 space-y-4">
+          <div className="space-y-4">
             {lines.map((line, idx) => {
               const le = errors.lines?.[idx] ?? {};
+
               return (
-                <div key={idx} className="rounded border p-3 space-y-3">
-                  <div className="flex items-center justify-between">
-                    <div className="font-semibold">Line {idx + 1}</div>
+                <div key={idx} className="card border border-[var(--border)] bg-[var(--surface-subtle)]">
+                  <div className="section-card-header">
+                    <div className="flex items-center gap-3">
+                      <div className="badge badge-brand-blue">Line {idx + 1}</div>
+                      <span className="text-sm text-soft">
+                        {line.detailNumber ? `Detail #${line.detailNumber}` : "New line"}
+                      </span>
+                    </div>
+
                     <button
                       type="button"
                       onClick={() => removeLine(idx)}
@@ -469,9 +507,9 @@ export default function QCDailyProductionForm({ initialSubmissionId }: Props) {
                     </button>
                   </div>
 
-                  <div className="grid grid-cols-1 gap-3 md:grid-cols-6">
-                    <div className="md:col-span-1">
-                      <label className="block text-sm font-medium">
+                  <div className="grid grid-cols-1 gap-4 md:grid-cols-12">
+                    <div className="md:col-span-2">
+                      <label className="field-label">
                         Detail # <span className="text-red-600">*</span>
                       </label>
                       <input
@@ -487,11 +525,11 @@ export default function QCDailyProductionForm({ initialSubmissionId }: Props) {
                         inputMode="numeric"
                         placeholder="1"
                       />
-                      {le.detailNumber ? <div className={errTextClass}>{le.detailNumber}</div> : null}
+                      {le.detailNumber ? <div className="field-error">{le.detailNumber}</div> : null}
                     </div>
 
-                    <div className="md:col-span-1">
-                      <label className="block text-sm font-medium">
+                    <div className="md:col-span-2">
+                      <label className="field-label">
                         Flat / 3D <span className="text-red-600">*</span>
                       </label>
                       <select
@@ -503,16 +541,16 @@ export default function QCDailyProductionForm({ initialSubmissionId }: Props) {
                           updateLine(idx, { flatOr3d: e.target.value });
                           clearLineFieldError(idx, "flatOr3d");
                         }}
-                        className={inputClass(!!le.flatOr3d)}
+                        className={selectClass(!!le.flatOr3d)}
                       >
                         <option value="FLAT">FLAT</option>
                         <option value="3D">3D</option>
                       </select>
-                      {le.flatOr3d ? <div className={errTextClass}>{le.flatOr3d}</div> : null}
+                      {le.flatOr3d ? <div className="field-error">{le.flatOr3d}</div> : null}
                     </div>
 
-                    <div>
-                      <label className="block text-sm font-medium">
+                    <div className="md:col-span-2">
+                      <label className="field-label">
                         Order Qty <span className="text-red-600">*</span>
                       </label>
                       <input
@@ -526,12 +564,13 @@ export default function QCDailyProductionForm({ initialSubmissionId }: Props) {
                         }}
                         className={inputClass(!!le.orderQuantity)}
                         inputMode="numeric"
+                        placeholder="0"
                       />
-                      {le.orderQuantity ? <div className={errTextClass}>{le.orderQuantity}</div> : null}
+                      {le.orderQuantity ? <div className="field-error">{le.orderQuantity}</div> : null}
                     </div>
 
-                    <div>
-                      <label className="block text-sm font-medium">
+                    <div className="md:col-span-2">
+                      <label className="field-label">
                         Inspected Qty <span className="text-red-600">*</span>
                       </label>
                       <input
@@ -545,12 +584,13 @@ export default function QCDailyProductionForm({ initialSubmissionId }: Props) {
                         }}
                         className={inputClass(!!le.inspectedQuantity)}
                         inputMode="numeric"
+                        placeholder="0"
                       />
-                      {le.inspectedQuantity ? <div className={errTextClass}>{le.inspectedQuantity}</div> : null}
+                      {le.inspectedQuantity ? <div className="field-error">{le.inspectedQuantity}</div> : null}
                     </div>
 
-                    <div>
-                      <label className="block text-sm font-medium">
+                    <div className="md:col-span-2">
+                      <label className="field-label">
                         Rejected Qty <span className="text-red-600">*</span>
                       </label>
                       <input
@@ -564,12 +604,13 @@ export default function QCDailyProductionForm({ initialSubmissionId }: Props) {
                         }}
                         className={inputClass(!!le.rejectedQuantity)}
                         inputMode="numeric"
+                        placeholder="0"
                       />
-                      {le.rejectedQuantity ? <div className={errTextClass}>{le.rejectedQuantity}</div> : null}
+                      {le.rejectedQuantity ? <div className="field-error">{le.rejectedQuantity}</div> : null}
                     </div>
 
-                    <div>
-                      <label className="block text-sm font-medium">
+                    <div className="md:col-span-2">
+                      <label className="field-label">
                         Qty Shipped <span className="text-red-600">*</span>
                       </label>
                       <input
@@ -583,17 +624,19 @@ export default function QCDailyProductionForm({ initialSubmissionId }: Props) {
                         }}
                         className={inputClass(!!le.quantityShipped)}
                         inputMode="numeric"
+                        placeholder="0"
                       />
-                      {le.quantityShipped ? <div className={errTextClass}>{le.quantityShipped}</div> : null}
+                      {le.quantityShipped ? <div className="field-error">{le.quantityShipped}</div> : null}
                     </div>
 
-                    <div className="md:col-span-6">
-                      <label className="block text-sm font-medium">Line Notes</label>
-                      <input
+                    <div className="md:col-span-12">
+                      <label className="field-label">Line Notes</label>
+                      <textarea
                         value={line.notes}
                         onChange={(e) => updateLine(idx, { notes: e.target.value })}
-                        className={inputClass(false)}
+                        className={textareaClass(false)}
                         placeholder="Optional"
+                        rows={2}
                       />
                     </div>
                   </div>
@@ -601,15 +644,37 @@ export default function QCDailyProductionForm({ initialSubmissionId }: Props) {
               );
             })}
           </div>
+        </section>
+
+        {serverError ? <div className="alert alert-danger">{serverError}</div> : null}
+        {successMsg ? <div className="alert alert-success">{successMsg}</div> : null}
+
+        <div className="sticky-actions">
+          <div className="flex flex-wrap gap-2 pt-3">
+            <button type="submit" disabled={saving} className="btn btn-primary">
+              {saving ? "Saving..." : isEditRoute ? "Update Submission" : "Save"}
+            </button>
+
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={() => router.push("/qc-daily-production")}
+              disabled={saving}
+            >
+              {isEditRoute ? "Cancel" : "Back to List"}
+            </button>
+
+            <button
+              type="button"
+              onClick={addLine}
+              className="btn btn-secondary"
+              disabled={saving}
+            >
+              + Add Line
+            </button>
+          </div>
         </div>
-
-        {serverError && <div className="rounded border border-red-300 p-3 text-sm">{serverError}</div>}
-        {successMsg && <div className="rounded border border-green-300 p-3 text-sm">{successMsg}</div>}
-
-        <button type="submit" disabled={saving} className="btn btn-primary">
-          {saving ? "Saving..." : isEditRoute ? "Update Submission" : "Save"}
-        </button>
       </form>
-    </>
+    </div>
   );
 }

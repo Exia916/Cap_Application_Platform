@@ -100,15 +100,16 @@ export default function DailyProductionForm(props: DailyProductionFormProps) {
   const piecesRefs = useRef<(HTMLInputElement | null)[]>([]);
   const jobberRefs = useRef<(HTMLInputElement | null)[]>([]);
 
-  const errTextClass = "mt-1 text-xs text-red-600";
+  function inputClass(isError: boolean) {
+    return `${isError ? "input input-error" : "input"}`;
+  }
 
-  function inputClass(isError: boolean, disabled = false) {
-    return [
-      "mt-1 w-full rounded border px-3 py-2 text-sm",
-      isError ? "border-red-500" : "border-gray-300",
-      disabled ? "bg-gray-100 text-gray-500 cursor-not-allowed" : "",
-      "focus:outline-none focus:ring-2 focus:ring-black/20",
-    ].join(" ");
+  function selectClass(isError: boolean) {
+    return `${isError ? "select select-error" : "select"}`;
+  }
+
+  function textareaClass(isError: boolean) {
+    return `${isError ? "textarea textarea-error" : "textarea"}`;
   }
 
   useEffect(() => {
@@ -424,8 +425,8 @@ export default function DailyProductionForm(props: DailyProductionFormProps) {
 
   if (loadingSubmission) {
     return (
-      <>
-        <div className="mb-4">
+      <div className="section-stack">
+        <div>
           <button
             type="button"
             className="btn btn-secondary"
@@ -434,28 +435,51 @@ export default function DailyProductionForm(props: DailyProductionFormProps) {
             ← Back to List
           </button>
         </div>
-        <div className="rounded border p-4 text-sm">Loading submission…</div>
-      </>
+
+        <div className="card card-lg">
+          <div className="text-sm text-muted">Loading submission…</div>
+        </div>
+      </div>
     );
   }
 
   return (
-    <>
-      <div className="mb-4">
-        <button
-          type="button"
-          className="btn btn-secondary"
-          onClick={() => router.push("/daily-production")}
-        >
-          ← Back to List
-        </button>
+    <div className="section-stack">
+      <div className="page-header">
+        <div className="page-header-title-wrap">
+          <h1 className="page-title">
+            {isEditMode ? "Embroidery Production Submission" : "Embroidery Production Entry"}
+          </h1>
+          <p className="page-subtitle">
+            Enter submission details and production lines. Required fields are marked with *.
+          </p>
+        </div>
+
+        <div>
+          <button
+            type="button"
+            className="btn btn-secondary"
+            onClick={() => router.push("/daily-production")}
+          >
+            ← Back to List
+          </button>
+        </div>
       </div>
 
-      <form onSubmit={onSubmit} className="space-y-6">
-        <div className="rounded border p-4 space-y-4">
+      <form onSubmit={onSubmit} className="section-stack">
+        <section className="card card-lg">
+          <div className="section-card-header">
+            <div>
+              <h2 className="mb-1 text-lg font-bold">Submission Details</h2>
+              <p className="text-sm text-soft m-0">
+                Enter the sales order, machine, and submission-level notes.
+              </p>
+            </div>
+          </div>
+
           <div className="grid grid-cols-1 gap-4 md:grid-cols-12">
-            <div className="md:col-span-6">
-              <label className="block text-sm font-medium">
+            <div className="md:col-span-5">
+              <label className="field-label">
                 Sales Order <span className="text-red-600">*</span>
               </label>
               <input
@@ -466,13 +490,13 @@ export default function DailyProductionForm(props: DailyProductionFormProps) {
                   setSalesOrder(e.target.value);
                   clearSalesOrderError();
                 }}
-                className={inputClass(!!errors.salesOrder, isEditMode)}
+                className={inputClass(!!errors.salesOrder)}
                 placeholder="1234567 or 1234567.001"
                 disabled={isEditMode}
                 readOnly={isEditMode}
               />
-              {errors.salesOrder ? <div className={errTextClass}>{errors.salesOrder}</div> : null}
-              <div className="mt-1 text-xs opacity-70">
+              {errors.salesOrder ? <div className="field-error">{errors.salesOrder}</div> : null}
+              <div className="field-help">
                 {isEditMode
                   ? "Sales Order cannot be changed when editing an existing submission."
                   : "Enter the order reference. The system uses the first 7 digits as the base Sales Order."}
@@ -480,12 +504,12 @@ export default function DailyProductionForm(props: DailyProductionFormProps) {
             </div>
 
             <div className="md:col-span-3">
-              <label className="block text-sm font-medium">Machine</label>
+              <label className="field-label">Machine</label>
               {machineOptions.length > 0 ? (
                 <select
                   value={machineNumber}
                   onChange={(e) => setMachineNumber(e.target.value)}
-                  className={inputClass(false)}
+                  className={selectClass(false)}
                 >
                   <option value="">Select…</option>
                   {machineOptions.map((m) => (
@@ -499,64 +523,84 @@ export default function DailyProductionForm(props: DailyProductionFormProps) {
                   value={machineNumber}
                   onChange={(e) => setMachineNumber(e.target.value)}
                   className={inputClass(false)}
-                  placeholder="Optional"
+                  placeholder=""
                 />
               )}
+              <div className="field-help">Machine assignment for this submission.</div>
             </div>
 
-            <div className="md:col-span-3 flex items-center md:pt-7">
-              <label className="inline-flex items-center gap-2 text-sm font-medium select-none">
-                <input
-                  id="annex"
-                  type="checkbox"
-                  checked={annex}
-                  onChange={(e) => {
-                    annexTouchedRef.current = true;
-                    const checked = e.target.checked;
-                    setAnnex(checked);
+            <div className="md:col-span-4">
+              <label className="field-label">Submission Type</label>
+              <div className="flex items-center gap-3 pt-2">
+                <label className="inline-flex items-center gap-3 text-sm font-medium select-none cursor-pointer">
+                  <input
+                    id="annex"
+                    type="checkbox"
+                    checked={annex}
+                    onChange={(e) => {
+                      annexTouchedRef.current = true;
+                      const checked = e.target.checked;
+                      setAnnex(checked);
 
-                    if (!checked) {
-                      setLines((prev) => prev.map((l) => ({ ...l, jobberSamplesRan: "" })));
-                      setErrors((prev) => {
-                        if (!prev.lines) return prev;
-                        const next = prev.lines.map((le) => ({ ...le, jobberSamplesRan: undefined }));
-                        return { ...prev, lines: next };
-                      });
-                    }
-                  }}
-                />
-                <span>Annex</span>
-              </label>
+                      if (!checked) {
+                        setLines((prev) => prev.map((l) => ({ ...l, jobberSamplesRan: "" })));
+                        setErrors((prev) => {
+                          if (!prev.lines) return prev;
+                          const next = prev.lines.map((le) => ({ ...le, jobberSamplesRan: undefined }));
+                          return { ...prev, lines: next };
+                        });
+                      }
+                    }}
+                  />
+                  <span className="font-semibold">Annex</span>
+                </label>
+              </div>
+              <div className="field-help">
+                When enabled, each line requires Jobber Samples Ran.
+              </div>
             </div>
 
             <div className="md:col-span-12">
-              <label className="block text-sm font-medium">Header Notes</label>
-              <input
+              <label className="field-label">Header Notes</label>
+              <textarea
                 value={headerNotes}
                 onChange={(e) => setHeaderNotes(e.target.value)}
-                className={inputClass(false)}
+                className={textareaClass(false)}
                 placeholder="Optional notes that apply to the whole submission"
+                rows={3}
               />
             </div>
           </div>
-        </div>
+        </section>
 
-        <div className="rounded border p-4">
-          <div className="flex items-center justify-between">
-            <h3 className="text-base font-semibold">Lines</h3>
-            <button type="button" onClick={addLine} className="btn btn-secondary btn-sm">
+        <section className="card card-lg">
+          <div className="section-card-header">
+            <div>
+              <h2 className="mb-1 text-lg font-bold">Production Lines</h2>
+              <p className="text-sm text-soft m-0">
+                Add one or more production lines for this submission.
+              </p>
+            </div>
+
+            <button type="button" onClick={addLine} className="btn btn-secondary">
               + Add Line
             </button>
           </div>
 
-          <div className="mt-4 space-y-4">
+          <div className="space-y-4">
             {lines.map((line, idx) => {
               const le = errors.lines?.[idx] ?? {};
 
               return (
-                <div key={idx} className="rounded border p-4">
-                  <div className="flex items-center justify-between">
-                    <div className="font-semibold">Line {idx + 1}</div>
+                <div key={idx} className="card border border-[var(--border)] bg-[var(--surface-subtle)]">
+                  <div className="section-card-header">
+                    <div className="flex items-center gap-3">
+                      <div className="badge badge-brand-blue">Line {idx + 1}</div>
+                      <span className="text-sm text-soft">
+                        {line.detailNumber ? `Detail #${line.detailNumber}` : "New line"}
+                      </span>
+                    </div>
+
                     <button
                       type="button"
                       onClick={() => removeLine(idx)}
@@ -567,9 +611,9 @@ export default function DailyProductionForm(props: DailyProductionFormProps) {
                     </button>
                   </div>
 
-                  <div className="mt-3 grid grid-cols-1 gap-4 md:grid-cols-12">
+                  <div className="grid grid-cols-1 gap-4 md:grid-cols-12">
                     <div className="md:col-span-2">
-                      <label className="block text-sm font-medium">
+                      <label className="field-label">
                         Detail # <span className="text-red-600">*</span>
                       </label>
                       <input
@@ -585,11 +629,11 @@ export default function DailyProductionForm(props: DailyProductionFormProps) {
                         placeholder="1"
                         inputMode="numeric"
                       />
-                      {le.detailNumber ? <div className={errTextClass}>{le.detailNumber}</div> : null}
+                      {le.detailNumber ? <div className="field-error">{le.detailNumber}</div> : null}
                     </div>
 
                     <div className={annex ? "md:col-span-3" : "md:col-span-4"}>
-                      <label className="block text-sm font-medium">
+                      <label className="field-label">
                         Location <span className="text-red-600">*</span>
                       </label>
                       <select
@@ -601,7 +645,7 @@ export default function DailyProductionForm(props: DailyProductionFormProps) {
                           updateLine(idx, { embroideryLocation: e.target.value });
                           clearLineFieldError(idx, "embroideryLocation");
                         }}
-                        className={inputClass(!!le.embroideryLocation)}
+                        className={selectClass(!!le.embroideryLocation)}
                       >
                         <option value="">Select…</option>
                         {locationOptions.map((opt) => (
@@ -610,11 +654,11 @@ export default function DailyProductionForm(props: DailyProductionFormProps) {
                           </option>
                         ))}
                       </select>
-                      {le.embroideryLocation ? <div className={errTextClass}>{le.embroideryLocation}</div> : null}
+                      {le.embroideryLocation ? <div className="field-error">{le.embroideryLocation}</div> : null}
                     </div>
 
                     <div className="md:col-span-2">
-                      <label className="block text-sm font-medium">
+                      <label className="field-label">
                         Stitches <span className="text-red-600">*</span>
                       </label>
                       <input
@@ -630,11 +674,11 @@ export default function DailyProductionForm(props: DailyProductionFormProps) {
                         placeholder="3200"
                         inputMode="numeric"
                       />
-                      {le.stitches ? <div className={errTextClass}>{le.stitches}</div> : null}
+                      {le.stitches ? <div className="field-error">{le.stitches}</div> : null}
                     </div>
 
                     <div className="md:col-span-2">
-                      <label className="block text-sm font-medium">
+                      <label className="field-label">
                         Pieces <span className="text-red-600">*</span>
                       </label>
                       <input
@@ -650,12 +694,12 @@ export default function DailyProductionForm(props: DailyProductionFormProps) {
                         placeholder="100"
                         inputMode="numeric"
                       />
-                      {le.pieces ? <div className={errTextClass}>{le.pieces}</div> : null}
+                      {le.pieces ? <div className="field-error">{le.pieces}</div> : null}
                     </div>
 
                     {annex ? (
-                      <div className="md:col-span-2">
-                        <label className="block text-sm font-medium">
+                      <div className="md:col-span-3">
+                        <label className="field-label">
                           Jobber Samples Ran <span className="text-red-600">*</span>
                         </label>
                         <input
@@ -671,49 +715,50 @@ export default function DailyProductionForm(props: DailyProductionFormProps) {
                           placeholder="0"
                           inputMode="numeric"
                         />
-                        {le.jobberSamplesRan ? <div className={errTextClass}>{le.jobberSamplesRan}</div> : null}
+                        {le.jobberSamplesRan ? <div className="field-error">{le.jobberSamplesRan}</div> : null}
                       </div>
                     ) : null}
 
-                    <div className={annex ? "md:col-span-1" : "md:col-span-4"}>
-                      <label className="block text-sm font-medium invisible">Flags</label>
-                      <div className={`flex flex-wrap items-center gap-4 ${annex ? "justify-start" : ""}`}>
-                        <label className="inline-flex items-center gap-2 text-sm">
+                    <div className="md:col-span-12">
+                      <label className="field-label">Flags</label>
+                      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                        <label className="muted-box inline-flex items-center gap-3 text-sm cursor-pointer">
                           <input
                             type="checkbox"
                             checked={line.is3d}
                             onChange={(e) => updateLine(idx, { is3d: e.target.checked })}
                           />
-                          <span>3D</span>
+                          <span className="font-medium">3D</span>
                         </label>
 
-                        <label className="inline-flex items-center gap-2 text-sm">
+                        <label className="muted-box inline-flex items-center gap-3 text-sm cursor-pointer">
                           <input
                             type="checkbox"
                             checked={line.isKnit}
                             onChange={(e) => updateLine(idx, { isKnit: e.target.checked })}
                           />
-                          <span>Knit</span>
+                          <span className="font-medium">Knit</span>
                         </label>
 
-                        <label className="inline-flex items-center gap-2 text-sm">
+                        <label className="muted-box inline-flex items-center gap-3 text-sm cursor-pointer">
                           <input
                             type="checkbox"
                             checked={line.detailComplete}
                             onChange={(e) => updateLine(idx, { detailComplete: e.target.checked })}
                           />
-                          <span>Detail Complete</span>
+                          <span className="font-medium">Detail Complete</span>
                         </label>
                       </div>
                     </div>
 
                     <div className="md:col-span-12">
-                      <label className="block text-sm font-medium">Line Notes</label>
-                      <input
+                      <label className="field-label">Line Notes</label>
+                      <textarea
                         value={line.notes}
                         onChange={(e) => updateLine(idx, { notes: e.target.value })}
-                        className={inputClass(false)}
+                        className={textareaClass(false)}
                         placeholder="Optional"
+                        rows={2}
                       />
                     </div>
                   </div>
@@ -721,37 +766,37 @@ export default function DailyProductionForm(props: DailyProductionFormProps) {
               );
             })}
           </div>
-        </div>
+        </section>
 
-        {serverError ? (
-          <div className="rounded border border-red-200 bg-red-50 p-3 text-sm text-red-700">
-            {serverError}
-          </div>
-        ) : null}
+        {serverError ? <div className="alert alert-danger">{serverError}</div> : null}
+        {successMsg ? <div className="alert alert-success">{successMsg}</div> : null}
 
-        {successMsg ? (
-          <div className="rounded border border-green-200 bg-green-50 p-3 text-sm text-green-700">
-            {successMsg}
-          </div>
-        ) : null}
+        <div className="sticky-actions">
+          <div className="flex flex-wrap gap-2 pt-3">
+            <button type="submit" disabled={saving} className="btn btn-primary">
+              {saving ? "Saving..." : isEditMode ? "Save Changes" : "Save"}
+            </button>
 
-        <div className="flex gap-2">
-          <button type="submit" disabled={saving} className="btn btn-primary">
-            {saving ? "Saving..." : isEditMode ? "Save Changes" : "Save"}
-          </button>
-
-          {isEditMode ? (
             <button
               type="button"
               className="btn btn-secondary"
               onClick={() => router.push("/daily-production")}
               disabled={saving}
             >
-              Cancel
+              {isEditMode ? "Cancel" : "Back to List"}
             </button>
-          ) : null}
+
+            <button
+              type="button"
+              onClick={addLine}
+              className="btn btn-secondary"
+              disabled={saving}
+            >
+              + Add Line
+            </button>
+          </div>
         </div>
       </form>
-    </>
+    </div>
   );
 }

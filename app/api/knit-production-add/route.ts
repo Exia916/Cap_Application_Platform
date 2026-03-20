@@ -162,7 +162,7 @@ async function validateBody(body: any):
   }
 
   const lines = rawLines.map(parseLine);
-  if (lines.some((x) => !x)) {
+  if (lines.some((x: KnitProductionLineInput | null) => !x)) {
     return {
       ok: false,
       error:

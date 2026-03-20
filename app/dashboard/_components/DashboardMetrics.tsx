@@ -2,9 +2,10 @@
 
 import { useEffect, useMemo, useState } from "react";
 
-type Metrics = {
+type MyMetricsResponse = {
   date: string;
 
+  // Original cards (kept intact)
   totalStitches: number;
   totalPieces: number;
 
@@ -18,37 +19,140 @@ type Metrics = {
   emblemTotalPieces: number;
 
   laserTotalPieces: number;
+
+  // New modules
+  knitProductionSubmissionCount: number;
+  knitProductionTotalQuantity: number;
+
+  knitQcSubmissionCount: number;
+  knitQcTotalInspected: number;
+  knitQcTotalRejected: number;
+
+  sampleEmbroideryEntryCount: number;
+  sampleEmbroideryTotalQuantity: number;
+  sampleEmbroideryTotalDetailCount: number;
+
+  recutRequestCount: number;
+  recutTotalPieces: number;
+  recutDoNotPullCount: number;
+
+  summary: {
+    totalSubmissions: number;
+    activeModules: number;
+    inactiveModules: number;
+    hasAnyActivity: boolean;
+  };
 };
 
-type ModuleKey = "embroidery" | "qc" | "emblem" | "laser";
+function ymdChicago(d: Date): string {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Chicago",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(d);
 
-function ymdLocal(): string {
-  const d = new Date();
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
+  const yyyy = parts.find((p) => p.type === "year")?.value ?? "1970";
+  const mm = parts.find((p) => p.type === "month")?.value ?? "01";
+  const dd = parts.find((p) => p.type === "day")?.value ?? "01";
+  return `${yyyy}-${mm}-${dd}`;
 }
 
-function fmt(n: number) {
+function addDaysToYmd(ymd: string, deltaDays: number): string {
+  const [y, m, d] = ymd.split("-").map(Number);
+  const dt = new Date(Date.UTC(y, (m || 1) - 1, d || 1));
+  dt.setUTCDate(dt.getUTCDate() + deltaDays);
+
+  const yyyy = dt.getUTCFullYear();
+  const mm = String(dt.getUTCMonth() + 1).padStart(2, "0");
+  const dd = String(dt.getUTCDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
+}
+
+function fmt(n: number | string) {
   return new Intl.NumberFormat().format(Math.round(Number(n || 0)));
 }
 
-async function fetchMetrics(date: string): Promise<Metrics> {
+async function fetchMetrics(date: string): Promise<MyMetricsResponse> {
   const res = await fetch(`/api/dashboard-metrics?date=${encodeURIComponent(date)}`, {
     cache: "no-store",
+    credentials: "include",
   });
+
   const json = await res.json().catch(() => ({}));
   if (!res.ok) {
     throw new Error(json?.error || `Request failed (${res.status})`);
   }
-  return json as Metrics;
+
+  return json as MyMetricsResponse;
 }
 
-function useModuleMetrics(initialDate: string) {
-  const [date, setDate] = useState(initialDate);
-  const [data, setData] = useState<Metrics | null>(null);
-  const [loading, setLoading] = useState(false);
+function MetricCard({
+  label,
+  value,
+}: {
+  label: string;
+  value: number | string;
+}) {
+  return (
+    <div className="card">
+      <div
+        className="text-soft"
+        style={{
+          fontSize: 12,
+          fontWeight: 800,
+          textTransform: "uppercase",
+          letterSpacing: "0.04em",
+        }}
+      >
+        {label}
+      </div>
+
+      <div
+        style={{
+          marginTop: 8,
+          fontSize: 28,
+          fontWeight: 800,
+          lineHeight: 1.1,
+        }}
+      >
+        {fmt(value)}
+      </div>
+    </div>
+  );
+}
+
+function MetricSection({
+  title,
+  children,
+}: {
+  title: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <section className="section-card">
+      <div className="section-card-header">
+        <h2 style={{ margin: 0 }}>{title}</h2>
+      </div>
+
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+          gap: 12,
+        }}
+      >
+        {children}
+      </div>
+    </section>
+  );
+}
+
+export default function DashboardMetrics() {
+  const today = useMemo(() => ymdChicago(new Date()), []);
+  const [selectedDate, setSelectedDate] = useState<string>(today);
+  const [data, setData] = useState<MyMetricsResponse | null>(null);
+  const [loading, setLoading] = useState(true);
   const [err, setErr] = useState("");
 
   useEffect(() => {
@@ -57,144 +161,142 @@ function useModuleMetrics(initialDate: string) {
     (async () => {
       setLoading(true);
       setErr("");
+
       try {
-        const d = await fetchMetrics(date);
-        if (!cancelled) setData(d);
+        const result = await fetchMetrics(selectedDate);
+        if (!cancelled) {
+          setData(result);
+        }
       } catch (e: any) {
-        if (!cancelled) setErr(e?.message || "Failed to load metrics");
-        if (!cancelled) setData(null);
+        if (!cancelled) {
+          setErr(e?.message || "Failed to load metrics");
+          setData(null);
+        }
       } finally {
-        if (!cancelled) setLoading(false);
+        if (!cancelled) {
+          setLoading(false);
+        }
       }
     })();
 
     return () => {
       cancelled = true;
     };
-  }, [date]);
+  }, [selectedDate]);
 
-  return { date, setDate, data, loading, err };
-}
+  if (loading) {
+    return <div className="card">Loading metrics…</div>;
+  }
 
-export default function DashboardMetrics() {
-  const today = useMemo(() => ymdLocal(), []);
+  if (err) {
+    return <div className="alert alert-danger">{err}</div>;
+  }
 
-  const embroidery = useModuleMetrics(today);
-  const qc = useModuleMetrics(today);
-  const emblem = useModuleMetrics(today);
-  const laser = useModuleMetrics(today);
+  if (!data) {
+    return <div className="alert alert-warning">No data returned.</div>;
+  }
 
   return (
-    <div className="space-y-4">
-      <MetricPanel
-        title="Embroidery Metrics"
-        date={embroidery.date}
-        setDate={embroidery.setDate}
-        showingText={`Showing metrics for ${embroidery.date}`}
-        loading={embroidery.loading}
-        err={embroidery.err}
+    <div className="section-stack">
+      <div
+        className="card"
+        style={{
+          display: "flex",
+          alignItems: "end",
+          gap: 10,
+          flexWrap: "wrap",
+        }}
       >
-        <StatCard label="My Total Stitches" value={fmt(embroidery.data?.totalStitches ?? 0)} />
-        <StatCard label="My Total Pieces" value={fmt(embroidery.data?.totalPieces ?? 0)} />
-      </MetricPanel>
+        <div>
+          <label className="field-label">Selected Date</label>
+          <input
+            type="date"
+            className="input"
+            value={selectedDate}
+            onChange={(e) => setSelectedDate(e.target.value)}
+          />
+        </div>
 
-      <MetricPanel
-        title="QC Metrics"
-        date={qc.date}
-        setDate={qc.setDate}
-        showingText={`Showing metrics for ${qc.date}`}
-        loading={qc.loading}
-        err={qc.err}
-      >
-        <StatCard label="QC Flat Qty Inspected" value={fmt(qc.data?.qcFlatInspected ?? 0)} />
-        <StatCard label="QC 3D Qty Inspected" value={fmt(qc.data?.qc3DInspected ?? 0)} />
-        <StatCard label="QC Total Qty Inspected" value={fmt(qc.data?.qcTotalInspected ?? 0)} />
-      </MetricPanel>
+        <button
+          type="button"
+          className="btn btn-secondary"
+          onClick={() => setSelectedDate(ymdChicago(new Date()))}
+        >
+          Today
+        </button>
 
-      <MetricPanel
-        title="Emblem Metrics"
-        date={emblem.date}
-        setDate={emblem.setDate}
-        showingText={`Showing metrics for ${emblem.date}`}
-        loading={emblem.loading}
-        err={emblem.err}
-      >
-        <StatCard label="Emblem Sew Pieces" value={fmt(emblem.data?.emblemSewPieces ?? 0)} />
-        <StatCard label="Emblem Sticker Pieces" value={fmt(emblem.data?.emblemStickerPieces ?? 0)} />
-        <StatCard label="Emblem Heat Seal Pieces" value={fmt(emblem.data?.emblemHeatSealPieces ?? 0)} />
-        <StatCard label="Emblem Total Pieces" value={fmt(emblem.data?.emblemTotalPieces ?? 0)} />
-      </MetricPanel>
+        <button
+          type="button"
+          className="btn btn-secondary"
+          onClick={() => setSelectedDate(addDaysToYmd(selectedDate, -1))}
+        >
+          Yesterday
+        </button>
 
-      <MetricPanel
-        title="Laser Metrics"
-        date={laser.date}
-        setDate={laser.setDate}
-        showingText={`Showing metrics for ${laser.date}`}
-        loading={laser.loading}
-        err={laser.err}
-      >
-        <StatCard label="Laser Total Pieces Cut" value={fmt(laser.data?.laserTotalPieces ?? 0)} />
-      </MetricPanel>
-    </div>
-  );
-}
-
-function MetricPanel({
-  title,
-  date,
-  setDate,
-  showingText,
-  loading,
-  err,
-  children,
-}: {
-  title: string;
-  date: string;
-  setDate: (v: string) => void;
-  showingText: string;
-  loading: boolean;
-  err: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="rounded-lg border bg-white p-4">
-      <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <h3 className="text-base font-semibold">{title}</h3>
-
-        <div className="flex flex-wrap items-center gap-3 text-xs text-gray-600">
-          <div className="flex items-center gap-2">
-            <span className="font-medium">Date:</span>
-            <input
-              type="date"
-              value={date}
-              onChange={(e) => setDate(e.target.value)}
-              className="h-8 rounded-md border bg-background px-2 text-xs"
-            />
-          </div>
-
-          <span>{showingText}</span>
-          {loading ? <span className="text-gray-400">(loading)</span> : null}
+        <div className="text-soft" style={{ fontSize: 13 }}>
+          Showing metrics for {data.date}
         </div>
       </div>
 
-      {err ? (
-        <div className="mb-3 rounded-md border border-red-300 bg-red-50 p-2 text-xs text-red-700">
-          {err}
+      {!data.summary.hasAnyActivity ? (
+        <div className="alert alert-info">
+          No submissions found for you on this date.
         </div>
       ) : null}
 
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-        {children}
-      </div>
-    </div>
-  );
-}
+      <MetricSection title="My Activity Summary">
+        <MetricCard label="Total Submissions" value={data.summary.totalSubmissions} />
+        <MetricCard label="Active Modules" value={data.summary.activeModules} />
+        <MetricCard label="Inactive Modules" value={data.summary.inactiveModules} />
+      </MetricSection>
 
-function StatCard({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-md border p-3">
-      <div className="text-xs text-gray-600">{label}</div>
-      <div className="mt-1 text-lg font-semibold">{value}</div>
+      <MetricSection title="Core Daily Metrics">
+        <MetricCard label="Embroidery Total Stitches" value={data.totalStitches} />
+        <MetricCard label="Embroidery Total Pieces" value={data.totalPieces} />
+
+        <MetricCard label="QC Flat Inspected" value={data.qcFlatInspected} />
+        <MetricCard label="QC 3D Inspected" value={data.qc3DInspected} />
+        <MetricCard label="QC Total Inspected" value={data.qcTotalInspected} />
+
+        <MetricCard label="Emblem Sew Pieces" value={data.emblemSewPieces} />
+        <MetricCard label="Emblem Sticker Pieces" value={data.emblemStickerPieces} />
+        <MetricCard label="Emblem Heat Seal Pieces" value={data.emblemHeatSealPieces} />
+        <MetricCard label="Emblem Total Pieces" value={data.emblemTotalPieces} />
+
+        <MetricCard label="Laser Total Pieces Cut" value={data.laserTotalPieces} />
+      </MetricSection>
+
+      <MetricSection title="Additional My Metrics">
+        <MetricCard
+          label="Knit Production Submissions"
+          value={data.knitProductionSubmissionCount}
+        />
+        <MetricCard
+          label="Knit Production Total Quantity"
+          value={data.knitProductionTotalQuantity}
+        />
+
+        <MetricCard label="Knit QC Submissions" value={data.knitQcSubmissionCount} />
+        <MetricCard label="Knit QC Total Inspected" value={data.knitQcTotalInspected} />
+        <MetricCard label="Knit QC Total Rejected" value={data.knitQcTotalRejected} />
+
+        <MetricCard
+          label="Sample Embroidery Entries"
+          value={data.sampleEmbroideryEntryCount}
+        />
+        <MetricCard
+          label="Sample Embroidery Total Quantity"
+          value={data.sampleEmbroideryTotalQuantity}
+        />
+        <MetricCard
+          label="Sample Embroidery Total Details"
+          value={data.sampleEmbroideryTotalDetailCount}
+        />
+
+        <MetricCard label="Recut Requests" value={data.recutRequestCount} />
+        <MetricCard label="Recut Total Pieces" value={data.recutTotalPieces} />
+        <MetricCard label="Recut Do Not Pull Count" value={data.recutDoNotPullCount} />
+      </MetricSection>
     </div>
   );
 }
