@@ -789,5 +789,5 @@ export async function voidKnitQcSubmission(input: {
     [input.id, input.voidedBy, input.reason ?? null]
   );
 
-  return rowCount > 0;
+  return (rowCount ?? 0) > 0;
 }

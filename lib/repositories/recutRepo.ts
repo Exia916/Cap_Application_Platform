@@ -736,7 +736,7 @@ export async function voidRecutRequest(input: {
     [input.id, input.voidedBy, input.reason ?? null]
   );
 
-  return rowCount > 0;
+  return (rowCount ?? 0) > 0;
 }
 
 export async function unvoidRecutRequest(input: {
@@ -756,7 +756,7 @@ export async function unvoidRecutRequest(input: {
     [input.id]
   );
 
-  return rowCount > 0;
+  return (rowCount ?? 0) > 0;
 }
 
 /* -------------------------------------------------------------------------- */
