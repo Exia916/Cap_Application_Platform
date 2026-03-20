@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAuthFromRequest } from "@/lib/auth";
 import {
+  canUserEditOwnRecutRequest,
   getRecutRequestById,
   updateRecutRequest,
   type RecutRequestRow,
@@ -15,7 +16,7 @@ type GetResp = { entry: RecutRequestRow } | { error: string };
 type PutResp = { ok: true } | { error: string };
 
 const VIEW_ROLES = new Set(["ADMIN", "MANAGER", "SUPERVISOR", "USER", "WAREHOUSE"]);
-const EDIT_ROLES = new Set(["ADMIN", "MANAGER", "SUPERVISOR"]);
+const POWER_EDIT_ROLES = new Set(["ADMIN", "MANAGER", "SUPERVISOR"]);
 
 function roleOk(role: string | null | undefined, allowed: Set<string>) {
   return allowed.has(String(role || "").trim().toUpperCase());
@@ -55,22 +56,25 @@ type ChangeRow = {
   newValue: unknown;
 };
 
-function buildChanges(current: RecutRequestRow, next: {
-  requestedDepartment: string;
-  salesOrder: string;
-  designName: string;
-  recutReason: string;
-  detailNumber: number;
-  capStyle: string;
-  pieces: number;
-  operator: string;
-  deliverTo: string;
-  notes: string | null;
-  event: boolean;
-  supervisorApproved: boolean;
-  warehousePrinted: boolean;
-  doNotPull: boolean;
-}) {
+function buildChanges(
+  current: RecutRequestRow,
+  next: {
+    requestedDepartment: string;
+    salesOrder: string;
+    designName: string;
+    recutReason: string;
+    detailNumber: number;
+    capStyle: string;
+    pieces: number;
+    operator: string;
+    deliverTo: string;
+    notes: string | null;
+    event: boolean;
+    supervisorApproved: boolean;
+    warehousePrinted: boolean;
+    doNotPull: boolean;
+  }
+) {
   const candidates: ChangeRow[] = [
     {
       fieldName: "requestedDepartment",
@@ -165,7 +169,7 @@ export async function GET(
   req: NextRequest,
   ctx: { params: Promise<{ id: string }> }
 ) {
-  let auth: ReturnType<typeof getAuthFromRequest> | null = null;
+  let auth: Awaited<ReturnType<typeof getAuthFromRequest>> | null = null;
   let id = "";
 
   try {
@@ -228,7 +232,7 @@ export async function PUT(
   req: NextRequest,
   ctx: { params: Promise<{ id: string }> }
 ) {
-  let auth: ReturnType<typeof getAuthFromRequest> | null = null;
+  let auth: Awaited<ReturnType<typeof getAuthFromRequest>> | null = null;
   let id = "";
 
   try {
@@ -238,7 +242,9 @@ export async function PUT(
       return NextResponse.json<PutResp>({ error: "Unauthorized" }, { status: 401 });
     }
 
-    if (!roleOk((auth as any).role, EDIT_ROLES)) {
+    const role = String((auth as any).role || "").trim().toUpperCase();
+
+    if (!roleOk(role, new Set(["ADMIN", "MANAGER", "SUPERVISOR", "USER"]))) {
       await logWarn({
         req,
         auth,
@@ -264,6 +270,37 @@ export async function PUT(
       return NextResponse.json<PutResp>({ error: "Not found" }, { status: 404 });
     }
 
+    const isPowerEditor = POWER_EDIT_ROLES.has(role);
+
+    if (!isPowerEditor) {
+      const employeeNumber =
+        (auth as any).employeeNumber != null
+          ? Number((auth as any).employeeNumber)
+          : null;
+
+      if (!employeeNumber || !Number.isFinite(employeeNumber)) {
+        return NextResponse.json<PutResp>(
+          { error: "Missing employee number in auth payload." },
+          { status: 400 }
+        );
+      }
+
+      const canEditOwn = await canUserEditOwnRecutRequest({
+        id,
+        employeeNumber,
+      });
+
+      if (!canEditOwn) {
+        return NextResponse.json<PutResp>(
+          {
+            error:
+              "You can only edit your own active recut requests before they are approved or printed.",
+          },
+          { status: 403 }
+        );
+      }
+    }
+
     const body = await req.json().catch(() => null);
     if (!body || typeof body !== "object") {
       return NextResponse.json<PutResp>({ error: "Invalid request body." }, { status: 400 });
@@ -283,7 +320,10 @@ export async function PUT(
     const event = !!(body as any).event;
 
     if (!requestedDepartment) {
-      return NextResponse.json<PutResp>({ error: "Requested Department is required." }, { status: 400 });
+      return NextResponse.json<PutResp>(
+        { error: "Requested Department is required." },
+        { status: 400 }
+      );
     }
 
     const normalizedSO = normalizeSalesOrder(rawSalesOrder);
@@ -303,7 +343,10 @@ export async function PUT(
     }
 
     if (!Number.isInteger(detailNumber) || detailNumber < 0) {
-      return NextResponse.json<PutResp>({ error: "Detail # must be a whole number." }, { status: 400 });
+      return NextResponse.json<PutResp>(
+        { error: "Detail # must be a whole number." },
+        { status: 400 }
+      );
     }
 
     if (!capStyle) {
@@ -311,7 +354,10 @@ export async function PUT(
     }
 
     if (!Number.isInteger(pieces) || pieces <= 0) {
-      return NextResponse.json<PutResp>({ error: "Pieces must be greater than 0." }, { status: 400 });
+      return NextResponse.json<PutResp>(
+        { error: "Pieces must be greater than 0." },
+        { status: 400 }
+      );
     }
 
     if (!deliverTo) {
@@ -345,7 +391,9 @@ export async function PUT(
     };
 
     const changes = buildChanges(current, nextValues);
-    const authName = String((auth as any).displayName ?? (auth as any).username ?? "Unknown").trim();
+    const authName = String(
+      (auth as any).displayName ?? (auth as any).username ?? "Unknown"
+    ).trim();
     const userId = (auth as any).userId != null ? String((auth as any).userId) : null;
     const employeeNumber =
       (auth as any).employeeNumber != null ? Number((auth as any).employeeNumber) : null;
@@ -379,6 +427,14 @@ export async function PUT(
       doNotPullAt: current.doNotPullAt ? new Date(current.doNotPullAt) : null,
       doNotPullBy: current.doNotPullBy,
     });
+
+    const reloaded = await getRecutRequestById(id);
+    if (!reloaded) {
+      return NextResponse.json<PutResp>(
+        { error: "Recut request is no longer available." },
+        { status: 409 }
+      );
+    }
 
     await logAuditEvent({
       req,

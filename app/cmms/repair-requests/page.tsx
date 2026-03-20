@@ -117,6 +117,8 @@ export default function RepairRequestsPage() {
   });
   const [requestedTo, setRequestedTo] = useState<string>(() => ymdLocal(new Date()));
 
+  const [hideResolved, setHideResolved] = useState(true);
+
   const [pageIndex, setPageIndex] = useState(0);
   const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
 
@@ -134,6 +136,7 @@ export default function RepairRequestsPage() {
 
       if (requestedFrom) url.searchParams.set("requestedFrom", requestedFrom);
       if (requestedTo) url.searchParams.set("requestedTo", requestedTo);
+      if (hideResolved) url.searchParams.set("excludeResolved", "true");
 
       for (const [k, v] of Object.entries(filters)) {
         const val = (v ?? "").trim();
@@ -161,7 +164,7 @@ export default function RepairRequestsPage() {
   useEffect(() => {
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sortBy, sortDir, pageIndex, pageSize, requestedFrom, requestedTo, JSON.stringify(filters)]);
+  }, [sortBy, sortDir, pageIndex, pageSize, requestedFrom, requestedTo, hideResolved, JSON.stringify(filters)]);
 
   function onToggleSort(nextKey: string) {
     setPageIndex(0);
@@ -406,6 +409,27 @@ export default function RepairRequestsPage() {
         />
       </div>
 
+      <label
+        style={{
+          display: "inline-flex",
+          alignItems: "center",
+          gap: 6,
+          marginLeft: 4,
+          fontSize: 13,
+          whiteSpace: "nowrap",
+        }}
+      >
+        <input
+          type="checkbox"
+          checked={hideResolved}
+          onChange={(e) => {
+            setPageIndex(0);
+            setHideResolved(e.target.checked);
+          }}
+        />
+        Hide Resolved
+      </label>
+
       <button
         type="button"
         className="btn btn-secondary"
@@ -430,6 +454,7 @@ export default function RepairRequestsPage() {
           d.setDate(d.getDate() - 30);
           setRequestedFrom(ymdLocal(d));
           setRequestedTo(ymdLocal(new Date()));
+          setHideResolved(true);
         }}
         disabled={loading}
         title="Clear all filters + reset date range"

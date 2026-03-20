@@ -6,11 +6,9 @@ import { btnSecondary } from "@/components/DataTable";
 
 type Opt = { id: number; name: string };
 
-// ✅ Updated to include requester name + date/time + labels
 type WorkOrderDto = {
   workOrderId: number;
 
-  // requester fields (ids)
   departmentId: number;
   assetId: number;
   priorityId: number;
@@ -18,23 +16,26 @@ type WorkOrderDto = {
   operatorInitials: string | null;
   issueDialogue: string;
 
-  // ✅ requester identity + timestamp
   requestedAt?: string | null;
   requestedByName?: string | null;
   requestedByUserId?: string | null;
 
-  // ✅ labels (so requester info shows “what they picked”)
   department?: string | null;
   asset?: string | null;
   priority?: string | null;
   commonIssue?: string | null;
 
-  // tech fields
   typeId: number | null;
-  techId: number | null;
+  techId: number | null; // legacy compatibility
+  techIds?: number[] | null;
   statusId: number;
   downTimeRecorded: string | null;
   resolution: string | null;
+
+  workOrderType?: string | null;
+  tech?: string | null;
+  techNames?: string[] | null;
+  status?: string | null;
 };
 
 async function fetchJson<T = any>(url: string): Promise<T> {
@@ -57,15 +58,6 @@ function formatWhen(ts?: string | null) {
   return Number.isFinite(d.getTime()) ? d.toLocaleString() : String(ts);
 }
 
-function escapeHtml(s: any) {
-  return String(s ?? "")
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#039;");
-}
-
 function nowStamp() {
   return new Date().toLocaleString();
 }
@@ -76,6 +68,13 @@ function findLabel(options: Opt[], idStr: string) {
   return options.find((o) => o.id === id)?.name ?? "";
 }
 
+function findLabels(options: Opt[], ids: string[]) {
+  const set = new Set(ids.map((v) => Number(v)).filter(Number.isFinite));
+  return options
+    .filter((o) => set.has(o.id))
+    .map((o) => o.name);
+}
+
 export default function TechWorkOrderForm({ id }: { id: string }) {
   const router = useRouter();
   const workOrderId = Number(id);
@@ -84,17 +83,14 @@ export default function TechWorkOrderForm({ id }: { id: string }) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // lookups
   const [types, setTypes] = useState<Opt[]>([]);
   const [techs, setTechs] = useState<Opt[]>([]);
   const [statuses, setStatuses] = useState<Opt[]>([]);
 
-  // loaded record (for context display)
   const [wo, setWo] = useState<WorkOrderDto | null>(null);
 
-  // tech-editable fields
   const [typeId, setTypeId] = useState("");
-  const [techId, setTechId] = useState("");
+  const [techIds, setTechIds] = useState<string[]>([]);
   const [statusId, setStatusId] = useState("");
   const [downTimeRecorded, setDownTimeRecorded] = useState("");
   const [resolution, setResolution] = useState("");
@@ -120,7 +116,13 @@ export default function TechWorkOrderForm({ id }: { id: string }) {
         setWo(dto);
 
         setTypeId(dto.typeId == null ? "" : String(dto.typeId));
-        setTechId(dto.techId == null ? "" : String(dto.techId));
+        setTechIds(
+          Array.isArray(dto.techIds) && dto.techIds.length
+            ? dto.techIds.map(String)
+            : dto.techId != null
+              ? [String(dto.techId)]
+              : []
+        );
         setStatusId(dto.statusId == null ? "" : String(dto.statusId));
         setDownTimeRecorded(dto.downTimeRecorded ?? "");
         setResolution(dto.resolution ?? "");
@@ -145,7 +147,7 @@ export default function TechWorkOrderForm({ id }: { id: string }) {
     try {
       const payload = {
         typeId: typeId || null,
-        techId: techId || null,
+        techIds: techIds.map((v) => Number(v)).filter(Number.isFinite),
         statusId: statusId || null,
         downTimeRecorded: downTimeRecorded.trim(),
         resolution: resolution.trim(),
@@ -169,241 +171,228 @@ export default function TechWorkOrderForm({ id }: { id: string }) {
     }
   }
 
-function onPrintPdf() {
-  if (!wo) return;
+  function onPrintPdf() {
+    if (!wo) return;
 
-  const typeLabel = typeId ? findLabel(types, typeId) : "";
-  const techLabel = techId ? findLabel(techs, techId) : "";
-  const statusLabel = statusId ? findLabel(statuses, statusId) : "";
+    const typeLabel = typeId ? findLabel(types, typeId) : "";
+    const techLabels = findLabels(techs, techIds);
+    const statusLabel = statusId ? findLabel(statuses, statusId) : "";
 
-  const title = `Work Order #${wo.workOrderId}`;
+    const title = `Work Order #${wo.workOrderId}`;
 
-  const w = window.open("", "_blank");
-  if (!w) {
-    alert("Popup blocked. Please allow popups for this site and try again.");
-    return;
+    const w = window.open("", "_blank");
+    if (!w) {
+      alert("Popup blocked. Please allow popups for this site and try again.");
+      return;
+    }
+
+    w.document.open();
+    w.document.write("<!doctype html><html><head><meta charset='utf-8'></head><body></body></html>");
+    w.document.close();
+
+    w.document.title = title;
+
+    const style = w.document.createElement("style");
+    style.textContent = `
+      @page { 
+        size: portrait;
+        margin: 18mm;
+      }
+
+      body { 
+        font-family: Arial, Helvetica, sans-serif; 
+        color: #111827; 
+      }
+
+      .logo {
+        text-align: center;
+        margin-bottom: 14px;
+      }
+
+      .logo img {
+        max-width: 220px;
+        height: auto;
+      }
+
+      h1 { 
+        font-size: 20px; 
+        text-align: center;
+        margin: 6px 0 12px 0; 
+      }
+
+      .sub { 
+        font-size: 11px; 
+        color: #374151; 
+        margin-bottom: 16px; 
+        display: flex; 
+        justify-content: center;
+        gap: 14px;
+        flex-wrap: wrap;
+      }
+
+      .chip { 
+        border: 1px solid #e5e7eb; 
+        padding: 4px 8px; 
+        border-radius: 999px; 
+        background: #f9fafb; 
+      }
+
+      .section { 
+        margin-top: 18px; 
+      }
+
+      .section h2 { 
+        font-size: 14px; 
+        margin-bottom: 10px; 
+        padding-bottom: 6px; 
+        border-bottom: 1px solid #e5e7eb; 
+      }
+
+      .grid { 
+        display: grid; 
+        grid-template-columns: 1fr 1fr; 
+        gap: 12px 20px; 
+      }
+
+      .label { 
+        font-size: 11px; 
+        color: #6b7280; 
+        font-weight: 700; 
+        margin-bottom: 2px; 
+      }
+
+      .value { 
+        font-size: 13px; 
+      }
+
+      .pre { 
+        white-space: pre-wrap; 
+      }
+
+      table { 
+        width: 100%; 
+        border-collapse: collapse; 
+        margin-top: 6px; 
+      }
+
+      th, td { 
+        border: 1px solid #e5e7eb; 
+        padding: 8px; 
+        font-size: 12px; 
+        vertical-align: top; 
+      }
+
+      th { 
+        background: #f3f4f6; 
+        text-align: left; 
+        width: 180px;
+      }
+    `;
+    w.document.head.appendChild(style);
+
+    const root = w.document.body;
+
+    const logoWrap = w.document.createElement("div");
+    logoWrap.className = "logo";
+
+    const logoImg = w.document.createElement("img");
+    logoImg.src = "/brand/capamerica85_logo.png";
+    logoWrap.appendChild(logoImg);
+
+    root.appendChild(logoWrap);
+
+    const h1 = w.document.createElement("h1");
+    h1.textContent = title;
+    root.appendChild(h1);
+
+    const sub = w.document.createElement("div");
+    sub.className = "sub";
+    root.appendChild(sub);
+
+    const chip = (text: string) => {
+      const s = w.document.createElement("span");
+      s.className = "chip";
+      s.textContent = text;
+      return s;
+    };
+
+    sub.appendChild(chip(`Generated: ${nowStamp()}`));
+    sub.appendChild(chip(`Requested At: ${formatWhen(wo.requestedAt) || "—"}`));
+    sub.appendChild(chip(`Requested By: ${wo.requestedByName?.trim() || "—"}`));
+
+    const section = (titleText: string) => {
+      const wrap = w.document.createElement("div");
+      wrap.className = "section";
+
+      const h2 = w.document.createElement("h2");
+      h2.textContent = titleText;
+      wrap.appendChild(h2);
+
+      root.appendChild(wrap);
+      return wrap;
+    };
+
+    const addField = (parent: HTMLElement, labelText: string, valueText: string, fullWidth = false, pre = false) => {
+      const container = w.document.createElement("div");
+      if (fullWidth) container.style.gridColumn = "1 / -1";
+
+      const lab = w.document.createElement("div");
+      lab.className = "label";
+      lab.textContent = labelText;
+
+      const val = w.document.createElement("div");
+      val.className = "value";
+      if (pre) val.classList.add("pre");
+      val.textContent = valueText || "—";
+
+      container.appendChild(lab);
+      container.appendChild(val);
+      parent.appendChild(container);
+    };
+
+    const s1 = section("Requester Information");
+    const gridEl = w.document.createElement("div");
+    gridEl.className = "grid";
+    s1.appendChild(gridEl);
+
+    addField(gridEl, "Department", wo.department?.trim() || "—");
+    addField(gridEl, "Asset", wo.asset?.trim() || "—");
+    addField(gridEl, "Priority", wo.priority?.trim() || "—");
+    addField(gridEl, "Common Issue", wo.commonIssue?.trim() || "—");
+    addField(gridEl, "Operator Name", wo.operatorInitials?.trim() || "—");
+    addField(gridEl, "Issue / Notes", wo.issueDialogue?.trim() || "—", true, true);
+
+    const s2 = section("Technician Updates");
+    const table = w.document.createElement("table");
+    const tbody = w.document.createElement("tbody");
+    table.appendChild(tbody);
+    s2.appendChild(table);
+
+    const addRow = (k: string, v: string) => {
+      const tr = w.document.createElement("tr");
+      const th = w.document.createElement("th");
+      th.textContent = k;
+      const td = w.document.createElement("td");
+      td.textContent = v || "—";
+      tr.appendChild(th);
+      tr.appendChild(td);
+      tbody.appendChild(tr);
+    };
+
+    addRow("Type", typeLabel || (typeId ? `ID ${typeId}` : "—"));
+    addRow("Assigned Tech", techLabels.length ? techLabels.join(", ") : "—");
+    addRow("Status", statusLabel || (statusId ? `ID ${statusId}` : "—"));
+    addRow("Down Time Recorded", (downTimeRecorded || "").trim() || "—");
+    addRow("Resolution", (resolution || "").trim() || "—");
+
+    w.focus();
+    setTimeout(() => w.print(), 100);
   }
-
-  w.document.open();
-  w.document.write("<!doctype html><html><head><meta charset='utf-8'></head><body></body></html>");
-  w.document.close();
-
-  w.document.title = title;
-
-  const style = w.document.createElement("style");
-  style.textContent = `
-    @page { 
-      size: portrait;
-      margin: 18mm;
-    }
-
-    body { 
-      font-family: Arial, Helvetica, sans-serif; 
-      color: #111827; 
-    }
-
-    .logo {
-      text-align: center;
-      margin-bottom: 14px;
-    }
-
-    .logo img {
-      max-width: 220px;
-      height: auto;
-    }
-
-    h1 { 
-      font-size: 20px; 
-      text-align: center;
-      margin: 6px 0 12px 0; 
-    }
-
-    .sub { 
-      font-size: 11px; 
-      color: #374151; 
-      margin-bottom: 16px; 
-      display: flex; 
-      justify-content: center;
-      gap: 14px;
-      flex-wrap: wrap;
-    }
-
-    .chip { 
-      border: 1px solid #e5e7eb; 
-      padding: 4px 8px; 
-      border-radius: 999px; 
-      background: #f9fafb; 
-    }
-
-    .section { 
-      margin-top: 18px; 
-    }
-
-    .section h2 { 
-      font-size: 14px; 
-      margin-bottom: 10px; 
-      padding-bottom: 6px; 
-      border-bottom: 1px solid #e5e7eb; 
-    }
-
-    .grid { 
-      display: grid; 
-      grid-template-columns: 1fr 1fr; 
-      gap: 12px 20px; 
-    }
-
-    .label { 
-      font-size: 11px; 
-      color: #6b7280; 
-      font-weight: 700; 
-      margin-bottom: 2px; 
-    }
-
-    .value { 
-      font-size: 13px; 
-    }
-
-    .pre { 
-      white-space: pre-wrap; 
-    }
-
-    table { 
-      width: 100%; 
-      border-collapse: collapse; 
-      margin-top: 6px; 
-    }
-
-    th, td { 
-      border: 1px solid #e5e7eb; 
-      padding: 8px; 
-      font-size: 12px; 
-      vertical-align: top; 
-    }
-
-    th { 
-      background: #f3f4f6; 
-      text-align: left; 
-      width: 180px;
-    }
-
-    .muted { 
-      color: #6b7280; 
-      font-size: 11px; 
-      margin-top: 8px; 
-    }
-  `;
-  w.document.head.appendChild(style);
-
-  const root = w.document.body;
-
-  // 🔹 Logo
-  const logoWrap = w.document.createElement("div");
-  logoWrap.className = "logo";
-
-  const logoImg = w.document.createElement("img");
-  logoImg.src = "/brand/capamerica85_logo.png"; // from public folder
-  logoWrap.appendChild(logoImg);
-
-  root.appendChild(logoWrap);
-
-  // 🔹 Title
-  const h1 = w.document.createElement("h1");
-  h1.textContent = title;
-  root.appendChild(h1);
-
-  // 🔹 Metadata chips
-  const sub = w.document.createElement("div");
-  sub.className = "sub";
-  root.appendChild(sub);
-
-  const chip = (text: string) => {
-    const s = w.document.createElement("span");
-    s.className = "chip";
-    s.textContent = text;
-    return s;
-  };
-
-  sub.appendChild(chip(`Generated: ${nowStamp()}`));
-  sub.appendChild(chip(`Requested At: ${formatWhen(wo.requestedAt) || "—"}`));
-  sub.appendChild(chip(`Requested By: ${wo.requestedByName?.trim() || "—"}`));
-
-  // 🔹 Section helper
-  const section = (titleText: string) => {
-    const wrap = w.document.createElement("div");
-    wrap.className = "section";
-
-    const h2 = w.document.createElement("h2");
-    h2.textContent = titleText;
-    wrap.appendChild(h2);
-
-    root.appendChild(wrap);
-    return wrap;
-  };
-
-  const addField = (parent: HTMLElement, labelText: string, valueText: string, fullWidth = false, pre = false) => {
-    const container = w.document.createElement("div");
-    if (fullWidth) container.style.gridColumn = "1 / -1";
-
-    const lab = w.document.createElement("div");
-    lab.className = "label";
-    lab.textContent = labelText;
-
-    const val = w.document.createElement("div");
-    val.className = "value";
-    if (pre) val.classList.add("pre");
-    val.textContent = valueText || "—";
-
-    container.appendChild(lab);
-    container.appendChild(val);
-    parent.appendChild(container);
-  };
-
-  // 🔹 Requester Info
-  const s1 = section("Requester Information");
-  const gridEl = w.document.createElement("div");
-  gridEl.className = "grid";
-  s1.appendChild(gridEl);
-
-  addField(gridEl, "Department", wo.department?.trim() || "—");
-  addField(gridEl, "Asset", wo.asset?.trim() || "—");
-  addField(gridEl, "Priority", wo.priority?.trim() || "—");
-  addField(gridEl, "Common Issue", wo.commonIssue?.trim() || "—");
-  addField(gridEl, "Operator Name", wo.operatorInitials?.trim() || "—");
-  addField(gridEl, "Issue / Notes", wo.issueDialogue?.trim() || "—", true, true);
-
-  // 🔹 Tech Updates
-  const s2 = section("Technician Updates");
-  const table = w.document.createElement("table");
-  const tbody = w.document.createElement("tbody");
-  table.appendChild(tbody);
-  s2.appendChild(table);
-
-  const addRow = (k: string, v: string) => {
-    const tr = w.document.createElement("tr");
-    const th = w.document.createElement("th");
-    th.textContent = k;
-    const td = w.document.createElement("td");
-    td.textContent = v || "—";
-    tr.appendChild(th);
-    tr.appendChild(td);
-    tbody.appendChild(tr);
-  };
-
-  addRow("Type", typeLabel || (typeId ? `ID ${typeId}` : "—"));
-  addRow("Assigned Tech", techLabel || (techId ? `ID ${techId}` : "—"));
-  addRow("Status", statusLabel || (statusId ? `ID ${statusId}` : "—"));
-  addRow("Down Time Recorded", (downTimeRecorded || "").trim() || "—");
-  addRow("Resolution", (resolution || "").trim() || "—");
-
-  w.focus();
-  setTimeout(() => w.print(), 100);
-}
 
   return (
     <div style={{ maxWidth: 780 }}>
       {error ? <div style={{ color: "crimson", marginTop: 8 }}>{error}</div> : null}
 
-      {/* ✅ Request context (read-only) — FULL requester info */}
       {wo ? (
         <div style={card}>
           <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center" }}>
@@ -476,14 +465,25 @@ function onPrintPdf() {
         </select>
 
         <label style={label}>Assigned Tech</label>
-        <select value={techId} onChange={(e) => setTechId(e.target.value)} style={input} disabled={loading || saving}>
-          <option value="">Select…</option>
+        <select
+          multiple
+          value={techIds}
+          onChange={(e) => {
+            const values = Array.from(e.target.selectedOptions).map((opt) => opt.value);
+            setTechIds(values);
+          }}
+          style={{ ...input, height: 120 }}
+          disabled={loading || saving}
+        >
           {techs.map((o) => (
             <option key={o.id} value={String(o.id)}>
               {o.name}
             </option>
           ))}
         </select>
+        <div style={{ fontSize: 12, opacity: 0.7, marginTop: 4 }}>
+          Hold Ctrl (or Cmd) to select multiple techs
+        </div>
 
         <label style={label}>Status</label>
         <select value={statusId} onChange={(e) => setStatusId(e.target.value)} style={input} disabled={loading || saving}>
@@ -522,7 +522,6 @@ function onPrintPdf() {
             Cancel
           </button>
 
-          {/* Optional: also put it down here for convenience */}
           <button
             type="button"
             style={btnSecondary}

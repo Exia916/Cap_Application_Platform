@@ -10,6 +10,13 @@ export type LookupRow = {
   isActive: boolean;
 };
 
+export type VoidMode = "exclude" | "include" | "only";
+
+export type RecutRepoOptions = {
+  includeVoided?: boolean;
+  onlyVoided?: boolean;
+};
+
 export type RecutRequestRow = {
   id: string;
   recutId: number;
@@ -50,6 +57,11 @@ export type RecutRequestRow = {
   doNotPull: boolean;
   doNotPullAt: string | null;
   doNotPullBy: string | null;
+
+  isVoided: boolean;
+  voidedAt: string | null;
+  voidedBy: string | null;
+  voidReason: string | null;
 
   createdAt: string;
   updatedAt: string;
@@ -124,7 +136,7 @@ export type UpdateRecutRequestInput = {
 
 export type SortDir = "asc" | "desc";
 
-export type RecutListFilters = {
+export type RecutListFilters = RecutRepoOptions & {
   q?: string;
 
   recutId?: string | null;
@@ -178,6 +190,24 @@ function addIlikeFilter(
   where.push(`${columnSql} ILIKE $${params.length}`);
 }
 
+function resolveVoidMode(options?: RecutRepoOptions): VoidMode {
+  if (options?.onlyVoided) return "only";
+  if (options?.includeVoided) return "include";
+  return "exclude";
+}
+
+function buildVoidedClause(mode: VoidMode): string | null {
+  switch (mode) {
+    case "include":
+      return null;
+    case "only":
+      return `COALESCE(is_voided, false) = true`;
+    case "exclude":
+    default:
+      return `COALESCE(is_voided, false) = false`;
+  }
+}
+
 function baseSelectSql() {
   return `
     SELECT
@@ -220,6 +250,11 @@ function baseSelectSql() {
       do_not_pull_at AS "doNotPullAt",
       do_not_pull_by AS "doNotPullBy",
 
+      is_voided AS "isVoided",
+      voided_at AS "voidedAt",
+      voided_by AS "voidedBy",
+      void_reason AS "voidReason",
+
       created_at AS "createdAt",
       updated_at AS "updatedAt"
     FROM public.recut_requests
@@ -249,9 +284,17 @@ function buildWhere(filters: {
 
   supervisorApproved?: boolean | null;
   warehousePrinted?: boolean | null;
+
+  includeVoided?: boolean;
+  onlyVoided?: boolean;
 }) {
   const where: string[] = [];
   const params: any[] = [];
+
+  const voidedClause = buildVoidedClause(resolveVoidMode(filters));
+  if (voidedClause) {
+    where.push(voidedClause);
+  }
 
   if (filters.employeeNumber != null) {
     params.push(filters.employeeNumber);
@@ -357,6 +400,7 @@ function getOrderBy(sortBy?: string, sortDir?: SortDir) {
     doNotPull: `do_not_pull ${dir}, requested_at DESC`,
     supervisorApproved: `supervisor_approved ${dir}, requested_at DESC`,
     warehousePrinted: `warehouse_printed ${dir}, requested_at DESC`,
+    isVoided: `is_voided ${dir}, requested_at DESC`,
   };
 
   return map[sortBy || ""] ?? `requested_at DESC, recut_id DESC`;
@@ -515,29 +559,51 @@ export async function createRecutRequest(
   return rows[0];
 }
 
-export async function getRecutRequestById(id: string): Promise<RecutRequestRow | null> {
+export async function getRecutRequestById(
+  id: string,
+  options?: RecutRepoOptions
+): Promise<RecutRequestRow | null> {
+  const { whereSql, params } = buildWhere({
+    includeVoided: options?.includeVoided,
+    onlyVoided: options?.onlyVoided,
+  });
+
+  const allParams = [...params, id];
+  const idParam = `$${allParams.length}`;
+
   const { rows } = await db.query<RecutRequestRow>(
     `
     ${baseSelectSql()}
-    WHERE id = $1
+    ${whereSql ? `${whereSql} AND id = ${idParam}` : `WHERE id = ${idParam}`}
     LIMIT 1
     `,
-    [id]
+    allParams
   );
 
   return rows[0] ?? null;
 }
 
-export async function getRecutRequestsByIds(ids: string[]): Promise<RecutRequestRow[]> {
+export async function getRecutRequestsByIds(
+  ids: string[],
+  options?: RecutRepoOptions
+): Promise<RecutRequestRow[]> {
   if (!ids.length) return [];
+
+  const { whereSql, params } = buildWhere({
+    includeVoided: options?.includeVoided,
+    onlyVoided: options?.onlyVoided,
+  });
+
+  const allParams = [...params, ids];
+  const idsParam = `$${allParams.length}`;
 
   const { rows } = await db.query<RecutRequestRow>(
     `
     ${baseSelectSql()}
-    WHERE id = ANY($1::uuid[])
-    ORDER BY array_position($1::uuid[], id)
+    ${whereSql ? `${whereSql} AND id = ANY(${idsParam}::uuid[])` : `WHERE id = ANY(${idsParam}::uuid[])`}
+    ORDER BY array_position(${idsParam}::uuid[], id)
     `,
-    [ids]
+    allParams
   );
 
   return rows;
@@ -577,6 +643,7 @@ export async function updateRecutRequest(input: UpdateRecutRequestInput): Promis
       do_not_pull_at = $22,
       do_not_pull_by = $23
     WHERE id = $1
+      AND COALESCE(is_voided, false) = false
     `,
     [
       input.id,
@@ -622,6 +689,7 @@ export async function setRecutDoNotPull(input: {
       do_not_pull_at = CASE WHEN $2 = true THEN now() ELSE NULL END,
       do_not_pull_by = CASE WHEN $2 = true THEN $3 ELSE NULL END
     WHERE id = $1
+      AND COALESCE(is_voided, false) = false
     `,
     [input.id, input.value, input.changedBy]
   );
@@ -640,12 +708,55 @@ export async function canUserEditOwnRecutRequest(input: {
         AND requested_by_employee_number = $2
         AND supervisor_approved = false
         AND warehouse_printed = false
+        AND COALESCE(is_voided, false) = false
     ) AS ok
     `,
     [input.id, input.employeeNumber]
   );
 
   return !!rows[0]?.ok;
+}
+
+export async function voidRecutRequest(input: {
+  id: string;
+  voidedBy: string;
+  reason?: string | null;
+}): Promise<boolean> {
+  const { rowCount } = await db.query(
+    `
+    UPDATE public.recut_requests
+    SET
+      is_voided = true,
+      voided_at = now(),
+      voided_by = $2,
+      void_reason = $3
+    WHERE id = $1
+      AND COALESCE(is_voided, false) = false
+    `,
+    [input.id, input.voidedBy, input.reason ?? null]
+  );
+
+  return (rowCount ?? 0) > 0;
+}
+
+export async function unvoidRecutRequest(input: {
+  id: string;
+}): Promise<boolean> {
+  const { rowCount } = await db.query(
+    `
+    UPDATE public.recut_requests
+    SET
+      is_voided = false,
+      voided_at = NULL,
+      voided_by = NULL,
+      void_reason = NULL
+    WHERE id = $1
+      AND COALESCE(is_voided, false) = true
+    `,
+    [input.id]
+  );
+
+  return (rowCount ?? 0) > 0;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -675,6 +786,9 @@ async function listPagedInternal(input: {
 
   supervisorApproved?: boolean | null;
   warehousePrinted?: boolean | null;
+
+  includeVoided?: boolean;
+  onlyVoided?: boolean;
 
   page?: number;
   pageSize?: number;
@@ -708,6 +822,9 @@ async function listPagedInternal(input: {
 
     supervisorApproved: input.supervisorApproved ?? null,
     warehousePrinted: input.warehousePrinted ?? null,
+
+    includeVoided: input.includeVoided,
+    onlyVoided: input.onlyVoided,
   });
 
   const orderBy = getOrderBy(input.sortBy, input.sortDir);
@@ -828,6 +945,7 @@ export async function approveRecutRequest(input: {
       supervisor_approved_at = now(),
       supervisor_approved_by = $2
     WHERE id = $1
+      AND COALESCE(is_voided, false) = false
     `,
     [input.id, input.approvedBy]
   );
@@ -847,6 +965,7 @@ export async function markRecutRequestsPrinted(input: {
       warehouse_printed_at = now(),
       warehouse_printed_by = $2
     WHERE id = ANY($1::uuid[])
+      AND COALESCE(is_voided, false) = false
     `,
     [input.ids, input.printedBy]
   );

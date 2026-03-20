@@ -35,6 +35,8 @@ type ApiResp =
     }
   | { error: string };
 
+const RETURN_TO = "/recuts";
+
 function boolText(v: boolean) {
   return v ? "Yes" : "No";
 }
@@ -45,6 +47,10 @@ function formatDate(value: string) {
 
 function formatTime(value: string) {
   return value ? String(value).slice(0, 8) : "";
+}
+
+function withReturnTo(path: string) {
+  return `${path}?returnTo=${encodeURIComponent(RETURN_TO)}`;
 }
 
 function boolFilter(
@@ -192,7 +198,12 @@ export default function RecutsPage() {
         sortable: true,
         filterable: false,
         filterRender: boolFilter(filters.doNotPull, (v) => onFilterChange("doNotPull", v), "Do Not Pull"),
-        render: (r) => boolText(r.doNotPull),
+        render: (r) =>
+          r.doNotPull ? (
+            <span className="badge badge-danger">DO NOT PULL</span>
+          ) : (
+            "No"
+          ),
       },
       {
         key: "supervisorApproved",
@@ -225,7 +236,7 @@ export default function RecutsPage() {
         filterable: false,
         serverSortable: false,
         render: (r) => (
-          <Link href={`/recuts/${r.id}`} className="btn btn-secondary btn-sm">
+          <Link href={withReturnTo(`/recuts/${r.id}`)} className="btn btn-secondary btn-sm">
             View
           </Link>
         ),
@@ -240,7 +251,7 @@ export default function RecutsPage() {
           r.supervisorApproved || r.warehousePrinted ? (
             <span className="text-soft">Locked</span>
           ) : (
-            <Link href={`/recuts/${r.id}/edit`} className="btn btn-primary btn-sm">
+            <Link href={withReturnTo(`/recuts/${r.id}/edit`)} className="btn btn-primary btn-sm">
               Edit
             </Link>
           ),
@@ -288,6 +299,13 @@ export default function RecutsPage() {
           setPageIndex(0);
         }}
         rowKey={(r) => r.id}
+        rowClassName={(r) =>
+          String(r.doNotPull).trim().toLowerCase() === "yes" ||
+          String(r.doNotPull).trim().toLowerCase() === "true" ||
+          String(r.doNotPull).trim() === "1"
+            ? "dt-row-danger"
+            : ""
+        }
         csvFilename="recuts.csv"
         rowToCsv={(r) => ({
           "Recut ID": r.recutId,

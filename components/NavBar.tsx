@@ -129,11 +129,19 @@ export default function NavBar() {
   const role = useMemo(() => (me?.role ?? "").trim().toUpperCase(), [me?.role]);
   const username = useMemo(() => (me?.username ?? "").trim().toLowerCase(), [me?.username]);
 
-  const isAdmin = role === "ADMIN" || username === "admin";
-  const isManager = isAdmin || role === "MANAGER" || role === "SUPERVISOR";
+  const GLOBAL_SEARCH_ROLES = [
+  "ADMIN",
+  "SUPERVISOR",
+  "MANAGER",
+  "CUSTOMER SERVICE",
+  "PURCHASING",
+  "SALES",
+] as const;
 
-  const canGlobalSearch = isAdmin || role === "MANAGER";
+const isAdmin = role === "ADMIN" || username === "admin";
+const isManager = isAdmin || role === "MANAGER" || role === "SUPERVISOR";
 
+const canGlobalSearch = GLOBAL_SEARCH_ROLES.includes(role as any);
   const canSeeRepairRequests =
     meLoaded && (isAdmin || role === "MANAGER" || role === "SUPERVISOR");
 
@@ -171,6 +179,12 @@ export default function NavBar() {
     { href: "/qc-daily-production", label: "QC" },
     { href: "/emblem-production", label: "Emblem" },
     { href: "/laser-production", label: "Laser" },
+    { href: "/knit-production", label: "Knit Production" },
+    // Added Knit QC module. Mirrors the naming pattern used for
+    // production modules like Knit Production. See Knit QC module for
+    // details.
+    { href: "/knit-qc", label: "Knit QC" },
+    { href: "/production/sample-embroidery", label: "Sample Embroidery" },
   ];
 
   const recutItems: MenuItem[] = [
@@ -224,6 +238,15 @@ export default function NavBar() {
     }
     if (pathname.startsWith("/laser-production")) {
       return { href: "/laser-production/add", label: "New Laser Entry" };
+    }
+    if (pathname.startsWith("/knit-production")) {
+      return { href: "/knit-production/add", label: "New Knit Production Entry" };
+    }
+    if (pathname.startsWith("/production/sample-embroidery")) {
+      return {
+        href: "/production/sample-embroidery/add",
+        label: "New Sample Embroidery Entry",
+      };
     }
     if (pathname.startsWith("/recuts")) {
       if (!canSeeRecuts) return null;
@@ -702,133 +725,101 @@ const brandWrap: React.CSSProperties = {
   gap: 8,
   marginRight: 8,
   textDecoration: "none",
-  paddingRight: 14,
-  borderRight: "1px solid #e5e7eb",
+  paddingRight: 8,
 };
 
 const brandTitle: React.CSSProperties = {
-  fontWeight: 900,
   fontSize: 15,
+  fontWeight: 800,
   color: "#111827",
-  letterSpacing: 0.2,
   whiteSpace: "nowrap",
 };
 
 const link: React.CSSProperties = {
-  textDecoration: "none",
-  padding: "7px 10px",
+  display: "inline-flex",
+  alignItems: "center",
+  justifyContent: "center",
+  minHeight: 38,
+  padding: "0 12px",
   borderRadius: 10,
-  color: "#374151",
-  fontWeight: 600,
+  textDecoration: "none",
+  color: "#111827",
+  fontWeight: 700,
   fontSize: 14,
   whiteSpace: "nowrap",
 };
 
 const activeLink: React.CSSProperties = {
-  backgroundColor: "#111827",
-  color: "#ffffff",
-  fontWeight: 800,
+  background: "rgba(34, 68, 139, 0.1)",
+  color: "#1d4ed8",
 };
 
 const dropBtn: React.CSSProperties = {
-  padding: "7px 10px",
+  display: "inline-flex",
+  alignItems: "center",
+  justifyContent: "center",
+  minHeight: 38,
+  padding: "0 12px",
   borderRadius: 10,
   border: "1px solid transparent",
   background: "transparent",
-  color: "#374151",
-  fontWeight: 600,
+  color: "#111827",
+  fontWeight: 700,
   fontSize: 14,
   cursor: "pointer",
   whiteSpace: "nowrap",
 };
 
 const dropBtnActive: React.CSSProperties = {
-  background: "#111827",
-  color: "#ffffff",
-  fontWeight: 800,
+  background: "rgba(34, 68, 139, 0.1)",
+  color: "#1d4ed8",
 };
 
 const dropBtnOpen: React.CSSProperties = {
-  border: "1px solid #e5e7eb",
-  boxShadow: "0 8px 24px rgba(0,0,0,0.08)",
+  background: "#ffffff",
+  border: "1px solid #d1d5db",
+  boxShadow: "0 8px 24px rgba(17,24,39,0.08)",
 };
 
 const dropBtnDisabled: React.CSSProperties = {
-  opacity: 0.4,
+  opacity: 0.55,
   cursor: "not-allowed",
 };
 
 const chev: React.CSSProperties = {
-  fontSize: 11,
-  lineHeight: "11px",
-  opacity: 0.7,
-};
-
-const quickActionBtn: React.CSSProperties = {
-  textDecoration: "none",
-  padding: "7px 14px",
-  borderRadius: 999,
-  border: "1px solid #111827",
-  background: "#111827",
-  color: "#ffffff",
-  fontWeight: 700,
-  fontSize: 13,
-  cursor: "pointer",
-  whiteSpace: "nowrap",
-};
-
-const userPillBtn: React.CSSProperties = {
-  border: "1px solid #e5e7eb",
-  background: "#ffffff",
-  borderRadius: 999,
-  padding: "7px 12px",
-  cursor: "pointer",
-  boxShadow: "0 1px 0 rgba(0,0,0,0.04)",
-};
-
-const pillOpen: React.CSSProperties = {
-  border: "1px solid #cbd5e1",
-  boxShadow: "0 8px 24px rgba(0,0,0,0.08)",
-};
-
-const userPillText: React.CSSProperties = {
-  fontSize: 13,
-  fontWeight: 600,
-  color: "#111827",
-  minWidth: 80,
-  textAlign: "center",
+  fontSize: 12,
+  lineHeight: 1,
 };
 
 const menuPanel: React.CSSProperties = {
   position: "absolute",
   top: "calc(100% + 8px)",
-  right: 0,
-  minWidth: 260,
+  left: 0,
+  minWidth: 240,
   background: "#ffffff",
-  border: "1px solid #e5e7eb",
-  borderRadius: 12,
-  boxShadow: "0 12px 28px rgba(0,0,0,0.12)",
-  padding: 8,
-  zIndex: 100,
-  maxHeight: "70vh",
-  overflowY: "auto",
+  border: "1px solid #d1d5db",
+  borderRadius: 14,
+  boxShadow: "0 12px 30px rgba(17,24,39,0.12)",
+  padding: 6,
+  zIndex: 60,
 };
 
 const menuHeader: React.CSSProperties = {
-  padding: "8px 10px",
+  padding: "10px 12px",
+  display: "grid",
+  gap: 2,
 };
 
 const menuUserName: React.CSSProperties = {
   fontWeight: 800,
-  fontSize: 13,
   color: "#111827",
+  fontSize: 14,
 };
 
 const menuUserMeta: React.CSSProperties = {
-  marginTop: 2,
-  fontWeight: 600,
-  fontSize: 11,
   color: "#6b7280",
+  fontSize: 12,
+  fontWeight: 700,
 };
 
 const menuDivider: React.CSSProperties = {
@@ -838,68 +829,101 @@ const menuDivider: React.CSSProperties = {
 };
 
 const menuSectionTitle: React.CSSProperties = {
-  fontSize: 11,
-  fontWeight: 700,
-  color: "#9ca3af",
+  padding: "8px 10px 6px 10px",
+  fontSize: 12,
+  fontWeight: 800,
+  color: "#6b7280",
   textTransform: "uppercase",
-  letterSpacing: 0.6,
-  padding: "4px 6px 2px 6px",
+  letterSpacing: 0.4,
 };
 
 const menuItem: React.CSSProperties = {
-  display: "block",
-  textDecoration: "none",
-  padding: "9px 10px",
+  display: "flex",
+  alignItems: "center",
+  minHeight: 38,
+  padding: "0 10px",
   borderRadius: 10,
+  textDecoration: "none",
   color: "#111827",
-  fontWeight: 600,
-  fontSize: 13,
+  fontWeight: 700,
+  fontSize: 14,
 };
 
 const menuItemActive: React.CSSProperties = {
-  background: "#f3f4f6",
-  fontWeight: 700,
+  background: "rgba(34, 68, 139, 0.08)",
+  color: "#1d4ed8",
 };
 
 const menuItemDanger: React.CSSProperties = {
   ...menuItem,
   color: "#b91c1c",
-  background: "#fff5f5",
-  border: "1px solid #fecaca",
 };
 
 const searchWrap: React.CSSProperties = {
   display: "flex",
   alignItems: "center",
-  gap: 6,
-  padding: "4px 4px 4px 10px",
-  borderRadius: 999,
-  border: "1px solid #e5e7eb",
-  background: "#ffffff",
-  boxShadow: "0 1px 0 rgba(0,0,0,0.04)",
-  overflow: "hidden",
+  gap: 8,
 };
 
 const searchInput: React.CSSProperties = {
-  border: "none",
-  outline: "none",
-  fontSize: 13,
-  padding: "4px 0",
-  flex: 1,
+  width: "100%",
   minWidth: 0,
-  color: "#111827",
-  background: "transparent",
+  height: 38,
+  borderRadius: 10,
+  border: "1px solid #d1d5db",
+  padding: "0 12px",
+  fontSize: 14,
+  outline: "none",
 };
 
 const searchBtn: React.CSSProperties = {
-  height: 28,
+  height: 38,
+  padding: "0 12px",
+  borderRadius: 10,
+  border: "1px solid #d1d5db",
+  background: "#ffffff",
+  color: "#111827",
+  fontWeight: 700,
+  cursor: "pointer",
+};
+
+const quickActionBtn: React.CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  justifyContent: "center",
+  minHeight: 38,
+  padding: "0 14px",
+  borderRadius: 10,
+  textDecoration: "none",
+  background: "#22448b",
+  color: "#ffffff",
+  fontWeight: 800,
+  fontSize: 14,
+  whiteSpace: "nowrap",
+};
+
+const userPillBtn: React.CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  justifyContent: "center",
+  minHeight: 38,
   padding: "0 12px",
   borderRadius: 999,
-  border: "1px solid #111827",
-  background: "#111827",
-  color: "#fff",
-  fontWeight: 700,
-  fontSize: 12,
+  border: "1px solid #d1d5db",
+  background: "#ffffff",
+  color: "#111827",
   cursor: "pointer",
-  flexShrink: 0,
+};
+
+const pillOpen: React.CSSProperties = {
+  boxShadow: "0 8px 24px rgba(17,24,39,0.08)",
+};
+
+const userPillText: React.CSSProperties = {
+  fontWeight: 800,
+  fontSize: 13,
+  maxWidth: 180,
+  overflow: "hidden",
+  textOverflow: "ellipsis",
+  whiteSpace: "nowrap",
 };

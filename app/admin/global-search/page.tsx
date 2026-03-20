@@ -11,7 +11,16 @@ type Me = {
   role: string | null;
 };
 
-type SectionKey = "daily" | "qc" | "emblem" | "laser" | "recut" | "workOrders";
+type SectionKey =
+  | "daily"
+  | "qc"
+  | "emblem"
+  | "laser"
+  | "sampleEmbroidery"
+  | "knitProduction"
+  | "knitQc"
+  | "recut"
+  | "workOrders";
 
 type Section = {
   key: SectionKey;
@@ -28,6 +37,15 @@ type ApiResponse = {
   limit: number;
   sections: Section[];
 };
+
+const GLOBAL_SEARCH_ROLES = [
+  "ADMIN",
+  "SUPERVISOR",
+  "MANAGER",
+  "CUSTOMER SERVICE",
+  "PURCHASING",
+  "SALES",
+];
 
 const nf0 = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
 
@@ -75,6 +93,9 @@ function getOpenUrl(sectionKey: SectionKey, q: string) {
   if (sectionKey === "qc") return `/admin/qc-daily-production-all?q=${encodeURIComponent(q)}`;
   if (sectionKey === "emblem") return `/admin/emblem-production-all?q=${encodeURIComponent(q)}`;
   if (sectionKey === "laser") return `/admin/laser-production-all?q=${encodeURIComponent(q)}`;
+  if (sectionKey === "sampleEmbroidery") return `/production/sample-embroidery?q=${encodeURIComponent(q)}`;
+  if (sectionKey === "knitProduction") return `/knit-production?q=${encodeURIComponent(q)}`;
+  if (sectionKey === "knitQc") return `/knit-qc?q=${encodeURIComponent(q)}`;
   if (sectionKey === "recut") return `/recuts?q=${encodeURIComponent(q)}`;
   return `/cmms?q=${encodeURIComponent(q)}`;
 }
@@ -99,12 +120,115 @@ function getRowUrl(sectionKey: SectionKey, r: any): string | null {
     return r?.id ? `/laser-production/${encodeURIComponent(String(r.id))}` : null;
   }
 
+  if (sectionKey === "sampleEmbroidery") {
+    return r?.id ? `/production/sample-embroidery/${encodeURIComponent(String(r.id))}` : null;
+  }
+
+  if (sectionKey === "knitProduction") {
+    const id = r?.submission_id ?? r?.id;
+    return id ? `/knit-production/${encodeURIComponent(String(id))}` : null;
+  }
+
+  if (sectionKey === "knitQc") {
+    const id = r?.submission_id ?? r?.id;
+    return id ? `/knit-qc/${encodeURIComponent(String(id))}` : null;
+  }
+
   if (sectionKey === "recut") {
     return r?.id ? `/recuts/${encodeURIComponent(String(r.id))}` : null;
   }
 
   const workOrderId = r?.work_order_id ?? r?.id;
   return workOrderId ? `/cmms/${encodeURIComponent(String(workOrderId))}` : null;
+}
+
+function KeyFields({ sectionKey, r }: { sectionKey: SectionKey; r: any }) {
+  if (sectionKey === "daily") {
+    return (
+      <span>
+        SO: <b>{r.sales_order ?? ""}</b> · Detail: <b>{r.detail_number ?? ""}</b> · Loc:{" "}
+        <b>{r.embroidery_location ?? ""}</b> · Pieces: <b>{r.pieces ?? ""}</b> · Stitches:{" "}
+        <b>{r.stitches ?? ""}</b> · Shift: <b>{r.shift ?? ""}</b> · Machine:{" "}
+        <b>{r.machine_number ?? ""}</b>
+      </span>
+    );
+  }
+
+  if (sectionKey === "qc") {
+    return (
+      <span>
+        SO: <b>{r.sales_order ?? ""}</b> · Detail: <b>{r.detail_number ?? ""}</b> · Flat/3D:{" "}
+        <b>{r.flat_or_3d ?? ""}</b> · Order Qty: <b>{r.order_quantity ?? ""}</b> · Inspected:{" "}
+        <b>{r.inspected_quantity ?? ""}</b> · Rejected: <b>{r.rejected_quantity ?? ""}</b>
+      </span>
+    );
+  }
+
+  if (sectionKey === "emblem") {
+    return (
+      <span>
+        SO: <b>{r.sales_order ?? ""}</b> · Detail: <b>{r.detail_number ?? ""}</b> · Type:{" "}
+        <b>{r.emblem_type ?? ""}</b> · Logo: <b>{r.logo_name ?? ""}</b> · Pieces:{" "}
+        <b>{r.pieces ?? ""}</b>
+      </span>
+    );
+  }
+
+  if (sectionKey === "laser") {
+    return (
+      <span>
+        SO: <b>{r.sales_order ?? ""}</b> · Leather: <b>{r.leather_style_color ?? ""}</b> · Pieces:{" "}
+        <b>{r.pieces_cut ?? ""}</b>
+      </span>
+    );
+  }
+
+  if (sectionKey === "sampleEmbroidery") {
+    return (
+      <span>
+        SO: <b>{r.sales_order ?? ""}</b> · Detail Count: <b>{r.detail_count ?? ""}</b> · Qty:{" "}
+        <b>{r.quantity ?? ""}</b>
+      </span>
+    );
+  }
+
+  if (sectionKey === "knitProduction") {
+    return (
+      <span>
+        SO: <b>{r.sales_order ?? r.sales_order_display ?? ""}</b> · Detail:{" "}
+        <b>{r.detail_number ?? ""}</b> · Item Style: <b>{r.item_style ?? ""}</b> · Logo:{" "}
+        <b>{r.logo ?? ""}</b> · Qty: <b>{r.quantity ?? ""}</b> · Shift: <b>{r.shift ?? ""}</b>
+      </span>
+    );
+  }
+
+  if (sectionKey === "knitQc") {
+    return (
+      <span>
+        SO: <b>{r.sales_order ?? r.sales_order_display ?? ""}</b> · Detail:{" "}
+        <b>{r.detail_number ?? ""}</b> · Logo: <b>{r.logo ?? ""}</b> · Order Qty:{" "}
+        <b>{r.order_quantity ?? ""}</b> · Inspected: <b>{r.inspected_quantity ?? ""}</b> · Rejected:{" "}
+        <b>{r.rejected_quantity ?? ""}</b> · QC Emp#: <b>{r.qc_employee_number ?? ""}</b>
+      </span>
+    );
+  }
+
+  if (sectionKey === "recut") {
+    return (
+      <span>
+        Recut ID: <b>{r.recut_id ?? ""}</b> · SO: <b>{r.sales_order ?? ""}</b> · Detail:{" "}
+        <b>{r.detail_number ?? ""}</b> · Style: <b>{r.cap_style ?? ""}</b> · Pieces:{" "}
+        <b>{r.pieces ?? ""}</b>
+      </span>
+    );
+  }
+
+  return (
+    <span>
+      WO#: <b>{r.work_order_id ?? r.id ?? ""}</b> · Department: <b>{r.department ?? ""}</b> · Asset:{" "}
+      <b>{r.asset ?? ""}</b> · Priority: <b>{r.priority ?? ""}</b> · Status: <b>{r.status ?? ""}</b>
+    </span>
+  );
 }
 
 function GlobalSearchPageInner() {
@@ -125,7 +249,7 @@ function GlobalSearchPageInner() {
   const [error, setError] = useState<string | null>(null);
 
   const role = useMemo(() => (me?.role ?? "").trim().toUpperCase(), [me?.role]);
-  const canAccess = role === "ADMIN" || role === "MANAGER";
+  const canAccess = GLOBAL_SEARCH_ROLES.includes(role);
 
   useEffect(() => {
     let alive = true;
@@ -218,7 +342,8 @@ function GlobalSearchPageInner() {
         <h1 style={{ marginBottom: 10 }}>Global Search</h1>
         <div style={{ color: "crimson", fontWeight: 800 }}>You do not have access to Global Search.</div>
         <div style={{ marginTop: 10, color: "#6b7280", fontSize: 13 }}>
-          Allowed roles: <b>ADMIN</b>, <b>MANAGER</b>. (Your role from /api/me is: <b>{me?.role ?? "null"}</b>)
+          Allowed roles: <b>{GLOBAL_SEARCH_ROLES.join(", ")}</b>. (Your role from /api/me is:{" "}
+          <b>{me?.role ?? "null"}</b>)
         </div>
       </div>
     );
@@ -256,7 +381,6 @@ function GlobalSearchPageInner() {
 
       {error && <div style={{ color: "crimson", marginBottom: 10 }}>{error}</div>}
       {loading && <div style={{ marginBottom: 10, fontWeight: 800 }}>Searching…</div>}
-
       {!q ? <div style={{ color: "#6b7280" }}>Type a value in the navbar search and press Enter / Search.</div> : null}
 
       {data?.sections?.map((sec) => (
@@ -265,10 +389,7 @@ function GlobalSearchPageInner() {
             <div style={{ fontWeight: 900 }}>{sec.title}</div>
             <div style={{ color: "#6b7280", fontSize: 12 }}>Matches: {fmtInt(sec.count)}</div>
 
-            <button
-              onClick={() => router.push(getOpenUrl(sec.key, q))}
-              style={btnGhost}
-            >
+            <button onClick={() => router.push(getOpenUrl(sec.key, q))} style={btnGhost}>
               Open {sec.title}
             </button>
           </div>
@@ -331,115 +452,69 @@ function GlobalSearchPageInner() {
   );
 }
 
-function KeyFields({ sectionKey, r }: { sectionKey: SectionKey; r: any }) {
-  if (sectionKey === "daily") {
-    return (
-      <span>
-        SO: <b>{r.sales_order ?? ""}</b> · Detail: <b>{r.detail_number ?? ""}</b> · Loc: <b>{r.embroidery_location ?? ""}</b> ·
-        Pieces: <b>{r.pieces ?? ""}</b> · Stitches: <b>{r.stitches ?? ""}</b> · Shift: <b>{r.shift ?? ""}</b> · Machine: <b>{r.machine_number ?? ""}</b>
-      </span>
-    );
-  }
-
-  if (sectionKey === "qc") {
-    return (
-      <span>
-        SO: <b>{r.sales_order ?? ""}</b> · Detail: <b>{r.detail_number ?? ""}</b> · Flat/3D: <b>{r.flat_or_3d ?? ""}</b> ·
-        Inspected: <b>{r.inspected_quantity ?? ""}</b> · Rejected: <b>{r.rejected_quantity ?? ""}</b> · Shipped: <b>{r.quantity_shipped ?? ""}</b>
-      </span>
-    );
-  }
-
-  if (sectionKey === "emblem") {
-    return (
-      <span>
-        SO: <b>{r.sales_order ?? ""}</b> · Detail: <b>{r.detail_number ?? ""}</b> · Type: <b>{r.emblem_type ?? ""}</b> ·
-        Logo: <b>{r.logo_name ?? ""}</b> · Pieces: <b>{r.pieces ?? ""}</b>
-      </span>
-    );
-  }
-
-  if (sectionKey === "laser") {
-    return (
-      <span>
-        SO: <b>{r.sales_order ?? ""}</b> · Leather: <b>{r.leather_style_color ?? ""}</b> · Pieces Cut: <b>{r.pieces_cut ?? ""}</b>
-      </span>
-    );
-  }
-
-  if (sectionKey === "recut") {
-    return (
-      <span>
-        Recut ID: <b>{r.recut_id ?? ""}</b> · SO: <b>{r.sales_order ?? ""}</b> · Detail: <b>{r.detail_number ?? ""}</b> ·
-        Design: <b>{r.design_name ?? ""}</b> · Reason: <b>{r.recut_reason ?? ""}</b> · Style: <b>{r.cap_style ?? ""}</b> ·
-        Pieces: <b>{r.pieces ?? ""}</b> · Deliver To: <b>{r.deliver_to ?? ""}</b> · Dept: <b>{r.requested_department ?? ""}</b>
-      </span>
-    );
-  }
-
+function GlobalSearchPageFallback() {
   return (
-    <span>
-      WO#: <b>{r.work_order_id ?? r.id ?? ""}</b> · Dept: <b>{r.department ?? ""}</b> · Asset: <b>{r.asset ?? ""}</b> ·
-      Priority: <b>{r.priority ?? ""}</b> · Issue: <b>{r.common_issue ?? ""}</b> · Status: <b>{r.status ?? ""}</b> ·
-      Tech: <b>{r.tech ?? ""}</b> · Type: <b>{r.work_order_type ?? ""}</b>
-    </span>
+    <div style={{ padding: 16 }}>
+      <h1 style={{ marginBottom: 6 }}>Global Search</h1>
+      <div style={{ color: "#6b7280" }}>Loading…</div>
+    </div>
+  );
+}
+
+export default function GlobalSearchPage() {
+  return (
+    <Suspense fallback={<GlobalSearchPageFallback />}>
+      <GlobalSearchPageInner />
+    </Suspense>
   );
 }
 
 const input: React.CSSProperties = {
-  height: 34,
-  borderRadius: 10,
-  border: "1px solid #d1d5db",
+  height: 36,
   padding: "0 10px",
+  borderRadius: 8,
+  border: "1px solid #d1d5db",
   background: "#fff",
-  fontSize: 13,
-  outline: "none",
+  color: "#111827",
 };
 
 const sectionCard: React.CSSProperties = {
-  border: "1px solid #ddd",
-  borderRadius: 14,
-  padding: 12,
+  border: "1px solid #e5e7eb",
+  borderRadius: 12,
+  padding: 14,
   marginBottom: 14,
-  background: "#fff",
-};
-
-const th: React.CSSProperties = {
-  textAlign: "left",
-  padding: 10,
-  borderBottom: "1px solid #ddd",
-  background: "#fafafa",
-  whiteSpace: "nowrap",
-};
-
-const td: React.CSSProperties = {
-  padding: 10,
-  borderBottom: "1px solid #eee",
-  verticalAlign: "top",
+  background: "#f9fafb",
 };
 
 const btnGhost: React.CSSProperties = {
   marginLeft: "auto",
-  height: 30,
+  height: 32,
   padding: "0 12px",
-  borderRadius: 10,
+  borderRadius: 8,
   border: "1px solid #d1d5db",
-  background: "#ffffff",
+  background: "#fff",
+  color: "#111827",
+  cursor: "pointer",
+  fontWeight: 700,
+};
+
+const th: React.CSSProperties = {
+  textAlign: "left",
+  padding: "10px 12px",
+  borderBottom: "1px solid #e5e7eb",
+  background: "#f9fafb",
   color: "#111827",
   fontWeight: 800,
-  fontSize: 12,
-  cursor: "pointer",
+  whiteSpace: "nowrap",
+};
+
+const td: React.CSSProperties = {
+  padding: "10px 12px",
+  borderBottom: "1px solid #f1f5f9",
+  verticalAlign: "top",
+  color: "#111827",
 };
 
 const rowClickable: React.CSSProperties = {
   cursor: "pointer",
 };
-
-
-export default function GlobalSearchPage() {
-  return (
-    <Suspense fallback={<div style={{ padding: 16 }}>Loading…</div>}>
-      <GlobalSearchPageInner />
-    </Suspense>
-  );
-}

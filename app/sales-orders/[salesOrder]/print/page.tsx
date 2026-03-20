@@ -60,11 +60,15 @@ type SbtSalesOrderItem = {
   uom?: string;
   stockitem?: string;
   defaultbin?: string;
+  rqdate?: string;
+  shipdate?: string;
 };
 
 type SbtSalesOrderDecoration = {
+  sono?: string;
   lineNo?: number;
   decoNo?: number | string;
+  sortCode?: string;
   colors?: number | string;
   dcType?: string;
   dcLocation?: string;
@@ -73,13 +77,31 @@ type SbtSalesOrderDecoration = {
   stCount?: number;
   prevSono?: string | number;
   prevLine?: number;
+  prevDeco?: number;
+  wChange?: string;
+  provided?: string;
+  inHouse?: string;
+  tallEt?: string;
+  addUser?: string;
+  addDate?: string;
+  addTime?: string;
+  lckStat?: string;
+  lckUser?: string;
+  lckDate?: string;
+  lckTime?: string;
   descrip?: string;
+  preClose?: string;
+  dcStat?: string;
+  knitLines?: number;
 };
 
 type SbtSalesOrderInfo = {
   orderDate?: string;
   enteredBy?: string;
   csRep?: string;
+  industry?: string;
+  event?: string;
+  soStat?: string;
   type?: string;
   custType?: string;
   shipVia?: string;
@@ -96,12 +118,32 @@ type SbtSalesOrderInfo = {
   items?: SbtSalesOrderItem[];
 };
 
+type SbtSalesOrderPrintFlags = {
+  sono?: string;
+  custOrig?: number;
+  warehouse?: number;
+  premiumLin?: number;
+  cutting?: number;
+  manufactur?: number;
+  embroidery?: number;
+  print?: number;
+  shipping?: number;
+  sample?: number;
+  sampleEmb?: number;
+  knitDept?: number;
+  pdf?: number;
+  mfgForKnts?: number;
+  shipSamp?: number;
+  report?: number;
+};
+
 type SbtSalesOrderData = {
   sono?: string;
   company?: SbtSalesOrderCompany;
   web?: SbtSalesOrderWeb;
   sbtOrderInfo?: SbtSalesOrderInfo;
   sodeco?: SbtSalesOrderDecoration[];
+  print?: SbtSalesOrderPrintFlags;
 };
 
 type LookupResponse = {
@@ -229,6 +271,7 @@ export default function SalesOrderPrintPage({
   const sbtOrderInfo = data.sbtOrderInfo || {};
   const items = sbtOrderInfo.items || [];
   const comments = sbtOrderInfo.comments || [];
+  const printFlags = data.print || {};
   const sono = safe(data.sono || result.salesOrderBase);
 
   return (
@@ -510,26 +553,19 @@ export default function SalesOrderPrintPage({
                   </div>
 
                   <div className="so-right">
-                    <div>
-                      <b>Customer Order Date: {safe(sbtOrderInfo.orderDate)}</b>
-                    </div>
-                    <div>
-                      <b>Date Entered: {safe(sbtOrderInfo.orderDate)}</b>
-                    </div>
-                    <div>
-                      <b>Order entered by: {safe(sbtOrderInfo.enteredBy)}</b>
-                    </div>
-                    <div>
-                      <b>CS Rep: {safe(sbtOrderInfo.csRep)}</b>
-                    </div>
+                    <div><b>Customer Order Date: {safe(sbtOrderInfo.orderDate)}</b></div>
+                    <div><b>Date Entered: {safe(sbtOrderInfo.orderDate)}</b></div>
+                    <div><b>Order entered by: {safe(sbtOrderInfo.enteredBy)}</b></div>
+                    <div><b>CS Rep: {safe(sbtOrderInfo.csRep)}</b></div>
+                    <div><b>SO Status: {safe(sbtOrderInfo.soStat)}</b></div>
+                    <div><b>Industry: {safe(sbtOrderInfo.industry)}</b></div>
+                    <div><b>Event: {safe(sbtOrderInfo.event)}</b></div>
                   </div>
                 </div>
 
                 <div className="so-row so-mt10">
                   <div className="so-w50">
-                    <div>
-                      <b>Bill To</b>
-                    </div>
+                    <div><b>Bill To</b></div>
                     <div>{formatName(orderInfo.CompanyName, orderInfo.FirstName, orderInfo.LastName)}</div>
                     <div>{safe(orderInfo.Address1)}</div>
                     {orderInfo.Address2 ? <div>{orderInfo.Address2}</div> : null}
@@ -539,9 +575,7 @@ export default function SalesOrderPrintPage({
                   </div>
 
                   <div className="so-w50">
-                    <div>
-                      <b>Ship To</b>
-                    </div>
+                    <div><b>Ship To</b></div>
                     <div>
                       {formatName(
                         shippingInfo.ShippingCompanyName,
@@ -565,8 +599,12 @@ export default function SalesOrderPrintPage({
                 </div>
 
                 <div className="so-row">
-                  <div className="so-w50p so-inline so-left so-bold"></div>
-                  <div className="so-w50p so-inline so-right so-bold">{safe(sbtOrderInfo.custType)}</div>
+                  <div className="so-w50p so-inline so-left so-bold">
+                    {printFlags.warehouse === 1 ? "WAREHOUSE COPY" : ""}
+                  </div>
+                  <div className="so-w50p so-inline so-right so-bold">
+                    {safe(sbtOrderInfo.custType)}
+                  </div>
                 </div>
 
                 <table className="so-table">
@@ -644,12 +682,8 @@ export default function SalesOrderPrintPage({
                           <div className="so-w50p so-center so-inline">0</div>
                         </div>
                         <div className="so-mt10">
-                          <div className="so-w50p so-center so-inline">
-                            <b>Min Qty</b>
-                          </div>
-                          <div className="so-w50p so-center so-inline">
-                            <b>Max Qty</b>
-                          </div>
+                          <div className="so-w50p so-center so-inline"><b>Min Qty</b></div>
+                          <div className="so-w50p so-center so-inline"><b>Max Qty</b></div>
                         </div>
                         <div className="so-mt10">
                           <div className="so-w50p so-center so-inline">{safe(it.minQty)}</div>
@@ -680,6 +714,10 @@ export default function SalesOrderPrintPage({
                           <br />
                           <br />
                         </div>
+
+                        <div><b>RQ DATE:</b> {safe(it.rqdate)}</div>
+                        <div><b>SHIP DATE:</b> {safe(it.shipdate)}</div>
+                        <br />
 
                         {it.stockitem ? (
                           <div className="so-bold">STOCK ITEM:{safe(it.stockitem)}</div>
@@ -746,6 +784,7 @@ export default function SalesOrderPrintPage({
                                     </u>
                                   </div>
                                   <div>TAPE NAME: {safe(deco.tapeName)}</div>
+                                  {deco.sortCode ? <div>SORT CODE: {safe(deco.sortCode)}</div> : null}
 
                                   {deco.stCount ? (
                                     <>
@@ -762,12 +801,27 @@ export default function SalesOrderPrintPage({
                                   {deco.prevSono ? (
                                     <div>
                                       SAME AS {safe(deco.prevSono)}.
-                                      {deco.prevLine != null
-                                        ? String(deco.prevLine).padStart(3, "0")
+                                      {deco.prevLine != null ? String(deco.prevLine).padStart(3, "0") : ""}
+                                      {deco.prevDeco != null && deco.prevDeco !== 0
+                                        ? ` / DECO ${safe(deco.prevDeco)}`
                                         : ""}
                                     </div>
                                   ) : null}
 
+                                  {deco.addUser || deco.addDate || deco.addTime ? (
+                                    <div>
+                                      ADDED: {safe(deco.addUser)} {safe(deco.addDate)} {safe(deco.addTime)}
+                                    </div>
+                                  ) : null}
+
+                                  {deco.lckUser || deco.lckDate || deco.lckTime ? (
+                                    <div>
+                                      LOCK: {safe(deco.lckUser)} {safe(deco.lckDate)} {safe(deco.lckTime)}
+                                    </div>
+                                  ) : null}
+
+                                  {deco.dcStat ? <div>DC STATUS: {safe(deco.dcStat)}</div> : null}
+                                  {deco.knitLines ? <div>KNIT LINES: {safe(deco.knitLines)}</div> : null}
                                   <div>{cleanedDescription(deco.descrip)}</div>
 
                                   {deco.tapeNo ? (
@@ -833,6 +887,8 @@ export default function SalesOrderPrintPage({
                               shippingInfo.AdditionalDeliveryInstruction
                           )}
                         </div>
+                        <div>PDF: {printFlags.pdf === 1 ? "Yes" : "No"}</div>
+                        <div>Report: {printFlags.report === 1 ? "Yes" : "No"}</div>
                       </td>
 
                       <td colSpan={1}></td>

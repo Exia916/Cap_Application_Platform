@@ -66,6 +66,9 @@ Allows users to add contextual notes to records.
 Attachments  
 File storage and document association using Amazon S3.
 
+Voiding
+Void or soft delete entries
+
 Notifications (future)
 
 Workflow Engine (future)

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
 type LookupOption = {
   id: string;
@@ -40,6 +40,10 @@ type RecutEntry = {
   doNotPull: boolean;
   supervisorApproved: boolean;
   warehousePrinted: boolean;
+  isVoided?: boolean;
+  voidedAt?: string | null;
+  voidedBy?: string | null;
+  voidReason?: string | null;
 };
 
 type Props = {
@@ -58,6 +62,12 @@ type FormErrors = {
   operator?: string;
   deliverTo?: string;
 };
+
+const ALLOWED_RETURN_TO = new Set([
+  "/recuts",
+  "/recuts/supervisor-review",
+  "/recuts/warehouse",
+]);
 
 function normalizeDept(value: string | null | undefined): string {
   const v = String(value ?? "").trim().toUpperCase();
@@ -84,16 +94,38 @@ function isWholeNumberString(v: string) {
   return /^\d+$/.test(String(v || "").trim());
 }
 
+function fmtTs(value?: string | null) {
+  if (!value) return "";
+  const d = new Date(value);
+  return Number.isNaN(d.getTime()) ? String(value) : d.toLocaleString();
+}
+
+function sanitizeReturnTo(
+  value: string | null | undefined,
+  fallback: string
+): string {
+  const v = String(value ?? "").trim();
+
+  if (!v) return fallback;
+  if (!v.startsWith("/")) return fallback;
+  if (v.startsWith("//")) return fallback;
+  if (ALLOWED_RETURN_TO.has(v)) return v;
+
+  return fallback;
+}
+
 function CapStyleCombobox({
   items,
   value,
   onChange,
   error,
+  disabled = false,
 }: {
   items: LookupOption[];
   value: string;
   onChange: (next: string) => void;
   error?: string;
+  disabled?: boolean;
 }) {
   const [query, setQuery] = useState(value);
   const [open, setOpen] = useState(false);
@@ -130,6 +162,7 @@ function CapStyleCombobox({
   }, [items, query]);
 
   function choose(code: string) {
+    if (disabled) return;
     setQuery(code);
     onChange(code);
     setOpen(false);
@@ -139,14 +172,19 @@ function CapStyleCombobox({
     <div ref={wrapRef} style={{ position: "relative" }}>
       <input
         value={query}
+        disabled={disabled}
         onChange={(e) => {
           const next = e.target.value;
           setQuery(next);
           onChange(next);
           setOpen(true);
         }}
-        onFocus={() => setOpen(true)}
+        onFocus={() => {
+          if (!disabled) setOpen(true);
+        }}
         onKeyDown={(e) => {
+          if (disabled) return;
+
           if (e.key === "Enter") {
             e.preventDefault();
             const exact = filtered.find(
@@ -166,11 +204,11 @@ function CapStyleCombobox({
           if (e.key === "Escape") setOpen(false);
         }}
         placeholder="Type cap style..."
-        style={inputStyle(!!error)}
+        style={inputStyle(!!error, disabled)}
         autoComplete="off"
       />
 
-      {open && filtered.length > 0 ? (
+      {!disabled && open && filtered.length > 0 ? (
         <div style={comboMenu}>
           {filtered.map((code) => (
             <button
@@ -191,8 +229,14 @@ function CapStyleCombobox({
 
 export default function RecutForm({ mode, initialId }: Props) {
   const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
 
-  const backHref = mode === "edit" ? "/recuts/supervisor-review" : "/recuts";
+  const fallbackBackHref = mode === "edit" ? "/recuts/supervisor-review" : "/recuts";
+  const returnTo = useMemo(
+    () => sanitizeReturnTo(searchParams.get("returnTo"), fallbackBackHref),
+    [searchParams, fallbackBackHref]
+  );
 
   const [me, setMe] = useState<MeResponse | null>(null);
 
@@ -224,6 +268,11 @@ export default function RecutForm({ mode, initialId }: Props) {
   const [doNotPull, setDoNotPull] = useState(false);
   const [supervisorApproved, setSupervisorApproved] = useState(false);
   const [warehousePrinted, setWarehousePrinted] = useState(false);
+
+  const [isVoided, setIsVoided] = useState(false);
+  const [voidedAt, setVoidedAt] = useState<string | null>(null);
+  const [voidedBy, setVoidedBy] = useState<string | null>(null);
+  const [voidReason, setVoidReason] = useState<string | null>(null);
 
   const [errors, setErrors] = useState<FormErrors>({});
 
@@ -315,6 +364,11 @@ export default function RecutForm({ mode, initialId }: Props) {
         setDoNotPull(!!row.doNotPull);
         setSupervisorApproved(!!row.supervisorApproved);
         setWarehousePrinted(!!row.warehousePrinted);
+
+        setIsVoided(!!row.isVoided);
+        setVoidedAt(row.voidedAt ?? null);
+        setVoidedBy(row.voidedBy ?? null);
+        setVoidReason(row.voidReason ?? null);
       } catch {
         setServerError("Failed to load recut request.");
       } finally {
@@ -329,6 +383,7 @@ export default function RecutForm({ mode, initialId }: Props) {
 
   const hideOperatorField = isEmbDept(me?.department);
   const showOperatorField = !hideOperatorField;
+  const isReadOnly = mode === "edit" && isVoided;
 
   function clearFieldError<K extends keyof FormErrors>(key: K) {
     setErrors((prev) => {
@@ -427,6 +482,11 @@ export default function RecutForm({ mode, initialId }: Props) {
     setServerError(null);
     setSuccessMsg(null);
 
+    if (isReadOnly) {
+      setServerError("This recut request has been voided and can no longer be edited.");
+      return;
+    }
+
     const nextErrors = validate();
     setErrors(nextErrors);
 
@@ -478,7 +538,7 @@ export default function RecutForm({ mode, initialId }: Props) {
       setSuccessMsg(mode === "add" ? "Recut request created." : "Recut request updated.");
 
       setTimeout(() => {
-        router.push(backHref);
+        router.push(returnTo);
         router.refresh();
       }, 500);
     } catch {
@@ -492,7 +552,7 @@ export default function RecutForm({ mode, initialId }: Props) {
     return (
       <>
         <div style={{ marginBottom: 12 }}>
-          <button type="button" className="btn btn-secondary" onClick={() => router.push(backHref)}>
+          <button type="button" className="btn btn-secondary" onClick={() => router.push(returnTo)}>
             ← Back to List
           </button>
         </div>
@@ -504,7 +564,7 @@ export default function RecutForm({ mode, initialId }: Props) {
   return (
     <div style={{ maxWidth: 980, margin: "0 auto", padding: 16 }}>
       <div style={{ marginBottom: 12 }}>
-        <button type="button" className="btn btn-secondary" onClick={() => router.push(backHref)}>
+        <button type="button" className="btn btn-secondary" onClick={() => router.push(returnTo)}>
           ← Back to List
         </button>
       </div>
@@ -522,6 +582,17 @@ export default function RecutForm({ mode, initialId }: Props) {
         </div>
       ) : null}
 
+      {mode === "edit" && isVoided ? (
+        <div style={errorBox}>
+          <div style={{ fontWeight: 700, marginBottom: 6 }}>
+            This recut request has been voided and is read-only.
+          </div>
+          {voidedAt ? <div><strong>Voided At:</strong> {fmtTs(voidedAt)}</div> : null}
+          {voidedBy ? <div><strong>Voided By:</strong> {voidedBy}</div> : null}
+          {voidReason ? <div><strong>Reason:</strong> {voidReason}</div> : null}
+        </div>
+      ) : null}
+
       {serverError ? <div style={errorBox}>{serverError}</div> : null}
       {successMsg ? <div style={successBox}>{successMsg}</div> : null}
 
@@ -535,8 +606,9 @@ export default function RecutForm({ mode, initialId }: Props) {
           <FieldBlock label="Requested Department" error={errors.requestedDepartment}>
             <select
               value={requestedDepartment}
+              disabled={isReadOnly}
               onChange={(e) => handleRequestedDepartmentChange(e.target.value)}
-              style={inputStyle(!!errors.requestedDepartment)}
+              style={inputStyle(!!errors.requestedDepartment, isReadOnly)}
             >
               <option value="">Select department</option>
               {requestedDepartments.map((d) => (
@@ -551,12 +623,13 @@ export default function RecutForm({ mode, initialId }: Props) {
             <>
               <input
                 value={salesOrder}
+                disabled={mode === "edit" || isReadOnly}
                 onChange={(e) => handleSalesOrderChange(e.target.value)}
                 onKeyDown={(e) => {
                   if (e.key === "Enter") e.preventDefault();
                 }}
                 placeholder="3023113.001"
-                style={inputStyle(!!errors.salesOrder)}
+                style={inputStyle(!!errors.salesOrder, mode === "edit" || isReadOnly)}
               />
               <div style={helperText}>
                 Scan the Sales Order barcode on the sales order page the item you are requesting is on. The suffix (e.g. .001) is required for warehouse picking. This number will correspond to the detail number you are requesting a recut for. If you are unsure, please ask your supervisor.
@@ -567,16 +640,18 @@ export default function RecutForm({ mode, initialId }: Props) {
           <FieldBlock label="Design Name" error={errors.designName}>
             <input
               value={designName}
+              disabled={isReadOnly}
               onChange={(e) => handleDesignNameChange(e.target.value)}
-              style={inputStyle(!!errors.designName)}
+              style={inputStyle(!!errors.designName, isReadOnly)}
             />
           </FieldBlock>
 
           <FieldBlock label="Recut Reason" error={errors.recutReason}>
             <select
               value={recutReason}
+              disabled={isReadOnly}
               onChange={(e) => handleRecutReasonChange(e.target.value)}
-              style={inputStyle(!!errors.recutReason)}
+              style={inputStyle(!!errors.recutReason, isReadOnly)}
             >
               <option value="">Select recut reason</option>
               {reasons.map((r) => (
@@ -590,9 +665,10 @@ export default function RecutForm({ mode, initialId }: Props) {
           <FieldBlock label="Detail #" error={errors.detailNumber}>
             <input
               value={detailNumber}
+              disabled={isReadOnly}
               onChange={(e) => handleDetailNumberChange(e.target.value)}
               inputMode="numeric"
-              style={inputStyle(!!errors.detailNumber)}
+              style={inputStyle(!!errors.detailNumber, isReadOnly)}
             />
           </FieldBlock>
 
@@ -602,15 +678,17 @@ export default function RecutForm({ mode, initialId }: Props) {
               value={capStyle}
               onChange={handleCapStyleChange}
               error={errors.capStyle}
+              disabled={isReadOnly}
             />
           </FieldBlock>
 
           <FieldBlock label="Pieces" error={errors.pieces}>
             <input
               value={pieces}
+              disabled={isReadOnly}
               onChange={(e) => handlePiecesChange(e.target.value)}
               inputMode="numeric"
-              style={inputStyle(!!errors.pieces)}
+              style={inputStyle(!!errors.pieces, isReadOnly)}
             />
           </FieldBlock>
 
@@ -618,8 +696,9 @@ export default function RecutForm({ mode, initialId }: Props) {
             <FieldBlock label="Operator" error={errors.operator}>
               <input
                 value={operator}
+                disabled={isReadOnly}
                 onChange={(e) => handleOperatorChange(e.target.value)}
-                style={inputStyle(!!errors.operator)}
+                style={inputStyle(!!errors.operator, isReadOnly)}
               />
             </FieldBlock>
           ) : (
@@ -629,17 +708,19 @@ export default function RecutForm({ mode, initialId }: Props) {
           <FieldBlock label="Deliver To" error={errors.deliverTo}>
             <input
               value={deliverTo}
+              disabled={isReadOnly}
               onChange={(e) => handleDeliverToChange(e.target.value)}
-              style={inputStyle(!!errors.deliverTo)}
+              style={inputStyle(!!errors.deliverTo, isReadOnly)}
             />
           </FieldBlock>
 
           <FieldBlock label="Notes">
             <textarea
               value={notes}
+              disabled={isReadOnly}
               onChange={(e) => setNotes(e.target.value)}
               rows={4}
-              style={{ ...inputStyle(false), resize: "vertical" }}
+              style={{ ...inputStyle(false, isReadOnly), resize: "vertical" }}
             />
           </FieldBlock>
 
@@ -647,6 +728,7 @@ export default function RecutForm({ mode, initialId }: Props) {
             label="Event"
             checked={event}
             onChange={setEvent}
+            disabled={isReadOnly}
           />
 
           {canSeeApprovalFlags ? (
@@ -654,18 +736,23 @@ export default function RecutForm({ mode, initialId }: Props) {
               label="Supervisor Approved"
               checked={supervisorApproved}
               onChange={setSupervisorApproved}
+              disabled={isReadOnly}
             />
           ) : null}
         </div>
 
         <div style={{ display: "flex", gap: 10, marginTop: 20 }}>
-          <button type="submit" disabled={saving} className="btn btn-primary">
+          <button
+            type="submit"
+            disabled={saving || isReadOnly}
+            className="btn btn-primary"
+          >
             {saving ? "Saving..." : mode === "add" ? "Create Recut Request" : "Save Changes"}
           </button>
 
           <button
             type="button"
-            onClick={() => router.push(backHref)}
+            onClick={() => router.push(returnTo)}
             className="btn btn-secondary"
           >
             Cancel
@@ -707,18 +794,27 @@ function CheckboxBlock({
   label,
   checked,
   onChange,
+  disabled = false,
 }: {
   label: string;
   checked: boolean;
   onChange: (next: boolean) => void;
+  disabled?: boolean;
 }) {
   return (
     <div>
       <label style={labelStyle}>{label}</label>
-      <label style={checkWrap}>
+      <label
+        style={{
+          ...checkWrap,
+          opacity: disabled ? 0.7 : 1,
+          cursor: disabled ? "not-allowed" : "pointer",
+        }}
+      >
         <input
           type="checkbox"
           checked={checked}
+          disabled={disabled}
           onChange={(e) => onChange(e.target.checked)}
         />
         <span>{checked ? "Yes" : "No"}</span>
@@ -727,13 +823,15 @@ function CheckboxBlock({
   );
 }
 
-function inputStyle(hasError: boolean): React.CSSProperties {
+function inputStyle(hasError: boolean, disabled = false): React.CSSProperties {
   return {
     width: "100%",
     border: hasError ? "1px solid #dc2626" : "1px solid #d1d5db",
     borderRadius: 8,
     padding: "10px 12px",
-    background: "#fff",
+    background: disabled ? "#f3f4f6" : "#fff",
+    color: disabled ? "#6b7280" : "#111827",
+    cursor: disabled ? "not-allowed" : "text",
   };
 }
 

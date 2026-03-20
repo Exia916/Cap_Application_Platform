@@ -107,10 +107,20 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
         ? null
         : toInt((body as any).typeId);
 
-    const techId =
-      (body as any).techId === "" || (body as any).techId == null
-        ? null
-        : toInt((body as any).techId);
+    let techIds: number[] = [];
+
+    if (Array.isArray((body as any).techIds)) {
+      techIds = (body as any).techIds
+        .map((v: unknown) => toInt(v))
+        .filter((v: number | null): v is number => v !== null);
+    } else {
+      const legacyTechId =
+        (body as any).techId === "" || (body as any).techId == null
+          ? null
+          : toInt((body as any).techId);
+
+      techIds = legacyTechId == null ? [] : [legacyTechId];
+    }
 
     const statusId =
       (body as any).statusId === "" || (body as any).statusId == null
@@ -125,11 +135,13 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
     const updated = await updateWorkOrderTechFields({
       id,
       typeId: typeId ?? null,
-      techId: techId ?? null,
+      techIds,
       statusId: statusId ?? null,
       resolution,
       downTimeRecorded,
       activityActor,
+      assignedByUserId:
+        String((auth as any)?.userId ?? (auth as any)?.id ?? "").trim() || null,
     });
 
     await logAuditEvent({
@@ -142,7 +154,7 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
       recordId: updated.workOrderId,
       details: {
         typeId,
-        techId,
+        techIds,
         statusId,
         hasResolution: Boolean(resolution),
         hasDownTimeRecorded: Boolean(downTimeRecorded),
@@ -158,9 +170,7 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
         message: "CMMS work order status changed",
         recordType: "cmms_work_orders",
         recordId: updated.workOrderId,
-        details: {
-          statusId,
-        },
+        details: { statusId },
       });
     }
 
@@ -173,9 +183,7 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
         message: "CMMS work order resolution updated",
         recordType: "cmms_work_orders",
         recordId: updated.workOrderId,
-        details: {
-          resolutionLength: resolution.length,
-        },
+        details: { resolutionLength: resolution.length },
       });
     }
 
@@ -188,9 +196,7 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
         message: "CMMS work order downtime recorded",
         recordType: "cmms_work_orders",
         recordId: updated.workOrderId,
-        details: {
-          downTimeRecorded,
-        },
+        details: { downTimeRecorded },
       });
     }
 

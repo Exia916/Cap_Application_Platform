@@ -68,11 +68,15 @@ export type SbtSalesOrderItem = {
   uom?: string;
   stockitem?: string;
   defaultbin?: string;
+  rqdate?: string;
+  shipdate?: string;
 };
 
 export type SbtSalesOrderDecoration = {
+  sono?: string;
   lineNo?: number;
   decoNo?: number | string;
+  sortCode?: string;
   colors?: number | string;
   dcType?: string;
   dcLocation?: string;
@@ -81,13 +85,31 @@ export type SbtSalesOrderDecoration = {
   stCount?: number;
   prevSono?: string | number;
   prevLine?: number;
+  prevDeco?: number;
+  wChange?: string;
+  provided?: string;
+  inHouse?: string;
+  tallEt?: string;
+  addUser?: string;
+  addDate?: string;
+  addTime?: string;
+  lckStat?: string;
+  lckUser?: string;
+  lckDate?: string;
+  lckTime?: string;
   descrip?: string;
+  preClose?: string;
+  dcStat?: string;
+  knitLines?: number;
 };
 
 export type SbtSalesOrderInfo = {
   orderDate?: string;
   enteredBy?: string;
   csRep?: string;
+  industry?: string;
+  event?: string;
+  soStat?: string;
   type?: string;
   custType?: string;
   shipVia?: string;
@@ -104,12 +126,32 @@ export type SbtSalesOrderInfo = {
   items?: SbtSalesOrderItem[];
 };
 
+export type SbtSalesOrderPrintFlags = {
+  sono?: string;
+  custOrig?: number;
+  warehouse?: number;
+  premiumLin?: number;
+  cutting?: number;
+  manufactur?: number;
+  embroidery?: number;
+  print?: number;
+  shipping?: number;
+  sample?: number;
+  sampleEmb?: number;
+  knitDept?: number;
+  pdf?: number;
+  mfgForKnts?: number;
+  shipSamp?: number;
+  report?: number;
+};
+
 export type SbtSalesOrderData = {
   sono?: string;
   company?: SbtSalesOrderCompany;
   web?: SbtSalesOrderWeb;
   sbtOrderInfo?: SbtSalesOrderInfo;
   sodeco?: SbtSalesOrderDecoration[];
+  print?: SbtSalesOrderPrintFlags;
 };
 
 type RawSbtResponse = {
@@ -147,9 +189,10 @@ function sanitizeData(data: SbtSalesOrderData | undefined | null): SbtSalesOrder
     sbtOrderInfo: {
       ...(safe.sbtOrderInfo || {}),
       comments: coerceComments(safe.sbtOrderInfo?.comments),
-      items: Array.isArray(safe.sbtOrderInfo?.items) ? safe.sbtOrderInfo?.items : [],
+      items: Array.isArray(safe.sbtOrderInfo?.items) ? safe.sbtOrderInfo.items : [],
     },
     sodeco: Array.isArray(safe.sodeco) ? safe.sodeco : [],
+    print: safe.print && typeof safe.print === "object" ? safe.print : {},
   };
 }
 

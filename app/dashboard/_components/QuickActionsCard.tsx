@@ -1,4 +1,3 @@
-// app/dashboard/_components/QuickActionsCard.tsx
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
@@ -9,16 +8,66 @@ type MeResponse = {
   role?: string | null;
 };
 
-function roleUpper(v: string | null | undefined) {
-  return (v ?? "").trim().toUpperCase();
-}
-function usernameLower(v: string | null | undefined) {
-  return (v ?? "").trim().toLowerCase();
+type QuickAction = {
+  href: string;
+  label: string;
+};
+
+function getQuickActions(role: string, username: string): QuickAction[] {
+  const isAdmin = role === "ADMIN" || username === "admin";
+  const isManager = isAdmin || role === "MANAGER";
+  const isSupervisor = isManager || role === "SUPERVISOR";
+
+  const maintenanceHref = isSupervisor ? "/cmms/repair-requests" : null;
+  const recutsHref = isSupervisor ? "/recuts/supervisor-review" : "/recuts";
+
+  if (isAdmin) {
+    return [
+      { href: "/manager", label: "Manager Workspace" },
+      { href: "/admin", label: "Admin Workspace" },
+      { href: "/sales-orders", label: "Sales Order Lookup" },
+      { href: recutsHref, label: "Recut Review" },
+      { href: "/admin/master-data", label: "Master Data" },
+      { href: "/admin/users", label: "Users" },
+      ...(maintenanceHref ? [{ href: maintenanceHref, label: "Maintenance" }] : []),
+    ];
+  }
+
+  if (isManager) {
+    return [
+      { href: "/manager", label: "Manager Workspace" },
+      { href: "/sales-orders", label: "Sales Order Lookup" },
+      { href: recutsHref, label: "Recut Review" },
+      { href: "/recuts/warehouse", label: "Warehouse Recuts" },
+      { href: "/daily-production", label: "Daily Production" },
+      { href: "/knit-production", label: "Knit Production" },
+      ...(maintenanceHref ? [{ href: maintenanceHref, label: "Maintenance" }] : []),
+    ];
+  }
+
+  if (isSupervisor) {
+    return [
+      { href: "/sales-orders", label: "Sales Order Lookup" },
+      { href: recutsHref, label: "Recut Review" },
+      { href: "/daily-production", label: "Daily Production" },
+      { href: "/qc-daily-production", label: "QC Daily" },
+      { href: "/emblem-production", label: "Emblem" },
+      { href: "/laser-production", label: "Laser" },
+      ...(maintenanceHref ? [{ href: maintenanceHref, label: "Maintenance" }] : []),
+    ];
+  }
+
+  return [
+    { href: "/sales-orders", label: "Sales Order Lookup" },
+    { href: "/daily-production/add", label: "New Daily Production" },
+    { href: "/qc-daily-production/add", label: "New QC Entry" },
+    { href: "/production/sample-embroidery/add", label: "New Sample Embroidery" },
+    { href: recutsHref, label: "Recuts" },
+  ];
 }
 
 export default function QuickActionsCard() {
   const [me, setMe] = useState<MeResponse | null>(null);
-  const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -29,13 +78,10 @@ export default function QuickActionsCard() {
           cache: "no-store",
           credentials: "include",
         });
-
         const json = (await res.json().catch(() => ({}))) as MeResponse;
         if (!cancelled) setMe(json);
       } catch {
         if (!cancelled) setMe(null);
-      } finally {
-        if (!cancelled) setLoaded(true);
       }
     })();
 
@@ -44,77 +90,84 @@ export default function QuickActionsCard() {
     };
   }, []);
 
-  const role = useMemo(() => roleUpper(me?.role), [me?.role]);
-  const username = useMemo(() => usernameLower(me?.username), [me?.username]);
+  const role = useMemo(() => (me?.role ?? "").trim().toUpperCase(), [me?.role]);
+  const username = useMemo(() => (me?.username ?? "").trim().toLowerCase(), [me?.username]);
 
-  // ✅ Admin fallback remains consistent with your app
-  const isAdmin = role === "ADMIN" || username === "admin";
-  const isManager = role === "MANAGER";
-
-  // ✅ Admin sees Manager too
-  const canSeeManagerHub = isManager || isAdmin;
+  const actions = useMemo(() => getQuickActions(role, username), [role, username]);
 
   return (
-    <div className="rounded-xl border bg-white p-5 shadow-sm">
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+    <section className="card">
+      <div className="section-card-header" style={{ marginBottom: 0 }}>
         <div>
-          <div className="text-lg font-semibold">Quick Actions</div>
-          <div className="mt-1 text-sm text-gray-600">
-            Common shortcuts for daily work.
-          </div>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2">
-          {/* Everyone sees module entries (for now) */}
-          <Link className="pill" href="/daily-production">
-            + Daily Production Entry
-          </Link>
-          <Link className="pill" href="/qc-daily-production">
-            + QC Entry
-          </Link>
-          <Link className="pill" href="/emblem-production">
-            + Emblem Entry
-          </Link>
-          <Link className="pill" href="/laser-production">
-            + Laser Entry
-          </Link>
-
-          {/* Manager hub: MANAGER + ADMIN */}
-          {loaded && canSeeManagerHub ? (
-            <Link className="pill" href="/manager">
-              → Manager
-            </Link>
-          ) : null}
-
-          {/* Admin hub: ADMIN only */}
-          {loaded && isAdmin ? (
-            <Link className="pill" href="/admin">
-              → Admin
-            </Link>
-          ) : null}
+          <h2 style={{ marginBottom: 4 }}>Quick Actions</h2>
+          <div className="text-soft">Jump into the most common next steps for your role.</div>
         </div>
       </div>
 
+      <div className="dashboard-quick-actions-grid">
+        {actions.map((action) => (
+          <Link key={`${action.href}-${action.label}`} href={action.href} className="dashboard-action-tile">
+            <span className="dashboard-action-label">{action.label}</span>
+            <span className="dashboard-action-arrow" aria-hidden="true">
+              →
+            </span>
+          </Link>
+        ))}
+      </div>
+
       <style jsx global>{`
-        .pill {
-          display: inline-flex;
-          align-items: center;
-          gap: 6px;
-          height: 34px;
-          padding: 0 14px;
-          border-radius: 9999px;
-          border: 1px solid #d1d5db;
-          background: #ffffff;
-          font-size: 13px;
-          font-weight: 600;
-          color: #111827;
-          text-decoration: none;
-          white-space: nowrap;
+        .dashboard-quick-actions-grid {
+          display: grid;
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+          gap: 10px;
+          margin-top: 14px;
         }
-        .pill:hover {
-          background: #f9fafb;
+
+        .dashboard-action-tile {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 12px;
+          min-height: 52px;
+          padding: 12px 14px;
+          border-radius: 14px;
+          border: 1px solid var(--border);
+          background: var(--surface);
+          color: var(--text);
+          text-decoration: none;
+          font-weight: 700;
+          box-shadow: var(--shadow-sm);
+          transition:
+            background 120ms ease,
+            border-color 120ms ease,
+            box-shadow 120ms ease,
+            transform 120ms ease;
+        }
+
+        .dashboard-action-tile:hover {
+          background: var(--surface-subtle);
+          border-color: var(--border-strong);
+          box-shadow: var(--shadow-md);
+          transform: translateY(-1px);
+        }
+
+        .dashboard-action-label {
+          line-height: 1.2;
+        }
+
+        .dashboard-action-arrow {
+          color: var(--brand-blue);
+          font-size: 18px;
+          font-weight: 800;
+          flex-shrink: 0;
+        }
+
+        @media (max-width: 640px) {
+          .dashboard-quick-actions-grid {
+            grid-template-columns: 1fr;
+          }
         }
       `}</style>
-    </div>
+    </section>
   );
 }

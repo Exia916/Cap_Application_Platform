@@ -1,7 +1,7 @@
 // app/api/admin/global-search/route.ts
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { requireManagerOrAdmin } from "../_shared/adminAuth";
+import { requireGlobalSearchAccess } from "../_shared/adminAuth";
 
 export const runtime = "nodejs";
 
@@ -15,7 +15,7 @@ function clamp(n: number, min: number, max: number) {
 }
 
 export async function GET(req: Request) {
-  const auth = await requireManagerOrAdmin();
+  const auth = await requireGlobalSearchAccess();
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
 
   const { searchParams } = new URL(req.url);
@@ -39,6 +39,9 @@ export async function GET(req: Request) {
         { key: "qc", title: "QC Daily Production", count: 0, rows: [] },
         { key: "emblem", title: "Emblem Production", count: 0, rows: [] },
         { key: "laser", title: "Laser Production", count: 0, rows: [] },
+        { key: "sampleEmbroidery", title: "Sample Embroidery", count: 0, rows: [] },
+        { key: "knitProduction", title: "Knit Production", count: 0, rows: [] },
+        { key: "knitQc", title: "Knit QC", count: 0, rows: [] },
         { key: "recut", title: "Recut Requests", count: 0, rows: [] },
         { key: "workOrders", title: "CMMS Work Orders", count: 0, rows: [] },
       ],
@@ -285,6 +288,183 @@ export async function GET(req: Request) {
 
   const laserParams = [like, like, like, like, like, like, like, ...lzDate.params, limit];
 
+    // ---------------------------------------------------------------------------
+  // Sample Embroidery
+  // ---------------------------------------------------------------------------
+  const sampleEmbDate = dateClause("s.entry_date");
+
+  const sampleEmbroiderySql = `
+    SELECT
+      s.id,
+      s.entry_ts,
+      s.entry_date,
+      s.name,
+      s.employee_number,
+      s.sales_order,
+      s.detail_count,
+      s.quantity,
+      s.notes
+    FROM public.sample_embroidery_entries s
+    WHERE
+      (
+        s.name ILIKE $1
+        OR COALESCE(s.notes, '') ILIKE $2
+        OR CAST(s.employee_number AS text) ILIKE $3
+        OR CAST(s.sales_order AS text) ILIKE $4
+        OR CAST(s.detail_count AS text) ILIKE $5
+        OR CAST(s.quantity AS text) ILIKE $6
+        OR CAST(s.entry_date AS text) ILIKE $7
+      )
+      ${sampleEmbDate.sql}
+    ORDER BY s.entry_ts DESC, s.id DESC
+    LIMIT $${7 + sampleEmbDate.params.length + 1}
+  `;
+
+  const sampleEmbroideryParams = [
+    like,
+    like,
+    like,
+    like,
+    like,
+    like,
+    like,
+    ...sampleEmbDate.params,
+    limit,
+  ];
+
+  // ---------------------------------------------------------------------------
+  // Knit Production
+  // NOTE: return submission_id, not line id
+  // ---------------------------------------------------------------------------
+  const knitProdDate = dateClause("s.entry_date");
+
+  const knitProductionSql = `
+    SELECT
+      s.id AS submission_id,
+      s.id AS id,
+      s.entry_ts,
+      s.entry_date,
+      s.name,
+      s.employee_number,
+      s.shift,
+      COALESCE(s.sales_order_display, s.sales_order_base) AS sales_order,
+      s.sales_order_base,
+      s.sales_order_display,
+      l.detail_number,
+      l.item_style,
+      l.logo,
+      l.quantity,
+      COALESCE(l.line_notes, s.notes) AS notes
+    FROM public.knit_production_lines l
+    JOIN public.knit_production_submissions s
+      ON s.id = l.submission_id
+    WHERE
+      COALESCE(s.is_voided, false) = false
+      AND (
+        s.name ILIKE $1
+        OR COALESCE(s.notes, '') ILIKE $2
+        OR CAST(s.employee_number AS text) ILIKE $3
+        OR COALESCE(s.sales_order_display, '') ILIKE $4
+        OR COALESCE(s.sales_order_base, '') ILIKE $5
+        OR CAST(s.entry_date AS text) ILIKE $6
+        OR CAST(l.detail_number AS text) ILIKE $7
+        OR COALESCE(l.item_style, '') ILIKE $8
+        OR COALESCE(l.logo, '') ILIKE $9
+        OR CAST(l.quantity AS text) ILIKE $10
+        OR COALESCE(l.line_notes, '') ILIKE $11
+      )
+      ${knitProdDate.sql}
+    ORDER BY s.entry_ts DESC, l.id DESC
+    LIMIT $${11 + knitProdDate.params.length + 1}
+  `;
+
+  const knitProductionParams = [
+    like,
+    like,
+    like,
+    like,
+    like,
+    like,
+    like,
+    like,
+    like,
+    like,
+    like,
+    ...knitProdDate.params,
+    limit,
+  ];
+
+  // ---------------------------------------------------------------------------
+  // Knit QC
+  // NOTE: return submission_id, not line id
+  // ---------------------------------------------------------------------------
+  const knitQcDate = dateClause("s.entry_date");
+
+  const knitQcSql = `
+    SELECT
+      s.id AS submission_id,
+      s.id AS id,
+      s.entry_ts,
+      s.entry_date,
+      s.name,
+      s.employee_number,
+      s.shift,
+      COALESCE(s.sales_order_display, s.sales_order_base) AS sales_order,
+      s.sales_order_base,
+      s.sales_order_display,
+      l.detail_number,
+      l.logo,
+      l.order_quantity,
+      l.inspected_quantity,
+      l.rejected_quantity,
+      l.reject_reason_id,
+      l.qc_employee_number,
+      COALESCE(l.line_notes, s.notes) AS notes
+    FROM public.knit_qc_submission_lines l
+    JOIN public.knit_qc_submissions s
+      ON s.id = l.submission_id
+    WHERE
+      COALESCE(s.is_voided, false) = false
+      AND (
+        s.name ILIKE $1
+        OR COALESCE(s.notes, '') ILIKE $2
+        OR CAST(s.employee_number AS text) ILIKE $3
+        OR COALESCE(s.sales_order_display, '') ILIKE $4
+        OR COALESCE(s.sales_order_base, '') ILIKE $5
+        OR CAST(s.entry_date AS text) ILIKE $6
+        OR CAST(l.detail_number AS text) ILIKE $7
+        OR COALESCE(l.logo, '') ILIKE $8
+        OR CAST(l.order_quantity AS text) ILIKE $9
+        OR CAST(l.inspected_quantity AS text) ILIKE $10
+        OR CAST(l.rejected_quantity AS text) ILIKE $11
+        OR CAST(l.reject_reason_id AS text) ILIKE $12
+        OR CAST(l.qc_employee_number AS text) ILIKE $13
+        OR COALESCE(l.line_notes, '') ILIKE $14
+      )
+      ${knitQcDate.sql}
+    ORDER BY s.entry_ts DESC, l.id DESC
+    LIMIT $${14 + knitQcDate.params.length + 1}
+  `;
+
+  const knitQcParams = [
+    like,
+    like,
+    like,
+    like,
+    like,
+    like,
+    like,
+    like,
+    like,
+    like,
+    like,
+    like,
+    like,
+    like,
+    ...knitQcDate.params,
+    limit,
+  ];
+
   // ---------------------------------------------------------------------------
   // Recut
   // ---------------------------------------------------------------------------
@@ -396,7 +576,7 @@ export async function GET(req: Request) {
         OR COALESCE(wo.operator_initials, '') ILIKE $3
         OR COALESCE(wo.issue_dialogue, '') ILIKE $4
         OR COALESCE(wo.resolution, '') ILIKE $5
-        OR COALESCE(wo.down_time_recorded, '') ILIKE $6
+        OR CAST(wo.down_time_recorded AS text) ILIKE $6
         OR COALESCE(d.name, '') ILIKE $7
         OR COALESCE(a.name, '') ILIKE $8
         OR COALESCE(pr.name, '') ILIKE $9
@@ -432,11 +612,24 @@ export async function GET(req: Request) {
     limit,
   ];
 
-  const [dailyRes, qcRes, emblemRes, laserRes, recutRes, workOrdersRes] = await Promise.all([
+  const [
+    dailyRes,
+    qcRes,
+    emblemRes,
+    laserRes,
+    sampleEmbroideryRes,
+    knitProductionRes,
+    knitQcRes,
+    recutRes,
+    workOrdersRes,
+  ] = await Promise.all([
     db.query(dailySql, dailyParams),
     db.query(qcSql, qcParams),
     db.query(emblemSql, emblemParams),
     db.query(laserSql, laserParams),
+    db.query(sampleEmbroiderySql, sampleEmbroideryParams),
+    db.query(knitProductionSql, knitProductionParams),
+    db.query(knitQcSql, knitQcParams),
     db.query(recutSql, recutParams),
     db.query(workOrdersSql, workOrdersParams),
   ]);
@@ -452,6 +645,24 @@ export async function GET(req: Request) {
       { key: "qc", title: "QC Daily Production", count: qcRes.rows.length, rows: qcRes.rows },
       { key: "emblem", title: "Emblem Production", count: emblemRes.rows.length, rows: emblemRes.rows },
       { key: "laser", title: "Laser Production", count: laserRes.rows.length, rows: laserRes.rows },
+      {
+        key: "sampleEmbroidery",
+        title: "Sample Embroidery",
+        count: sampleEmbroideryRes.rows.length,
+        rows: sampleEmbroideryRes.rows,
+      },
+      {
+        key: "knitProduction",
+        title: "Knit Production",
+        count: knitProductionRes.rows.length,
+        rows: knitProductionRes.rows,
+      },
+      {
+        key: "knitQc",
+        title: "Knit QC",
+        count: knitQcRes.rows.length,
+        rows: knitQcRes.rows,
+      },
       { key: "recut", title: "Recut Requests", count: recutRes.rows.length, rows: recutRes.rows },
       { key: "workOrders", title: "CMMS Work Orders", count: workOrdersRes.rows.length, rows: workOrdersRes.rows },
     ],

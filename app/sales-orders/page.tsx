@@ -2,7 +2,7 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, useEffect, useMemo, useState, Suspense } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 
 type SbtSalesOrderCompany = {
@@ -62,11 +62,15 @@ type SbtSalesOrderItem = {
   uom?: string;
   stockitem?: string;
   defaultbin?: string;
+  rqdate?: string;
+  shipdate?: string;
 };
 
 type SbtSalesOrderDecoration = {
+  sono?: string;
   lineNo?: number;
   decoNo?: number | string;
+  sortCode?: string;
   colors?: number | string;
   dcType?: string;
   dcLocation?: string;
@@ -75,13 +79,31 @@ type SbtSalesOrderDecoration = {
   stCount?: number;
   prevSono?: string | number;
   prevLine?: number;
+  prevDeco?: number;
+  wChange?: string;
+  provided?: string;
+  inHouse?: string;
+  tallEt?: string;
+  addUser?: string;
+  addDate?: string;
+  addTime?: string;
+  lckStat?: string;
+  lckUser?: string;
+  lckDate?: string;
+  lckTime?: string;
   descrip?: string;
+  preClose?: string;
+  dcStat?: string;
+  knitLines?: number;
 };
 
 type SbtSalesOrderInfo = {
   orderDate?: string;
   enteredBy?: string;
   csRep?: string;
+  industry?: string;
+  event?: string;
+  soStat?: string;
   type?: string;
   custType?: string;
   shipVia?: string;
@@ -98,12 +120,32 @@ type SbtSalesOrderInfo = {
   items?: SbtSalesOrderItem[];
 };
 
+type SbtSalesOrderPrintFlags = {
+  sono?: string;
+  custOrig?: number;
+  warehouse?: number;
+  premiumLin?: number;
+  cutting?: number;
+  manufactur?: number;
+  embroidery?: number;
+  print?: number;
+  shipping?: number;
+  sample?: number;
+  sampleEmb?: number;
+  knitDept?: number;
+  pdf?: number;
+  mfgForKnts?: number;
+  shipSamp?: number;
+  report?: number;
+};
+
 type SbtSalesOrderData = {
   sono?: string;
   company?: SbtSalesOrderCompany;
   web?: SbtSalesOrderWeb;
   sbtOrderInfo?: SbtSalesOrderInfo;
   sodeco?: SbtSalesOrderDecoration[];
+  print?: SbtSalesOrderPrintFlags;
 };
 
 type LookupResponse = {
@@ -138,11 +180,15 @@ function decorationsForLine(rows: SbtSalesOrderDecoration[] | undefined, lineNo:
   return rows.filter((x) => Number(x?.lineNo) === lineNo);
 }
 
-function SalesOrdersContent() {
+function yesNoFlag(v?: number | string | null) {
+  return String(v ?? "") === "1" ? "Yes" : "No";
+}
+
+export default function SalesOrdersPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
-  const initialSo = (searchParams?.get("so") || "").trim();
+  const initialSo = (searchParams.get("so") || "").trim();
 
   const [salesOrderInput, setSalesOrderInput] = useState(initialSo);
   const [loading, setLoading] = useState(false);
@@ -152,6 +198,7 @@ function SalesOrdersContent() {
   const items = result?.data?.sbtOrderInfo?.items || [];
   const comments = result?.data?.sbtOrderInfo?.comments || [];
   const decorations = result?.data?.sodeco || [];
+  const printFlags = result?.data?.print;
 
   const pageTitle = useMemo(() => {
     if (!result?.salesOrderBase) return "Sales Order Lookup";
@@ -285,11 +332,14 @@ function SalesOrdersContent() {
 
                 <div className="so-kv-list">
                   {line("Sales Order", result.data?.sono || result.salesOrderDisplay)}
+                  {line("SO Status", order?.soStat)}
                   {line("Customer Number", result.data?.web?.custNo)}
                   {line("PO Number", result.data?.web?.poNumber?.PoNumber)}
                   {line("Order Date", order?.orderDate)}
                   {line("Entered By", order?.enteredBy)}
                   {line("CS Rep", order?.csRep)}
+                  {line("Industry", order?.industry)}
+                  {line("Event", order?.event)}
                   {line("Customer Type", order?.custType)}
                   {line("Type", order?.type)}
                   {line("Ship Via", order?.shipVia)}
@@ -309,7 +359,7 @@ function SalesOrdersContent() {
                   {line("Company", company?.name)}
                   {line("Address 1", company?.addr1)}
                   {line("Address 2", company?.addr2)}
-                  {line("City", [company?.city, company?.state, company?.zip].filter(Boolean).join(", "))} 
+                  {line("City", [company?.city, company?.state, company?.zip].filter(Boolean).join(", "))}
                   {line("Phone", company?.phone)}
                 </div>
               </div>
@@ -384,12 +434,14 @@ function SalesOrdersContent() {
                       <th>UOM</th>
                       <th>Default Bin</th>
                       <th>Stock Item</th>
+                      <th>Anticipated Ship Date</th>
+                      <th>Actual Ship Date</th>
                     </tr>
                   </thead>
                   <tbody>
                     {items.length === 0 ? (
                       <tr>
-                        <td colSpan={9} className="text-muted">
+                        <td colSpan={11} className="text-muted">
                           No item rows were returned.
                         </td>
                       </tr>
@@ -405,6 +457,8 @@ function SalesOrdersContent() {
                           <td>{item.uom || ""}</td>
                           <td>{item.defaultbin || ""}</td>
                           <td>{item.stockitem || ""}</td>
+                          <td>{item.rqdate || ""}</td>
+                          <td>{item.shipdate || ""}</td>
                         </tr>
                       ))
                     )}
@@ -446,6 +500,7 @@ function SalesOrdersContent() {
                               <div className="card so-inner-card" key={`deco-${lineNo}-${decoIdx}`}>
                                 <div className="so-kv-list">
                                   {line("Decoration No", deco.decoNo)}
+                                  {line("Sort Code", deco.sortCode)}
                                   {line("Colors", deco.colors)}
                                   {line("Type", deco.dcType)}
                                   {line("Location", deco.dcLocation)}
@@ -454,6 +509,21 @@ function SalesOrdersContent() {
                                   {line("Stitch Count", deco.stCount)}
                                   {line("Previous SO", deco.prevSono)}
                                   {line("Previous Line", deco.prevLine)}
+                                  {line("Previous Deco", deco.prevDeco)}
+                                  {line("With Change", deco.wChange)}
+                                  {line("Provided", deco.provided)}
+                                  {line("In House", deco.inHouse)}
+                                  {line("Tall ET", deco.tallEt)}
+                                  {line("Added By", deco.addUser)}
+                                  {line("Added Date", deco.addDate)}
+                                  {line("Added Time", deco.addTime)}
+                                  {line("Lock Status", deco.lckStat)}
+                                  {line("Lock User", deco.lckUser)}
+                                  {line("Lock Date", deco.lckDate)}
+                                  {line("Lock Time", deco.lckTime)}
+                                  {line("Pre Close", deco.preClose)}
+                                  {line("DC Status", deco.dcStat)}
+                                  {line("Knit Lines", deco.knitLines)}
                                   {line("Description", deco.descrip)}
                                 </div>
                               </div>
@@ -498,17 +568,38 @@ function SalesOrdersContent() {
                 </div>
               </div>
             </div>
+
+            <div className="card">
+              <div className="section-card-header">
+                <strong>Print Routing</strong>
+              </div>
+
+              <div className="so-summary-grid">
+                <div className="so-kv-list">
+                  {line("Customer Original", yesNoFlag(printFlags?.custOrig))}
+                  {line("Warehouse", yesNoFlag(printFlags?.warehouse))}
+                  {line("Premium Line", yesNoFlag(printFlags?.premiumLin))}
+                  {line("Cutting", yesNoFlag(printFlags?.cutting))}
+                  {line("Manufacturing", yesNoFlag(printFlags?.manufactur))}
+                  {line("Embroidery", yesNoFlag(printFlags?.embroidery))}
+                  {line("Print", yesNoFlag(printFlags?.print))}
+                  {line("Shipping", yesNoFlag(printFlags?.shipping))}
+                </div>
+
+                <div className="so-kv-list">
+                  {line("Sample", yesNoFlag(printFlags?.sample))}
+                  {line("Sample Emb", yesNoFlag(printFlags?.sampleEmb))}
+                  {line("Knit Dept", yesNoFlag(printFlags?.knitDept))}
+                  {line("PDF", yesNoFlag(printFlags?.pdf))}
+                  {line("Mfg For Knits", yesNoFlag(printFlags?.mfgForKnts))}
+                  {line("Ship Sample", yesNoFlag(printFlags?.shipSamp))}
+                  {line("Report", yesNoFlag(printFlags?.report))}
+                </div>
+              </div>
+            </div>
           </>
         ) : null}
       </div>
     </div>
-  );
-}
-
-export default function SalesOrdersPage() {
-  return (
-    <Suspense fallback={<div style={{ padding: 16 }}>Loading…</div>}>
-      <SalesOrdersContent />
-    </Suspense>
   );
 }

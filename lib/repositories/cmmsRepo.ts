@@ -161,7 +161,15 @@ export async function listWorkOrdersPaged(args: {
   like("operatorInitials", `coalesce(wo.operator_initials,'')`);
   like("commonIssue", `ic.name`);
   like("issueDialogue", `coalesce(wo.issue_dialogue,'')`);
-  like("tech", `coalesce(t.name,'')`);
+  like(
+    "tech",
+    `coalesce((
+      SELECT string_agg(t2.name::text, ', ' ORDER BY t2.name)
+      FROM ${S}.work_order_techs wot2
+      JOIN ${S}.techs t2 ON t2.id = wot2.tech_id
+      WHERE wot2.work_order_id = wo.work_order_id
+    ), '')`
+  );
   like("status", `st.name`);
 
   const whereSql = where.length ? `WHERE ${where.join(" AND ")}` : "";
@@ -193,7 +201,6 @@ export async function listWorkOrdersPaged(args: {
     JOIN ${S}.priorities pr ON pr.id = wo.priority_id
     JOIN ${S}.issue_catalog ic ON ic.id = wo.common_issue_id
     JOIN ${S}.statuses st ON st.id = wo.status_id
-    LEFT JOIN ${S}.techs t ON t.id = wo.tech_id
     ${whereSql}
   `;
 
@@ -214,7 +221,12 @@ export async function listWorkOrdersPaged(args: {
       wo.operator_initials::text AS "operatorInitials",
       ic.name::text AS "commonIssue",
       wo.issue_dialogue::text AS "issueDialogue",
-      t.name::text AS "tech",
+      (
+        SELECT string_agg(t2.name::text, ', ' ORDER BY t2.name)
+        FROM ${S}.work_order_techs wot2
+        JOIN ${S}.techs t2 ON t2.id = wot2.tech_id
+        WHERE wot2.work_order_id = wo.work_order_id
+      ) AS "tech",
       st.name::text AS "status"
     FROM ${S}.work_orders wo
     JOIN ${S}.departments d ON d.id = wo.department_id
@@ -222,7 +234,6 @@ export async function listWorkOrdersPaged(args: {
     JOIN ${S}.priorities pr ON pr.id = wo.priority_id
     JOIN ${S}.issue_catalog ic ON ic.id = wo.common_issue_id
     JOIN ${S}.statuses st ON st.id = wo.status_id
-    LEFT JOIN ${S}.techs t ON t.id = wo.tech_id
     ${whereSql}
     ORDER BY ${sortExpr} ${sortDir === "desc" ? "DESC" : "ASC"}, wo.work_order_id DESC
     LIMIT $${p++} OFFSET $${p++}
@@ -247,6 +258,7 @@ async function getOpenStatusId(): Promise<number> {
       AND is_active = true
     LIMIT 1
   `);
+
   if (res.rowCount && res.rows[0]?.id) return res.rows[0].id;
 
   const inactive = await db.query(`
@@ -364,9 +376,11 @@ export type WorkOrderById = {
   commonIssue: string;
   typeId: number | null;
   techId: number | null;
+  techIds: number[];
   statusId: number;
   workOrderType: string | null;
   tech: string | null;
+  techNames: string[];
   status: string | null;
   downTimeRecorded: string | null;
   resolution: string | null;
@@ -395,11 +409,40 @@ export async function getWorkOrderById(workOrderId: number): Promise<WorkOrderBy
       ic.name::text AS "commonIssue",
 
       wo.type_id::int AS "typeId",
-      wo.tech_id::int AS "techId",
+      (
+        SELECT wot.tech_id::int
+        FROM ${S}.work_order_techs wot
+        WHERE wot.work_order_id = wo.work_order_id
+        ORDER BY wot.tech_id
+        LIMIT 1
+      ) AS "techId",
+      coalesce(
+        (
+          SELECT array_agg(wot.tech_id::int ORDER BY t.name, wot.tech_id)
+          FROM ${S}.work_order_techs wot
+          JOIN ${S}.techs t ON t.id = wot.tech_id
+          WHERE wot.work_order_id = wo.work_order_id
+        ),
+        ARRAY[]::int[]
+      ) AS "techIds",
       wo.status_id::int AS "statusId",
 
       wt.name::text AS "workOrderType",
-      t.name::text AS "tech",
+      (
+        SELECT string_agg(t.name::text, ', ' ORDER BY t.name)
+        FROM ${S}.work_order_techs wot
+        JOIN ${S}.techs t ON t.id = wot.tech_id
+        WHERE wot.work_order_id = wo.work_order_id
+      ) AS "tech",
+      coalesce(
+        (
+          SELECT array_agg(t.name::text ORDER BY t.name)
+          FROM ${S}.work_order_techs wot
+          JOIN ${S}.techs t ON t.id = wot.tech_id
+          WHERE wot.work_order_id = wo.work_order_id
+        ),
+        ARRAY[]::text[]
+      ) AS "techNames",
       st.name::text AS "status",
 
       wo.down_time_recorded::text AS "downTimeRecorded",
@@ -410,7 +453,6 @@ export async function getWorkOrderById(workOrderId: number): Promise<WorkOrderBy
     JOIN ${S}.priorities pr ON pr.id = wo.priority_id
     JOIN ${S}.issue_catalog ic ON ic.id = wo.common_issue_id
     LEFT JOIN ${S}.wo_types wt ON wt.id = wo.type_id
-    LEFT JOIN ${S}.techs t ON t.id = wo.tech_id
     JOIN ${S}.statuses st ON st.id = wo.status_id
     WHERE wo.work_order_id = $1
     LIMIT 1
@@ -440,7 +482,9 @@ export type WorkOrderHistorySnapshot = {
   typeId: number | null;
   type: string | null;
   techId: number | null;
+  techIds: number[];
   tech: string | null;
+  techNames: string[];
   commonIssueId: number;
   commonIssue: string;
   issueDialogue: string;
@@ -471,8 +515,37 @@ export async function getWorkOrderHistorySnapshot(
         w.operator_initials::text AS "operatorInitials",
         w.type_id::int AS "typeId",
         wt.name::text AS "type",
-        w.tech_id::int AS "techId",
-        tech.name::text AS "tech",
+        (
+          SELECT wot.tech_id::int
+          FROM ${S}.work_order_techs wot
+          WHERE wot.work_order_id = w.work_order_id
+          ORDER BY wot.tech_id
+          LIMIT 1
+        ) AS "techId",
+        coalesce(
+          (
+            SELECT array_agg(wot.tech_id::int ORDER BY t.name, wot.tech_id)
+            FROM ${S}.work_order_techs wot
+            JOIN ${S}.techs t ON t.id = wot.tech_id
+            WHERE wot.work_order_id = w.work_order_id
+          ),
+          ARRAY[]::int[]
+        ) AS "techIds",
+        (
+          SELECT string_agg(t.name::text, ', ' ORDER BY t.name)
+          FROM ${S}.work_order_techs wot
+          JOIN ${S}.techs t ON t.id = wot.tech_id
+          WHERE wot.work_order_id = w.work_order_id
+        ) AS "tech",
+        coalesce(
+          (
+            SELECT array_agg(t.name::text ORDER BY t.name)
+            FROM ${S}.work_order_techs wot
+            JOIN ${S}.techs t ON t.id = wot.tech_id
+            WHERE wot.work_order_id = w.work_order_id
+          ),
+          ARRAY[]::text[]
+        ) AS "techNames",
         w.common_issue_id::int AS "commonIssueId",
         i.name::text AS "commonIssue",
         w.issue_dialogue::text AS "issueDialogue",
@@ -489,7 +562,6 @@ export async function getWorkOrderHistorySnapshot(
       JOIN ${S}.issue_catalog i ON i.id = w.common_issue_id
       JOIN ${S}.statuses s ON s.id = w.status_id
       LEFT JOIN ${S}.wo_types wt ON wt.id = w.type_id
-      LEFT JOIN ${S}.techs tech ON tech.id = w.tech_id
       WHERE w.work_order_id = $1
       LIMIT 1
     `,
@@ -585,10 +657,10 @@ function buildCmmsFieldChanges(
   );
 
   pushIfChanged(
-    "tech_id",
-    before.tech,
-    after.tech,
-    `Tech changed from "${before.tech ?? "Unassigned"}" to "${after.tech ?? "Unassigned"}".`,
+    "tech_ids",
+    before.techNames,
+    after.techNames,
+    `Assigned techs changed from "${before.tech ?? "Unassigned"}" to "${after.tech ?? "Unassigned"}".`,
     "assigned"
   );
 
@@ -785,7 +857,15 @@ export async function listWorkOrdersTechPaged(args: {
   like("commonIssue", `ic.name`);
   like("issueDialogue", `coalesce(wo.issue_dialogue,'')`);
   like("type", `coalesce(typ.name,'')`);
-  like("tech", `coalesce(t.name,'')`);
+  like(
+    "tech",
+    `coalesce((
+      SELECT string_agg(t2.name::text, ', ' ORDER BY t2.name)
+      FROM ${S}.work_order_techs wot2
+      JOIN ${S}.techs t2 ON t2.id = wot2.tech_id
+      WHERE wot2.work_order_id = wo.work_order_id
+    ), '')`
+  );
   like("status", `st.name`);
   like("resolution", `coalesce(wo.resolution,'')`);
   like("downTimeRecorded", `coalesce(wo.down_time_recorded,'')`);
@@ -817,7 +897,6 @@ export async function listWorkOrdersTechPaged(args: {
     JOIN ${S}.priorities pr ON pr.id = wo.priority_id
     JOIN ${S}.issue_catalog ic ON ic.id = wo.common_issue_id
     JOIN ${S}.statuses st ON st.id = wo.status_id
-    LEFT JOIN ${S}.techs t ON t.id = wo.tech_id
     LEFT JOIN ${S}.wo_types typ ON typ.id = wo.type_id
     ${whereSql}
   `;
@@ -837,7 +916,12 @@ export async function listWorkOrdersTechPaged(args: {
       wo.issue_dialogue::text AS "issueDialogue",
 
       typ.name::text AS "type",
-      t.name::text AS "tech",
+      (
+        SELECT string_agg(t2.name::text, ', ' ORDER BY t2.name)
+        FROM ${S}.work_order_techs wot2
+        JOIN ${S}.techs t2 ON t2.id = wot2.tech_id
+        WHERE wot2.work_order_id = wo.work_order_id
+      ) AS "tech",
       st.name::text AS "status",
       wo.resolution::text AS "resolution",
       wo.down_time_recorded::text AS "downTimeRecorded"
@@ -847,7 +931,6 @@ export async function listWorkOrdersTechPaged(args: {
     JOIN ${S}.priorities pr ON pr.id = wo.priority_id
     JOIN ${S}.issue_catalog ic ON ic.id = wo.common_issue_id
     JOIN ${S}.statuses st ON st.id = wo.status_id
-    LEFT JOIN ${S}.techs t ON t.id = wo.tech_id
     LEFT JOIN ${S}.wo_types typ ON typ.id = wo.type_id
     ${whereSql}
     ORDER BY ${sortExpr} ${sortDir === "asc" ? "ASC" : "DESC"}, wo.work_order_id DESC
@@ -864,46 +947,77 @@ export async function listWorkOrdersTechPaged(args: {
 export async function updateWorkOrderTechFields(args: {
   id: number;
   typeId: number | null;
-  techId: number | null;
+  techIds: number[];
   statusId: number | null;
   resolution: string | null;
   downTimeRecorded: string | null;
   activityActor?: ActivityActor | null;
+  assignedByUserId?: string | null;
 }): Promise<{ workOrderId: number }> {
   const before = await getWorkOrderHistorySnapshot(args.id);
 
-  const sql = `
-    UPDATE ${S}.work_orders
-    SET
-      type_id = $2,
-      tech_id = $3,
-      status_id = $4,
-      resolution = nullif($5,''),
-      down_time_recorded = nullif($6,''),
-      updated_at = now()
-    WHERE work_order_id = $1
-    RETURNING work_order_id::int AS "workOrderId"
-  `;
-
-  const res = await db.query(sql, [
-    args.id,
-    args.typeId,
-    args.techId,
-    args.statusId,
-    args.resolution ?? "",
-    args.downTimeRecorded ?? "",
-  ]);
-
-  const out = res.rows[0] as { workOrderId: number };
+  await db.query("BEGIN");
 
   try {
-    const after = await getWorkOrderHistorySnapshot(out.workOrderId);
-    if (before && after) {
-      await logCmmsWorkOrderUpdates(before, after, args.activityActor ?? null);
-    }
-  } catch {
-    // do not block update if activity logging fails
-  }
+    const sql = `
+      UPDATE ${S}.work_orders
+      SET
+        type_id = $2,
+        status_id = $3,
+        resolution = nullif($4,''),
+        down_time_recorded = nullif($5,''),
+        updated_at = now()
+      WHERE work_order_id = $1
+      RETURNING work_order_id::int AS "workOrderId"
+    `;
 
-  return out;
+    const res = await db.query(sql, [
+      args.id,
+      args.typeId,
+      args.statusId,
+      args.resolution ?? "",
+      args.downTimeRecorded ?? "",
+    ]);
+
+    const out = res.rows[0] as { workOrderId: number };
+
+    await db.query(
+      `DELETE FROM ${S}.work_order_techs WHERE work_order_id = $1`,
+      [args.id]
+    );
+
+    const uniqueTechIds = Array.from(
+      new Set((args.techIds || []).filter((v) => Number.isFinite(v)))
+    );
+
+    for (const techId of uniqueTechIds) {
+      await db.query(
+        `
+          INSERT INTO ${S}.work_order_techs (
+            work_order_id,
+            tech_id,
+            assigned_by_user_id
+          )
+          VALUES ($1, $2, $3)
+        `,
+        [args.id, techId, args.assignedByUserId ?? null]
+      );
+    }
+
+    await db.query("COMMIT");
+
+    try {
+      const after = await getWorkOrderHistorySnapshot(out.workOrderId);
+      if (before && after) {
+        await logCmmsWorkOrderUpdates(before, after, args.activityActor ?? null);
+      }
+    } catch {
+      // do not block update if activity logging fails
+    }
+
+    return out;
+  } catch (e) {
+    await db.query("ROLLBACK");
+    throw e;
+  }
 }

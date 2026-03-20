@@ -18,7 +18,6 @@ function centralTodayISODate(): string {
   return `${yyyy}-${mm}-${dd}`;
 }
 
-// ✅ remove commas helper
 function stripCommas(v: any) {
   const s = v === null || v === undefined ? "" : String(v);
   return s.replace(/,/g, "");
@@ -56,14 +55,11 @@ export default function LaserProductionForm({
   const [loading, setLoading] = useState(mode === "edit");
   const [saving, setSaving] = useState(false);
 
-  // server/runtime errors only
   const [error, setError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
-  // field-level errors
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
 
-  // Hidden date (kept for DB)
   const [entryDate, setEntryDate] = useState(mode === "add" ? centralTodayISODate() : "");
 
   const [salesOrder, setSalesOrder] = useState("");
@@ -74,22 +70,25 @@ export default function LaserProductionForm({
   const [styles, setStyles] = useState<string[]>([]);
   const [stylesLoading, setStylesLoading] = useState(false);
 
-  // refs for auto-scroll/focus
   const salesOrderRef = useRef<HTMLInputElement | null>(null);
   const styleRef = useRef<HTMLSelectElement | null>(null);
   const piecesRef = useRef<HTMLInputElement | null>(null);
 
-  // styling
-  const errTextClass = "mt-1 text-xs font-semibold text-red-700";
-  const inputBaseClass = "w-full rounded border p-2";
-  const inputErrorClass = "border-red-500 ring-2 ring-red-200";
   function inputClass(hasErr?: boolean) {
-    return `${inputBaseClass} ${hasErr ? inputErrorClass : ""}`;
+    return hasErr ? "input input-error" : "input";
   }
 
-  // Load dropdown options (KEEP SAME CALL)
+  function selectClass(hasErr?: boolean) {
+    return hasErr ? "select select-error" : "select";
+  }
+
+  function textareaClass(hasErr?: boolean) {
+    return hasErr ? "textarea textarea-error" : "textarea";
+  }
+
   useEffect(() => {
     let cancelled = false;
+
     (async () => {
       try {
         setStylesLoading(true);
@@ -98,17 +97,17 @@ export default function LaserProductionForm({
         if (!res.ok) throw new Error(data?.error || "Failed to load leather styles");
         if (!cancelled) setStyles(data.styles ?? []);
       } catch {
-        // keep usable
+        // keep usable if styles fail to load
       } finally {
         if (!cancelled) setStylesLoading(false);
       }
     })();
+
     return () => {
       cancelled = true;
     };
   }, []);
 
-  // Load edit record (KEEP SAME CALL)
   useEffect(() => {
     if (mode !== "edit" || !id) return;
 
@@ -202,7 +201,6 @@ export default function LaserProductionForm({
         return;
       }
 
-      // KEEP SAME payload and endpoints
       const payload: any = {
         entryDate,
         salesOrder: stripCommas(salesOrder),
@@ -243,8 +241,8 @@ export default function LaserProductionForm({
 
   if (loading) {
     return (
-      <>
-        <div className="mb-4">
+      <div className="section-stack">
+        <div>
           <button
             type="button"
             className="btn btn-secondary"
@@ -253,114 +251,151 @@ export default function LaserProductionForm({
             ← Back to List
           </button>
         </div>
-        <div className="p-6">Loading…</div>
-      </>
+
+        <div className="card card-lg">
+          <div className="text-sm text-muted">Loading entry…</div>
+        </div>
+      </div>
     );
   }
 
   return (
-    <>
-      <div className="mb-4">
-        <button
-          type="button"
-          className="btn btn-secondary"
-          onClick={() => router.push("/laser-production")}
-        >
-          ← Back to List
-        </button>
+    <div className="section-stack">
+      <div className="page-header">
+        <div className="page-header-title-wrap">
+          <h1 className="page-title">
+            {mode === "edit" ? "Edit Laser Production Entry" : "Laser Production Entry"}
+          </h1>
+          <p className="page-subtitle">
+            Enter laser production details. Required fields are marked with *.
+          </p>
+        </div>
+
+        <div>
+          <button
+            type="button"
+            className="btn btn-secondary"
+            onClick={() => router.push("/laser-production")}
+          >
+            ← Back to List
+          </button>
+        </div>
       </div>
 
-      <form onSubmit={onSubmit} className="max-w-3xl mx-auto space-y-4">
-        {error && (
-          <div className="rounded border border-red-300 bg-red-50 p-3 text-sm text-red-700">{error}</div>
-        )}
-
-        {successMsg && (
-          <div className="rounded border border-green-300 bg-green-50 p-3 text-sm text-green-800">
-            {successMsg}
+      <form onSubmit={onSubmit} className="section-stack">
+        <section className="card card-lg">
+          <div className="section-card-header">
+            <div>
+              <h2 className="mb-1 text-lg font-bold">Entry Details</h2>
+              <p className="text-sm text-soft m-0">
+                Enter the sales order, leather style/color, cut quantity, and optional notes.
+              </p>
+            </div>
           </div>
-        )}
 
-        {/* Entry Date hidden to match other modules */}
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-12">
+            <div className="md:col-span-4">
+              <label className="field-label">
+                Sales Order <span className="text-red-600">*</span>
+              </label>
+              <input
+                ref={salesOrderRef}
+                className={inputClass(!!fieldErrors.salesOrder)}
+                value={salesOrder}
+                onChange={(e) => {
+                  setSalesOrder(stripCommas(e.target.value));
+                  setFieldErrors((prev) => ({ ...prev, salesOrder: undefined }));
+                }}
+                placeholder="1234567"
+                inputMode="numeric"
+                readOnly={mode === "edit"}
+              />
+              {fieldErrors.salesOrder ? <div className="field-error">{fieldErrors.salesOrder}</div> : null}
+              <div className="field-help">
+                {mode === "edit"
+                  ? "Sales Order cannot be changed when editing an existing entry."
+                  : "Sales Order is required and must be exactly 7 digits."}
+              </div>
+            </div>
 
-        <div>
-          <label className="block text-sm font-medium mb-1">
-            Sales Order <span className="text-red-600">*</span>
-          </label>
-          <input
-            ref={salesOrderRef}
-            className={inputClass(!!fieldErrors.salesOrder)}
-            value={salesOrder}
-            onChange={(e) => {
-              setSalesOrder(stripCommas(e.target.value));
-              setFieldErrors((prev) => ({ ...prev, salesOrder: undefined }));
-            }}
-            placeholder="7-digit SO"
-            inputMode="numeric"
-            readOnly={mode === "edit"} // match other modules
-          />
-          {fieldErrors.salesOrder ? <div className={errTextClass}>{fieldErrors.salesOrder}</div> : null}
-          <div className="mt-1 text-xs opacity-70">Is required, and has to be a 7 digit number.</div>
+            <div className="md:col-span-4">
+              <label className="field-label">
+                Leather Style/Color <span className="text-red-600">*</span>
+              </label>
+              <select
+                ref={styleRef}
+                className={selectClass(!!fieldErrors.leatherStyleColor)}
+                value={leatherStyleColor}
+                onChange={(e) => {
+                  setLeatherStyleColor(e.target.value);
+                  setFieldErrors((prev) => ({ ...prev, leatherStyleColor: undefined }));
+                }}
+              >
+                <option value="">{stylesLoading ? "Loading..." : "Select Style/Color"}</option>
+                {styles.map((s) => (
+                  <option key={s} value={s}>
+                    {s}
+                  </option>
+                ))}
+              </select>
+              {fieldErrors.leatherStyleColor ? (
+                <div className="field-error">{fieldErrors.leatherStyleColor}</div>
+              ) : null}
+            </div>
+
+            <div className="md:col-span-4">
+              <label className="field-label">
+                Pieces Cut <span className="text-red-600">*</span>
+              </label>
+              <input
+                ref={piecesRef}
+                type="text"
+                className={inputClass(!!fieldErrors.piecesCut)}
+                value={piecesCut}
+                onChange={(e) => {
+                  setPiecesCut(stripCommas(e.target.value));
+                  setFieldErrors((prev) => ({ ...prev, piecesCut: undefined }));
+                }}
+                inputMode="numeric"
+                placeholder="0"
+              />
+              {fieldErrors.piecesCut ? <div className="field-error">{fieldErrors.piecesCut}</div> : null}
+              <div className="field-help">Required. Numbers only.</div>
+            </div>
+
+            <div className="md:col-span-12">
+              <label className="field-label">Notes</label>
+              <textarea
+                className={textareaClass(false)}
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                rows={4}
+                placeholder="Optional"
+              />
+            </div>
+          </div>
+        </section>
+
+        {error ? <div className="alert alert-danger">{error}</div> : null}
+        {successMsg ? <div className="alert alert-success">{successMsg}</div> : null}
+
+        <div className="sticky-actions">
+          <div className="flex flex-wrap gap-2 pt-3">
+            <button type="submit" disabled={saving} className="btn btn-primary">
+              {saving ? "Saving..." : mode === "edit" ? "Update" : "Save"}
+            </button>
+
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={() => router.push("/laser-production")}
+              disabled={saving}
+            >
+              {mode === "edit" ? "Cancel" : "Back to List"}
+            </button>
+          </div>
         </div>
-
-        <div>
-          <label className="block text-sm font-medium mb-1">
-            Leather Style/Color <span className="text-red-600">*</span>
-          </label>
-          <select
-            ref={styleRef}
-            className={inputClass(!!fieldErrors.leatherStyleColor)}
-            value={leatherStyleColor}
-            onChange={(e) => {
-              setLeatherStyleColor(e.target.value);
-              setFieldErrors((prev) => ({ ...prev, leatherStyleColor: undefined }));
-            }}
-          >
-            <option value="">{stylesLoading ? "Loading..." : "Select Style/Color"}</option>
-            {styles.map((s) => (
-              <option key={s} value={s}>
-                {s}
-              </option>
-            ))}
-          </select>
-          {fieldErrors.leatherStyleColor ? <div className={errTextClass}>{fieldErrors.leatherStyleColor}</div> : null}
-        </div>
-
-        <div>
-          <label className="block text-sm font-medium mb-1">
-            Pieces Cut <span className="text-red-600">*</span>
-          </label>
-          <input
-            ref={piecesRef}
-            type="text"
-            className={inputClass(!!fieldErrors.piecesCut)}
-            value={piecesCut}
-            onChange={(e) => {
-              setPiecesCut(stripCommas(e.target.value));
-              setFieldErrors((prev) => ({ ...prev, piecesCut: undefined }));
-            }}
-            inputMode="numeric"
-            placeholder=""
-          />
-          {fieldErrors.piecesCut ? <div className={errTextClass}>{fieldErrors.piecesCut}</div> : null}
-          <div className="mt-1 text-xs opacity-70">Is required, and should be a number only.</div>
-        </div>
-
-        <div>
-          <label className="block text-sm font-medium mb-1">Notes</label>
-          <textarea
-            className="w-full rounded border p-2"
-            value={notes}
-            onChange={(e) => setNotes(e.target.value)}
-            rows={4}
-            placeholder="Optional"
-          />
-        </div>
-
-        <button type="submit" disabled={saving} className="btn btn-primary">
-          {saving ? "Saving..." : mode === "edit" ? "Update" : "Save"}
-        </button>
       </form>
-    </>
+    </div>
   );
 }

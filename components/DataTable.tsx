@@ -62,6 +62,11 @@ type Props<T> = {
   rowToCsv?: (row: T) => Record<string, string | number | null | undefined>;
 
   renderExpandedRow?: (row: T) => React.ReactNode;
+
+  /**
+   * Optional row class hook for conditional highlighting/styling.
+   */
+  rowClassName?: (row: T) => string | undefined;
 };
 
 function defaultFilename() {
@@ -168,6 +173,7 @@ export default function DataTable<T>({
   rowToCsv,
 
   renderExpandedRow,
+  rowClassName,
 }: Props<T>) {
   const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
   const offset = pageIndex * pageSize;
@@ -544,25 +550,32 @@ export default function DataTable<T>({
                   </td>
                 </tr>
               ) : (
-                filteredRows.map((r) => (
-                  <React.Fragment key={rowKey(r)}>
-                    <tr className="dt-row">
-                      {columns.map((c) => (
-                        <td key={c.key} className="dt-td">
-                          {c.render(r)}
-                        </td>
-                      ))}
-                    </tr>
+                filteredRows.map((r) => {
+                  const extraRowClass = rowClassName?.(r)?.trim();
+                  const combinedRowClass = extraRowClass
+                    ? `dt-row ${extraRowClass}`
+                    : "dt-row";
 
-                    {renderExpandedRow ? (
-                      <tr>
-                        <td colSpan={columns.length} className="dt-expanded-cell">
-                          {renderExpandedRow(r)}
-                        </td>
+                  return (
+                    <React.Fragment key={rowKey(r)}>
+                      <tr className={combinedRowClass}>
+                        {columns.map((c) => (
+                          <td key={c.key} className="dt-td">
+                            {c.render(r)}
+                          </td>
+                        ))}
                       </tr>
-                    ) : null}
-                  </React.Fragment>
-                ))
+
+                      {renderExpandedRow ? (
+                        <tr>
+                          <td colSpan={columns.length} className="dt-expanded-cell">
+                            {renderExpandedRow(r)}
+                          </td>
+                        </tr>
+                      ) : null}
+                    </React.Fragment>
+                  );
+                })
               )}
             </tbody>
           </table>

@@ -2,8 +2,14 @@
 
 import { use, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
 import CommentsPanel from "@/components/platform/CommentsPanel";
 import AttachmentsPanel from "@/components/platform/AttachmentsPanel";
+
+type MeResponse = {
+  role?: string | null;
+  error?: string;
+};
 
 type RecutRow = {
   id: string;
@@ -37,6 +43,10 @@ type RecutRow = {
   doNotPullAt?: string | null;
   doNotPullBy?: string | null;
   notes: string | null;
+  isVoided?: boolean | null;
+  voidedAt?: string | null;
+  voidedBy?: string | null;
+  voidReason?: string | null;
   createdAt?: string | null;
   updatedAt?: string | null;
 };
@@ -58,6 +68,21 @@ type ActivityHistoryRow = {
   detailNumber: number | null;
   createdAt: string;
 };
+
+const ALLOWED_RETURN_TO = new Set([
+  "/recuts",
+  "/recuts/supervisor-review",
+  "/recuts/warehouse",
+]);
+
+function sanitizeReturnTo(value: string | null | undefined, fallback: string) {
+  const v = String(value ?? "").trim();
+  if (!v) return fallback;
+  if (!v.startsWith("/")) return fallback;
+  if (v.startsWith("//")) return fallback;
+  if (ALLOWED_RETURN_TO.has(v)) return v;
+  return fallback;
+}
 
 function fmtTs(v?: string | null) {
   if (!v) return "";
@@ -91,7 +116,10 @@ function yesNo(v: boolean | null | undefined) {
   return v ? "Yes" : "No";
 }
 
-function pillClassForBoolean(v: boolean | null | undefined, trueKind: "success" | "warning" | "danger" | "info" = "success") {
+function pillClassForBoolean(
+  v: boolean | null | undefined,
+  trueKind: "success" | "warning" | "danger" | "info" = "success"
+) {
   if (v == null) return "record-pill record-pill-neutral";
   if (!v) return "record-pill record-pill-neutral";
   return `record-pill record-pill-${trueKind}`;
@@ -221,12 +249,22 @@ function SidebarNav({
   supervisorApproved,
   warehousePrinted,
   doNotPull,
+  isVoided,
+  canVoid,
+  voiding,
+  onVoid,
+  returnTo,
 }: {
   id: string;
   recutId: number | null;
   supervisorApproved: boolean | null;
   warehousePrinted: boolean | null;
   doNotPull: boolean | null;
+  isVoided: boolean | null | undefined;
+  canVoid: boolean;
+  voiding: boolean;
+  onVoid: () => void;
+  returnTo: string;
 }) {
   return (
     <aside className="record-sidebar">
@@ -245,6 +283,9 @@ function SidebarNav({
             <span className={pillClassForBoolean(doNotPull, "danger")}>
               {doNotPull ? "Do Not Pull" : "Pull Allowed"}
             </span>
+            <span className={pillClassForBoolean(isVoided, "danger")}>
+              {isVoided ? "Voided" : "Active"}
+            </span>
           </div>
         </div>
 
@@ -262,12 +303,28 @@ function SidebarNav({
         <div className="record-sidebar-section">
           <div className="record-sidebar-section-title">Actions</div>
           <div className="record-sidebar-actions">
-            <Link href="/recuts" className="btn btn-secondary">
+            <Link href={returnTo} className="btn btn-secondary">
               Back to Recuts
             </Link>
-            <Link href={`/recuts/${id}/edit`} className="btn btn-primary">
-              Edit Request
-            </Link>
+            {!isVoided ? (
+              <Link
+                href={`/recuts/${id}/edit?returnTo=${encodeURIComponent(returnTo)}`}
+                className="btn btn-primary"
+              >
+                Edit Request
+              </Link>
+            ) : null}
+
+            {canVoid && !isVoided ? (
+              <button
+                type="button"
+                className="btn btn-danger"
+                onClick={onVoid}
+                disabled={voiding}
+              >
+                {voiding ? "Voiding..." : "Void Entry"}
+              </button>
+            ) : null}
           </div>
         </div>
       </div>
@@ -300,10 +357,15 @@ export default function RecutViewPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = use(params);
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const returnTo = sanitizeReturnTo(searchParams.get("returnTo"), "/recuts");
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [row, setRow] = useState<RecutRow | null>(null);
+  const [me, setMe] = useState<MeResponse | null>(null);
+  const [voiding, setVoiding] = useState(false);
 
   useEffect(() => {
     let alive = true;
@@ -313,17 +375,21 @@ export default function RecutViewPage({
         setLoading(true);
         setError(null);
 
-        const res = await fetch(`/api/recuts/${encodeURIComponent(id)}`, {
-          cache: "no-store",
-        });
+        const [recutRes, meRes] = await Promise.all([
+          fetch(`/api/recuts/${encodeURIComponent(id)}`, { cache: "no-store" }),
+          fetch(`/api/me`, { cache: "no-store", credentials: "include" }),
+        ]);
 
-        const data = await res.json().catch(() => ({}));
-        if (!res.ok) {
-          throw new Error((data as any)?.error || "Failed to load recut request");
+        const recutData = await recutRes.json().catch(() => ({}));
+        const meData = await meRes.json().catch(() => ({}));
+
+        if (!recutRes.ok) {
+          throw new Error((recutData as any)?.error || "Failed to load recut request");
         }
 
         if (!alive) return;
-        setRow((data as any)?.entry ?? null);
+        setRow((recutData as any)?.entry ?? null);
+        setMe(meRes.ok ? (meData as MeResponse) : null);
       } catch (e: any) {
         if (!alive) return;
         setError(e?.message || "Failed to load recut request");
@@ -339,6 +405,46 @@ export default function RecutViewPage({
   }, [id]);
 
   const title = useMemo(() => `Recut Request #${row?.recutId ?? id}`, [id, row?.recutId]);
+
+  const role = String(me?.role ?? "").trim().toUpperCase();
+  const canVoid = role === "ADMIN" || role === "MANAGER" || role === "SUPERVISOR";
+
+  async function handleVoid() {
+    if (!row?.id || voiding) return;
+
+    const reason = window.prompt("Enter a reason for voiding this recut request (optional):", "") ?? "";
+    const confirmed = window.confirm(
+      "Void this recut request?\n\nIt will be hidden from standard lists, global search, and future reports, but kept in the database."
+    );
+
+    if (!confirmed) return;
+
+    setVoiding(true);
+    setError(null);
+
+    try {
+      const res = await fetch(`/api/recuts/${encodeURIComponent(row.id)}/void`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ reason }),
+      });
+
+      const data = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        setError((data as any)?.error || "Failed to void recut request.");
+        return;
+      }
+
+      router.push(returnTo);
+      router.refresh();
+    } catch {
+      setError("Failed to void recut request.");
+    } finally {
+      setVoiding(false);
+    }
+  }
 
   if (loading) {
     return (
@@ -362,7 +468,7 @@ export default function RecutViewPage({
         </div>
 
         <div className="record-actions">
-          <Link href="/recuts" className="btn btn-secondary">
+          <Link href={returnTo} className="btn btn-secondary">
             Back
           </Link>
         </div>
@@ -384,7 +490,7 @@ export default function RecutViewPage({
         </div>
 
         <div className="record-actions">
-          <Link href="/recuts" className="btn btn-secondary">
+          <Link href={returnTo} className="btn btn-secondary">
             Back
           </Link>
         </div>
@@ -403,14 +509,28 @@ export default function RecutViewPage({
         </div>
 
         <div className="record-actions">
-          <Link href="/recuts" className="btn btn-secondary">
+          <Link href={returnTo} className="btn btn-secondary">
             Back
           </Link>
-          <Link href={`/recuts/${id}/edit`} className="btn btn-primary">
-            Edit
-          </Link>
+          {!row.isVoided ? (
+            <Link
+              href={`/recuts/${id}/edit?returnTo=${encodeURIComponent(returnTo)}`}
+              className="btn btn-primary"
+            >
+              Edit
+            </Link>
+          ) : null}
         </div>
       </div>
+
+      {row.isVoided ? (
+        <div className="alert alert-danger" style={{ marginBottom: 12 }}>
+          This recut request has been voided.
+          {row.voidedAt ? ` Voided ${fmtTs(row.voidedAt)}` : ""}
+          {row.voidedBy ? ` by ${row.voidedBy}.` : "."}
+          {row.voidReason ? ` Reason: ${row.voidReason}` : ""}
+        </div>
+      ) : null}
 
       <div className="record-layout">
         <SidebarNav
@@ -419,6 +539,11 @@ export default function RecutViewPage({
           supervisorApproved={row.supervisorApproved}
           warehousePrinted={row.warehousePrinted}
           doNotPull={row.doNotPull}
+          isVoided={row.isVoided}
+          canVoid={canVoid}
+          voiding={voiding}
+          onVoid={handleVoid}
+          returnTo={returnTo}
         />
 
         <main className="record-content">
@@ -445,6 +570,8 @@ export default function RecutViewPage({
                 <Info label="Deliver To" value={row.deliverTo} />
                 <Info label="Event" value={yesNo(row.event)} />
                 <Info label="Do Not Pull" value={yesNo(row.doNotPull)} />
+                <Info label="Voided" value={yesNo(row.isVoided)} />
+                <Info label="Void Reason" value={row.voidReason || ""} multiline />
                 <Info label="Notes" value={row.notes} multiline />
               </div>
             </div>
@@ -506,6 +633,24 @@ export default function RecutViewPage({
                       <span className="record-summary-value">
                         {row.doNotPull ? "Marked do not pull" : "No do-not-pull flag"}
                       </span>
+                    )}
+                  </div>
+                </div>
+
+                <div className="record-summary-row">
+                  <div className="record-summary-label">Record Lifecycle</div>
+                  <div className="record-badge-row">
+                    <span className={pillClassForBoolean(row.isVoided, "danger")}>
+                      {row.isVoided ? "Voided" : "Active"}
+                    </span>
+                    {row.voidedAt ? (
+                      <span className="record-summary-value">
+                        {fmtTs(row.voidedAt)}
+                        {row.voidedBy ? ` • ${row.voidedBy}` : ""}
+                        {row.voidReason ? ` • ${row.voidReason}` : ""}
+                      </span>
+                    ) : (
+                      <span className="record-summary-value">Record is active</span>
                     )}
                   </div>
                 </div>

@@ -423,14 +423,17 @@ export async function POST(req: NextRequest) {
         category: "API",
         module: "RECUT",
         eventType: "RECUT_WAREHOUSE_PRINT_NOT_FOUND",
-        message: "Warehouse print request found no matching recut requests",
+        message: "Warehouse print request found no active matching recut requests",
         recordType: "recut_requests",
         details: {
           requestedIds: ids,
         },
       });
 
-      return NextResponse.json({ error: "No matching recut requests found." }, { status: 404 });
+      return NextResponse.json(
+        { error: "No active matching recut requests found." },
+        { status: 404 }
+      );
     }
 
     const pdfBytes = await buildPdf(rows);
