@@ -79,8 +79,8 @@ export default function LoginPage() {
               </h2>
 
               <p className="mt-3 max-w-sm text-sm text-white/70">
-                Fast entry. Clear visibility. Role-based views for Production,
-                Maintenance, Customer Service, and Sales.
+                Capture production. Track issues. 
+                Monitor performance—all in a unified platform.
               </p>
 
               <div className="mt-8 grid grid-cols-2 gap-3 text-xs text-white/75">
@@ -89,19 +89,19 @@ export default function LoginPage() {
                     Daily Production Entries
                   </div>
                   <div className="mt-1 text-white/70">
-                    Quick submission flow
+                    Structured daily submissions
                   </div>
                 </div>
 
                 <div className="rounded-xl border border-white/10 bg-white/5 p-3">
-                  <div className="font-semibold text-white">Order Views</div>
+                  <div className="font-semibold text-white">Order Visibility</div>
                   <div className="mt-1 text-white/70">
-                    All-module rollups, plus SBT lookups
+                    Cross-module order tracking
                   </div>
                 </div>
 
                 <div className="rounded-xl border border-white/10 bg-white/5 p-3">
-                  <div className="font-semibold text-white">QC & Recut</div>
+                  <div className="font-semibold text-white">Quality & Recut</div>
                   <div className="mt-1 text-white/70">
                     Visibility into issues
                   </div>
@@ -109,7 +109,7 @@ export default function LoginPage() {
 
                 <div className="rounded-xl border border-white/10 bg-white/5 p-3">
                   <div className="font-semibold text-white">Metrics</div>
-                  <div className="mt-1 text-white/70">Daily totals & trends</div>
+                  <div className="mt-1 text-white/70">Performance insights across departments</div>
                 </div>
               </div>
             </div>

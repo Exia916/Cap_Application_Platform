@@ -83,8 +83,8 @@
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
+/* @media (prefers-color-scheme: dark) { */
+  /* :root {
     --background: #111317;
     --foreground: #f3f4f6;
 
@@ -132,8 +132,8 @@
     --btn-danger-border: #d1262b;
     --btn-danger-hover-bg: #b51f25;
     --btn-danger-hover-border: #b51f25;
-  }
-}
+  } */
+/* } */
 
 /* -------------------------------------------------------------------------- */
 /* BASE                                                                       */

@@ -46,6 +46,8 @@ const GLOBAL_SEARCH_ROLES = [
   "SALES",
 ];
 
+const ROW_OPEN_RESTRICTED_ROLES = ["CUSTOMER SERVICE", "SALES"];
+
 const nf0 = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
 
 function fmtInt(v: any) {
@@ -54,30 +56,28 @@ function fmtInt(v: any) {
   return nf0.format(n);
 }
 
-const dateFmt = new Intl.DateTimeFormat("en-US", {
-  year: "numeric",
-  month: "2-digit",
-  day: "2-digit",
-});
-
 const tsFmt = new Intl.DateTimeFormat("en-US", {
   year: "numeric",
   month: "2-digit",
   day: "2-digit",
   hour: "numeric",
   minute: "2-digit",
+  timeZone: "America/Chicago",
 });
 
 function fmtDateOnly(value: any) {
   if (!value) return "";
-  const s = String(value);
+
+  const s = String(value).trim();
+
+  // Safe handling for SQL DATE values like YYYY-MM-DD.
+  // Do not convert these through JS Date objects.
   if (/^\d{4}-\d{2}-\d{2}$/.test(s)) {
-    const [y, m, d] = s.split("-").map(Number);
-    return dateFmt.format(new Date(y, m - 1, d));
+    const [y, m, d] = s.split("-");
+    return `${m}/${d}/${y}`;
   }
-  const dt = new Date(s);
-  if (Number.isNaN(dt.getTime())) return s;
-  return dateFmt.format(dt);
+
+  return s;
 }
 
 function fmtTimestamp(value: any) {
@@ -249,6 +249,7 @@ function GlobalSearchPageInner() {
 
   const role = useMemo(() => (me?.role ?? "").trim().toUpperCase(), [me?.role]);
   const canAccess = GLOBAL_SEARCH_ROLES.includes(role);
+  const canOpenRows = !ROW_OPEN_RESTRICTED_ROLES.includes(role);
 
   useEffect(() => {
     let alive = true;
@@ -414,6 +415,22 @@ function GlobalSearchPageInner() {
         <span style={{ fontFamily: "monospace" }}>{q || "(empty)"}</span>
       </div>
 
+      {!canOpenRows ? (
+        <div
+          style={{
+            marginBottom: 12,
+            padding: "10px 12px",
+            border: "1px solid #e5e7eb",
+            borderRadius: 10,
+            background: "#f9fafb",
+            color: "#374151",
+            fontSize: 13,
+          }}
+        >
+          Search results are view-only for your role. Use the section buttons to open the full module pages.
+        </div>
+      ) : null}
+
       {error && <div style={{ color: "crimson", marginBottom: 10 }}>{error}</div>}
       {loading && <div style={{ marginBottom: 10, fontWeight: 800 }}>Searching…</div>}
       {!q ? (
@@ -452,7 +469,7 @@ function GlobalSearchPageInner() {
                 </thead>
                 <tbody>
                   {sec.rows.map((r: any, idx: number) => {
-                    const rowUrl = getRowUrl(sec.key, r);
+                    const rowUrl = canOpenRows ? getRowUrl(sec.key, r) : null;
                     const clickable = Boolean(rowUrl);
 
                     return (
