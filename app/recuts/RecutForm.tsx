@@ -623,11 +623,6 @@ export default function RecutForm({
 
       <form onSubmit={onSubmit} onKeyDown={preventEnterSubmit}>
         <div style={grid}>
-          <ReadOnlyField label="Recut ID" value={recutId != null ? String(recutId) : "Auto generated on save"} />
-          <ReadOnlyField label="Date Requested" value={requestedDate || "Auto captured"} />
-          <ReadOnlyField label="Time Requested" value={requestedTime || "Auto captured"} />
-          <ReadOnlyField label="Name" value={requestedByName || "Loading user…"} />
-
           <FieldBlock label="Requested Department" error={errors.requestedDepartment}>
             <select
               value={requestedDepartment}
@@ -726,9 +721,7 @@ export default function RecutForm({
                 style={inputStyle(!!errors.operator, isReadOnly)}
               />
             </FieldBlock>
-          ) : (
-            <ReadOnlyField label="Operator" value={operator || requestedByName || ""} />
-          )}
+          ) : null}
 
           <FieldBlock label="Deliver To" error={errors.deliverTo}>
             <input
@@ -806,15 +799,6 @@ function FieldBlock({
   );
 }
 
-function ReadOnlyField({ label, value }: { label: string; value: string }) {
-  return (
-    <div>
-      <label style={labelStyle}>{label}</label>
-      <div style={readonlyStyle}>{value}</div>
-    </div>
-  );
-}
-
 function CheckboxBlock({
   label,
   checked,
@@ -871,15 +855,6 @@ const labelStyle: React.CSSProperties = {
   marginBottom: 6,
   fontWeight: 600,
   fontSize: 14,
-};
-
-const readonlyStyle: React.CSSProperties = {
-  width: "100%",
-  border: "1px solid #e5e7eb",
-  borderRadius: 8,
-  padding: "10px 12px",
-  background: "#f9fafb",
-  minHeight: 42,
 };
 
 const fieldError: React.CSSProperties = {
