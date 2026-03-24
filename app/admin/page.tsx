@@ -99,6 +99,17 @@ export default function AdminHomePage() {
       ],
     },
     {
+      title: "Content",
+      subtitle: "Administrative management of knowledge content and internal documentation.",
+      items: [
+        {
+          href: "/admin/playbooks",
+          title: "Playbooks",
+          description: "Create, edit, publish, and organize internal playbook articles and supporting content.",
+        },
+      ],
+    },
+    {
       title: "Platform",
       subtitle: "Administrative entry points into broader platform areas.",
       items: [
@@ -139,7 +150,7 @@ export default function AdminHomePage() {
             <h1 className="admin-title">Admin Landing Page</h1>
             <p className="admin-subtitle">
               Welcome, <strong>{displayName}</strong>. Use this workspace to manage
-              users, shared lists, and platform administration pages.
+              users, shared lists, platform administration pages, and Playbook content.
             </p>
           </div>
 
@@ -180,6 +191,9 @@ export default function AdminHomePage() {
             </Link>
             <Link href="/admin/master-data" className="btn btn-secondary">
               Master Data
+            </Link>
+            <Link href="/admin/playbooks" className="btn btn-secondary">
+              Playbooks
             </Link>
             <Link href="/admin/logs" className="btn btn-secondary">
               Application Logs

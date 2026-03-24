@@ -1700,3 +1700,133 @@ table {
     grid-template-columns: 1fr;
   }
 }
+
+.playbooks-shell {
+  width: 100%;
+  max-width: 1680px;
+  margin-inline: auto;
+  box-sizing: border-box;
+}
+
+.playbooks-search-card {
+  margin-bottom: 16px;
+}
+
+.playbooks-layout {
+  display: grid;
+  grid-template-columns: 320px minmax(0, 1fr) 320px;
+  gap: 16px;
+  align-items: start;
+}
+
+.playbooks-left,
+.playbooks-center,
+.playbooks-right {
+  display: grid;
+  gap: 16px;
+  align-content: start;
+}
+
+.playbooks-left  { grid-column: 1; }
+.playbooks-center { grid-column: 2; }
+.playbooks-right  { grid-column: 3; }
+
+.playbooks-departments-panel {
+  min-height: 420px;
+}
+
+.playbooks-departments-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.playbooks-department-card {
+  text-align: left;
+  cursor: pointer;
+  min-height: 112px;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+  transition: transform 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+}
+
+.playbooks-department-card:hover {
+  transform: translateY(-1px);
+}
+
+.playbooks-featured-list,
+.playbooks-recent-list {
+  display: grid;
+  gap: 14px;
+}
+
+.playbooks-featured-card,
+.playbooks-recent-card {
+  text-decoration: none;
+  display: block;
+}
+
+.playbooks-recent-list .playbooks-recent-card {
+  min-height: 118px;
+}
+
+.playbooks-category-group {
+  margin-bottom: 14px;
+}
+
+.playbooks-category-group:last-child {
+  margin-bottom: 0;
+}
+
+.playbooks-category-group-label {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted, #888);
+  margin-bottom: 6px;
+}
+
+.playbooks-category-badge-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+@media (max-width: 1520px) {
+  .playbooks-shell {
+    max-width: 1480px;
+  }
+
+  .playbooks-layout {
+    grid-template-columns: 280px minmax(0, 1fr) 280px;
+  }
+}
+
+@media (max-width: 1180px) {
+  .playbooks-shell {
+    width: 100%;
+    max-width: none;
+  }
+
+  .playbooks-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .playbooks-left,
+  .playbooks-center,
+  .playbooks-right {
+    grid-column: auto;
+  }
+
+  .playbooks-departments-grid {
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  }
+}
+
+@media (max-width: 720px) {
+  .playbooks-departments-grid {
+    grid-template-columns: 1fr;
+  }
+}

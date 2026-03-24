@@ -175,7 +175,7 @@ export default function WelcomeCard() {
         }
 
         .dashboard-summary-value {
-          font-size: 20px;
+          font-size: 18px;
           font-weight: 800;
           color: var(--text);
           line-height: 1.1;
