@@ -528,15 +528,24 @@ export default function NavBar() {
             </button>
 
             {openMenu === "user" ? (
-              <div
-                style={{ ...menuPanel, right: 0, left: "auto" }}
-                role="menu"
-                aria-label="User menu"
-              >
+              <div style={menuPanel} role="menu" aria-label="User menu">
                 <div style={menuHeader}>
                   <div style={menuUserName}>{meLoaded ? display || "Unknown" : "…"}</div>
-                  <div style={menuUserMeta}>{meLoaded ? role || "USER" : ""}</div>
+                  <div style={menuUserMeta}>{meLoaded ? (role ? role : "USER") : ""}</div>
                 </div>
+
+                <div style={menuDivider} />
+
+                <Link
+                  href="/playbooks"
+                  role="menuitem"
+                  style={menuItem}
+                  onClick={() => {
+                    setOpenMenu(null);
+                  }}
+                >
+                  Playbooks
+                </Link>
 
                 <div style={menuDivider} />
 
