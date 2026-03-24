@@ -57,9 +57,7 @@ export default function PlaybooksLandingClient() {
           fetch("/api/playbooks/categories", { cache: "no-store" }),
           fetch(
             "/api/playbooks?publicOnly=true&page=1&pageSize=200&sortBy=publishedAt&sortDir=desc",
-            {
-              cache: "no-store",
-            }
+            { cache: "no-store" }
           ),
         ]);
 
@@ -120,14 +118,10 @@ export default function PlaybooksLandingClient() {
 
   const categoriesByDepartment = useMemo(() => {
     const map = new Map<string, CategoryRow[]>();
-
     for (const cat of visibleCategories) {
-      if (!map.has(cat.departmentName)) {
-        map.set(cat.departmentName, []);
-      }
+      if (!map.has(cat.departmentName)) map.set(cat.departmentName, []);
       map.get(cat.departmentName)!.push(cat);
     }
-
     return map;
   }, [visibleCategories]);
 
@@ -145,47 +139,35 @@ export default function PlaybooksLandingClient() {
           margin-bottom: 16px;
         }
 
+        /* 2-column: 300px left sidebar, flexible right content area */
         .playbooks-layout {
           display: grid;
-          grid-template-columns: 320px minmax(0, 1fr) 320px;
+          grid-template-columns: 300px 1fr;
           gap: 16px;
           align-items: start;
         }
 
         .playbooks-left,
-        .playbooks-center,
         .playbooks-right {
           display: grid;
           gap: 16px;
           align-content: start;
         }
 
-        .playbooks-left {
-          grid-column: 1;
-        }
+        .playbooks-left  { grid-column: 1; }
+        .playbooks-right { grid-column: 2; }
 
-        .playbooks-center {
-          grid-column: 2;
-        }
-
-        .playbooks-right {
-          grid-column: 3;
-        }
-
-        .playbooks-departments-panel {
-          min-height: 420px;
-        }
-
+        /* Department cards — single column in the narrow sidebar */
         .playbooks-departments-grid {
           display: grid;
-          grid-template-columns: repeat(2, minmax(0, 1fr));
-          gap: 14px;
+          grid-template-columns: 1fr;
+          gap: 10px;
         }
 
         .playbooks-department-card {
           text-align: left;
           cursor: pointer;
-          min-height: 112px;
+          min-height: 72px;
           display: flex;
           flex-direction: column;
           justify-content: flex-start;
@@ -196,6 +178,7 @@ export default function PlaybooksLandingClient() {
           transform: translateY(-1px);
         }
 
+        /* Article lists */
         .playbooks-featured-list,
         .playbooks-recent-list {
           display: grid;
@@ -212,6 +195,7 @@ export default function PlaybooksLandingClient() {
           min-height: 118px;
         }
 
+        /* Category shortcuts — grouped */
         .playbooks-category-group {
           margin-bottom: 14px;
         }
@@ -235,40 +219,15 @@ export default function PlaybooksLandingClient() {
           gap: 6px;
         }
 
-        @media (max-width: 1520px) {
-          .playbooks-shell {
-            max-width: 1480px;
-          }
-
-          .playbooks-layout {
-            grid-template-columns: 280px minmax(0, 1fr) 280px;
-          }
-        }
-
-        @media (max-width: 1180px) {
-          .playbooks-shell {
-            width: 100%;
-            max-width: none;
-          }
-
+        /* Responsive: stack at narrow viewports */
+        @media (max-width: 900px) {
           .playbooks-layout {
             grid-template-columns: 1fr;
           }
 
           .playbooks-left,
-          .playbooks-center,
           .playbooks-right {
             grid-column: auto;
-          }
-
-          .playbooks-departments-grid {
-            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-          }
-        }
-
-        @media (max-width: 720px) {
-          .playbooks-departments-grid {
-            grid-template-columns: 1fr;
           }
         }
       `}</style>
@@ -282,14 +241,9 @@ export default function PlaybooksLandingClient() {
         </div>
       </div>
 
+      {/* Search / filter bar */}
       <div className="section-card card playbooks-search-card">
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "1fr 260px",
-            gap: 12,
-          }}
-        >
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 260px", gap: 12 }}>
           <div>
             <label className="field-label">Search</label>
             <input
@@ -323,8 +277,10 @@ export default function PlaybooksLandingClient() {
 
       {!loading && !error ? (
         <div className="playbooks-layout">
+
+          {/* ── LEFT: Departments → Featured Articles ───────── */}
           <div className="playbooks-left">
-            <section className="section-card card playbooks-departments-panel">
+            <section className="section-card card">
               <div className="section-card-header">
                 <h2 style={{ margin: 0 }}>Departments</h2>
               </div>
@@ -349,7 +305,7 @@ export default function PlaybooksLandingClient() {
                           : undefined,
                       }}
                     >
-                      <div style={{ fontWeight: 800, marginBottom: 6 }}>{dept.name}</div>
+                      <div style={{ fontWeight: 800, marginBottom: 4 }}>{dept.name}</div>
                       <div className="text-soft">
                         {dept.description || "No description provided."}
                       </div>
@@ -358,9 +314,6 @@ export default function PlaybooksLandingClient() {
                 })}
               </div>
             </section>
-          </div>
-
-          <div className="playbooks-center">
             <section className="section-card card">
               <div className="section-card-header">
                 <h2 style={{ margin: 0 }}>Featured Articles</h2>
@@ -394,7 +347,11 @@ export default function PlaybooksLandingClient() {
                 </div>
               )}
             </section>
-
+          </div>
+              {/* ── RIGHT: Recent Articles  ────── */}
+            
+          
+          <div className="playbooks-right">
             <section className="section-card card">
               <div className="section-card-header">
                 <h2 style={{ margin: 0 }}>Recent Articles</h2>
@@ -426,32 +383,10 @@ export default function PlaybooksLandingClient() {
                 </div>
               )}
             </section>
+            
+
           </div>
 
-          <div className="playbooks-right">
-            <section className="section-card card">
-              <div className="section-card-header">
-                <h2 style={{ margin: 0 }}>Category Shortcuts</h2>
-              </div>
-
-              {categoriesByDepartment.size === 0 ? (
-                <div className="text-soft">No categories available.</div>
-              ) : (
-                Array.from(categoriesByDepartment.entries()).map(([deptName, cats]) => (
-                  <div key={deptName} className="playbooks-category-group">
-                    <div className="playbooks-category-group-label">{deptName}</div>
-                    <div className="playbooks-category-badge-list">
-                      {cats.map((cat) => (
-                        <span key={cat.id} className="badge badge-neutral">
-                          {cat.name}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                ))
-              )}
-            </section>
-          </div>
         </div>
       ) : null}
     </div>
