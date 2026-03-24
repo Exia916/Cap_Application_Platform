@@ -723,7 +723,7 @@ export async function updatePlaybookArticle(
       ]
     );
 
-    if (updateRes.rowCount <= 0) {
+    if ((updateRes.rowCount ?? 0) <= 0) {
       throw new Error("Playbook article not found.");
     }
 
