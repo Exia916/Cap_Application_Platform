@@ -8,12 +8,15 @@ type SortKey =
   | "entry_date"
   | "entry_ts"
   | "name"
+  | "employee_number"
   | "shift"
   | "stock_order"
   | "sales_order"
   | "knit_area"
-  | "line_count"
-  | "total_quantity"
+  | "detail_number"
+  | "item_style"
+  | "logo"
+  | "quantity"
   | "is_voided";
 
 function toInt(v: string | null, fallback: number) {
@@ -76,9 +79,14 @@ export async function GET(req: NextRequest) {
     ? String(searchParams.get("entryDateTo"))
     : defaults.to;
 
+  const q = (searchParams.get("q") || "").trim();
   const name = (searchParams.get("name") || "").trim();
+  const employeeNumberRaw = (searchParams.get("employeeNumber") || "").trim();
   const salesOrder = (searchParams.get("salesOrder") || "").trim();
   const knitArea = (searchParams.get("knitArea") || "").trim();
+  const detailNumberRaw = (searchParams.get("detailNumber") || "").trim();
+  const itemStyle = (searchParams.get("itemStyle") || "").trim();
+  const logo = (searchParams.get("logo") || "").trim();
   const notes = (searchParams.get("notes") || "").trim();
 
   const stockOrderRaw = (searchParams.get("stockOrder") || "").trim().toLowerCase();
@@ -101,36 +109,75 @@ export async function GET(req: NextRequest) {
   const params: any[] = [];
 
   params.push(entryDateFrom);
-  where.push(`s.entry_date >= $${params.length}::date`);
+  where.push(`l.entry_date >= $${params.length}::date`);
 
   params.push(entryDateTo);
-  where.push(`s.entry_date <= $${params.length}::date`);
+  where.push(`l.entry_date <= $${params.length}::date`);
+
+  if (q) {
+    params.push(`%${q}%`);
+    const qp = `$${params.length}`;
+    where.push(`
+      (
+        l.name ILIKE ${qp}
+        OR COALESCE(l.employee_number::text, '') LIKE ${qp}
+        OR COALESCE(l.sales_order_display, '') ILIKE ${qp}
+        OR COALESCE(l.sales_order_base, '') ILIKE ${qp}
+        OR COALESCE(l.knit_area, '') ILIKE ${qp}
+        OR COALESCE(l.detail_number::text, '') LIKE ${qp}
+        OR COALESCE(l.item_style, '') ILIKE ${qp}
+        OR COALESCE(l.logo, '') ILIKE ${qp}
+        OR COALESCE(l.line_notes, '') ILIKE ${qp}
+        OR COALESCE(l.shift, '') ILIKE ${qp}
+      )
+    `);
+  }
 
   if (name) {
     params.push(`%${name}%`);
-    where.push(`s.name ILIKE $${params.length}`);
+    where.push(`l.name ILIKE $${params.length}`);
+  }
+
+  if (employeeNumberRaw) {
+    params.push(`${employeeNumberRaw}%`);
+    where.push(`COALESCE(l.employee_number::text, '') LIKE $${params.length}`);
   }
 
   if (salesOrder) {
     params.push(`${salesOrder}%`);
     where.push(
-      `(COALESCE(s.sales_order_display, '') ILIKE $${params.length} OR COALESCE(s.sales_order_base, '') ILIKE $${params.length})`
+      `(COALESCE(l.sales_order_display, '') ILIKE $${params.length} OR COALESCE(l.sales_order_base, '') ILIKE $${params.length})`
     );
   }
 
   if (knitArea) {
     params.push(`%${knitArea}%`);
-    where.push(`COALESCE(s.knit_area, '') ILIKE $${params.length}`);
+    where.push(`COALESCE(l.knit_area, '') ILIKE $${params.length}`);
+  }
+
+  if (detailNumberRaw) {
+    params.push(`${detailNumberRaw}%`);
+    where.push(`COALESCE(l.detail_number::text, '') LIKE $${params.length}`);
+  }
+
+  if (itemStyle) {
+    params.push(`%${itemStyle}%`);
+    where.push(`COALESCE(l.item_style, '') ILIKE $${params.length}`);
+  }
+
+  if (logo) {
+    params.push(`%${logo}%`);
+    where.push(`COALESCE(l.logo, '') ILIKE $${params.length}`);
   }
 
   if (notes) {
     params.push(`%${notes}%`);
-    where.push(`COALESCE(s.notes, '') ILIKE $${params.length}`);
+    where.push(`COALESCE(l.line_notes, '') ILIKE $${params.length}`);
   }
 
   if (stockOrder !== null) {
     params.push(stockOrder);
-    where.push(`s.stock_order = $${params.length}`);
+    where.push(`l.stock_order = $${params.length}`);
   }
 
   if (onlyVoided) {
@@ -142,32 +189,28 @@ export async function GET(req: NextRequest) {
   const whereSql = where.length ? `WHERE ${where.join(" AND ")}` : "";
 
   const ORDER_MAP: Record<SortKey, string> = {
-    entry_date: "s.entry_date",
-    entry_ts: "s.entry_ts",
-    name: "s.name",
-    shift: "s.shift",
-    stock_order: "s.stock_order",
-    sales_order: "COALESCE(s.sales_order_display, s.sales_order_base)",
-    knit_area: "s.knit_area",
-    line_count: "COALESCE(agg.line_count, 0)",
-    total_quantity: "COALESCE(agg.total_quantity, 0)",
+    entry_date: "l.entry_date",
+    entry_ts: "l.entry_ts",
+    name: "l.name",
+    employee_number: "l.employee_number",
+    shift: "l.shift",
+    stock_order: "l.stock_order",
+    sales_order: "COALESCE(l.sales_order_display, l.sales_order_base)",
+    knit_area: "l.knit_area",
+    detail_number: "l.detail_number",
+    item_style: "l.item_style",
+    logo: "l.logo",
+    quantity: "l.quantity",
     is_voided: "COALESCE(s.is_voided, false)",
   };
 
   const orderExpr = ORDER_MAP[sort] ?? ORDER_MAP.entry_ts;
-  const orderBySql = `${orderExpr} ${dir}, s.id DESC`;
+  const orderBySql = `${orderExpr} ${dir}, l.entry_ts DESC, l.id DESC`;
 
   const baseFrom = `
-    FROM public.knit_production_submissions s
-    LEFT JOIN (
-      SELECT
-        l.submission_id,
-        COUNT(*)::int AS line_count,
-        COALESCE(SUM(l.quantity), 0)::int AS total_quantity
-      FROM public.knit_production_lines l
-      GROUP BY l.submission_id
-    ) agg
-      ON agg.submission_id = s.id
+    FROM public.knit_production_lines l
+    INNER JOIN public.knit_production_submissions s
+      ON s.id = l.submission_id
     ${whereSql}
   `;
 
@@ -178,8 +221,8 @@ export async function GET(req: NextRequest) {
   }>(
     `
     SELECT
-      COALESCE(SUM(COALESCE(agg.total_quantity, 0)), 0)::int AS total_quantity,
-      COALESCE(SUM(COALESCE(agg.line_count, 0)), 0)::int AS total_lines,
+      COALESCE(SUM(COALESCE(l.quantity, 0)), 0)::int AS total_quantity,
+      COUNT(*)::int AS total_lines,
       COUNT(*)::int AS total_rows
     ${baseFrom}
     `,
@@ -205,17 +248,21 @@ export async function GET(req: NextRequest) {
 
   const baseSelect = `
     SELECT
-      s.id,
-      s.entry_ts AS "entryTs",
-      s.entry_date::text AS "entryDate",
-      s.name,
-      s.shift,
-      s.stock_order AS "stockOrder",
-      COALESCE(s.sales_order_display, s.sales_order_base) AS "salesOrder",
-      s.knit_area AS "knitArea",
-      COALESCE(agg.line_count, 0) AS "lineCount",
-      COALESCE(agg.total_quantity, 0) AS "totalQuantity",
-      s.notes,
+      l.id,
+      l.submission_id AS "submissionId",
+      l.entry_ts AS "entryTs",
+      l.entry_date::text AS "entryDate",
+      l.name,
+      l.employee_number AS "employeeNumber",
+      l.shift,
+      l.stock_order AS "stockOrder",
+      COALESCE(l.sales_order_display, l.sales_order_base) AS "salesOrder",
+      l.knit_area AS "knitArea",
+      l.detail_number AS "detailNumber",
+      l.item_style AS "itemStyle",
+      l.logo,
+      COALESCE(l.quantity, 0) AS "quantity",
+      l.line_notes AS "notes",
       COALESCE(s.is_voided, false) AS "isVoided"
     ${baseFrom}
     ORDER BY ${orderBySql}
@@ -224,15 +271,19 @@ export async function GET(req: NextRequest) {
   if (format === "csv") {
     const csvRes = await db.query<{
       id: string;
+      submissionId: string;
       entryTs: string;
       entryDate: string;
       name: string;
+      employeeNumber: number;
       shift: string | null;
       stockOrder: boolean;
       salesOrder: string | null;
       knitArea: string | null;
-      lineCount: number;
-      totalQuantity: number;
+      detailNumber: number | null;
+      itemStyle: string | null;
+      logo: string | null;
+      quantity: number;
       notes: string | null;
       isVoided: boolean;
     }>(baseSelect, params);
@@ -241,12 +292,15 @@ export async function GET(req: NextRequest) {
       "Date",
       "Data Timestamp",
       "Name",
+      "Employee #",
       "Shift",
       "Stock Order",
       "Sales Order",
       "Knit Area",
-      "Line Count",
-      "Total Quantity",
+      "Detail #",
+      "Item Style",
+      "Logo",
+      "Quantity",
       "Notes",
       "Status",
     ];
@@ -258,12 +312,15 @@ export async function GET(req: NextRequest) {
           escCsvCell(r.entryDate),
           escCsvCell(r.entryTs),
           escCsvCell(r.name),
+          escCsvCell(r.employeeNumber),
           escCsvCell(r.shift),
           escCsvCell(r.stockOrder ? "Yes" : "No"),
           escCsvCell(r.salesOrder),
           escCsvCell(r.knitArea),
-          escCsvCell(r.lineCount),
-          escCsvCell(r.totalQuantity),
+          escCsvCell(r.detailNumber),
+          escCsvCell(r.itemStyle),
+          escCsvCell(r.logo),
+          escCsvCell(r.quantity),
           escCsvCell(r.notes),
           escCsvCell(r.isVoided ? "Voided" : "Active"),
         ].join(",")
@@ -294,15 +351,19 @@ export async function GET(req: NextRequest) {
 
   const dataRes = await db.query<{
     id: string;
+    submissionId: string;
     entryTs: string;
     entryDate: string;
     name: string;
+    employeeNumber: number;
     shift: string | null;
     stockOrder: boolean;
     salesOrder: string | null;
     knitArea: string | null;
-    lineCount: number;
-    totalQuantity: number;
+    detailNumber: number | null;
+    itemStyle: string | null;
+    logo: string | null;
+    quantity: number;
     notes: string | null;
     isVoided: boolean;
   }>(

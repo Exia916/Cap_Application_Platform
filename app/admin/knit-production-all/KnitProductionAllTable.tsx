@@ -11,15 +11,19 @@ type Totals = {
 
 type Row = {
   id: string;
+  submissionId: string;
   entryTs: string;
   entryDate: string;
   name: string;
+  employeeNumber: number;
   shift: string | null;
   stockOrder: boolean;
   salesOrder: string | null;
   knitArea: string | null;
-  lineCount: number;
-  totalQuantity: number;
+  detailNumber: number | null;
+  itemStyle: string | null;
+  logo: string | null;
+  quantity: number;
   notes: string | null;
   isVoided: boolean;
 };
@@ -38,12 +42,15 @@ type SortKey =
   | "entry_date"
   | "entry_ts"
   | "name"
+  | "employee_number"
   | "shift"
   | "stock_order"
   | "sales_order"
   | "knit_area"
-  | "line_count"
-  | "total_quantity"
+  | "detail_number"
+  | "item_style"
+  | "logo"
+  | "quantity"
   | "is_voided";
 
 const nf0 = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
@@ -59,6 +66,11 @@ function fmtText(v: any) {
 }
 
 function fmtSalesOrderNoCommas(v: any) {
+  const s = v === null || v === undefined ? "" : String(v);
+  return s.replace(/,/g, "");
+}
+
+function fmtEmployeeNumberNoCommas(v: any) {
   const s = v === null || v === undefined ? "" : String(v);
   return s.replace(/,/g, "");
 }
@@ -103,20 +115,6 @@ function fmtTimestamp(value: any) {
   const dt = new Date(String(value));
   if (Number.isNaN(dt.getTime())) return String(value);
   return tsFmt.format(dt);
-}
-
-function csvFileDateChicago() {
-  const parts = new Intl.DateTimeFormat("en-CA", {
-    timeZone: "America/Chicago",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).formatToParts(new Date());
-
-  const yyyy = parts.find((p) => p.type === "year")?.value ?? "1970";
-  const mm = parts.find((p) => p.type === "month")?.value ?? "01";
-  const dd = parts.find((p) => p.type === "day")?.value ?? "01";
-  return `${yyyy}-${mm}-${dd}`;
 }
 
 function stockOrderBadge(v: boolean) {
@@ -235,9 +233,14 @@ export default function KnitProductionAllTable({
   const [start, setStart] = useState(defaultStart);
   const [end, setEnd] = useState(defaultEnd);
 
+  const [q, setQ] = useState("");
   const [name, setName] = useState("");
+  const [employeeNumber, setEmployeeNumber] = useState("");
   const [salesOrder, setSalesOrder] = useState("");
   const [knitArea, setKnitArea] = useState("");
+  const [detailNumber, setDetailNumber] = useState("");
+  const [itemStyle, setItemStyle] = useState("");
+  const [logo, setLogo] = useState("");
   const [notes, setNotes] = useState("");
   const [stockOrder, setStockOrder] = useState("");
   const [status, setStatus] = useState("");
@@ -258,9 +261,14 @@ export default function KnitProductionAllTable({
     if (start) p.set("entryDateFrom", start);
     if (end) p.set("entryDateTo", end);
 
+    if (q) p.set("q", q);
     if (name) p.set("name", name);
+    if (employeeNumber) p.set("employeeNumber", employeeNumber);
     if (salesOrder) p.set("salesOrder", salesOrder);
     if (knitArea) p.set("knitArea", knitArea);
+    if (detailNumber) p.set("detailNumber", detailNumber);
+    if (itemStyle) p.set("itemStyle", itemStyle);
+    if (logo) p.set("logo", logo);
     if (notes) p.set("notes", notes);
     if (stockOrder) p.set("stockOrder", stockOrder);
 
@@ -281,7 +289,25 @@ export default function KnitProductionAllTable({
     p.set("dir", dir);
 
     return p.toString();
-  }, [start, end, name, salesOrder, knitArea, notes, stockOrder, status, page, pageSize, sort, dir]);
+  }, [
+    start,
+    end,
+    q,
+    name,
+    employeeNumber,
+    salesOrder,
+    knitArea,
+    detailNumber,
+    itemStyle,
+    logo,
+    notes,
+    stockOrder,
+    status,
+    page,
+    pageSize,
+    sort,
+    dir,
+  ]);
 
   async function load(qs: string) {
     setLoading(true);
@@ -312,7 +338,22 @@ export default function KnitProductionAllTable({
 
   useEffect(() => {
     setPage(1);
-  }, [start, end, name, salesOrder, knitArea, notes, stockOrder, status, pageSize]);
+  }, [
+    start,
+    end,
+    q,
+    name,
+    employeeNumber,
+    salesOrder,
+    knitArea,
+    detailNumber,
+    itemStyle,
+    logo,
+    notes,
+    stockOrder,
+    status,
+    pageSize,
+  ]);
 
   function exportCsv() {
     const p = new URLSearchParams(query);
@@ -332,9 +373,14 @@ export default function KnitProductionAllTable({
   function resetAll() {
     setStart(defaultStart);
     setEnd(defaultEnd);
+    setQ("");
     setName("");
+    setEmployeeNumber("");
     setSalesOrder("");
     setKnitArea("");
+    setDetailNumber("");
+    setItemStyle("");
+    setLogo("");
     setNotes("");
     setStockOrder("");
     setStatus("");
@@ -412,6 +458,18 @@ export default function KnitProductionAllTable({
           </div>
         </div>
 
+        <div style={controlBox}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+            <span style={label}>Search</span>
+            <input
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              placeholder="Search SO, name, detail, logo, notes..."
+              style={{ ...input, width: 280 }}
+            />
+          </div>
+        </div>
+
         <button type="button" onClick={resetAll} style={btn("ghost")}>
           Reset
         </button>
@@ -478,18 +536,21 @@ export default function KnitProductionAllTable({
           background: "#fff",
         }}
       >
-        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, minWidth: 1500 }}>
+        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, minWidth: 1900 }}>
           <thead>
             <tr>
               <SortHeader label="Date" sortKey="entry_date" activeSort={sort} activeDir={dir} onChange={toggleSort} />
               <SortHeader label="Data Timestamp" sortKey="entry_ts" activeSort={sort} activeDir={dir} onChange={toggleSort} />
               <SortHeader label="Name" sortKey="name" activeSort={sort} activeDir={dir} onChange={toggleSort} />
+              <SortHeader label="Employee #" sortKey="employee_number" activeSort={sort} activeDir={dir} onChange={toggleSort} />
               <SortHeader label="Shift" sortKey="shift" activeSort={sort} activeDir={dir} onChange={toggleSort} />
               <SortHeader label="Stock Order" sortKey="stock_order" activeSort={sort} activeDir={dir} onChange={toggleSort} />
               <SortHeader label="Sales Order" sortKey="sales_order" activeSort={sort} activeDir={dir} onChange={toggleSort} />
               <SortHeader label="Knit Area" sortKey="knit_area" activeSort={sort} activeDir={dir} onChange={toggleSort} />
-              <SortHeader label="Line Count" sortKey="line_count" activeSort={sort} activeDir={dir} onChange={toggleSort} />
-              <SortHeader label="Total Quantity" sortKey="total_quantity" activeSort={sort} activeDir={dir} onChange={toggleSort} />
+              <SortHeader label="Detail #" sortKey="detail_number" activeSort={sort} activeDir={dir} onChange={toggleSort} />
+              <SortHeader label="Item Style" sortKey="item_style" activeSort={sort} activeDir={dir} onChange={toggleSort} />
+              <SortHeader label="Logo" sortKey="logo" activeSort={sort} activeDir={dir} onChange={toggleSort} />
+              <SortHeader label="Quantity" sortKey="quantity" activeSort={sort} activeDir={dir} onChange={toggleSort} />
               <th
                 style={{
                   textAlign: "left",
@@ -540,6 +601,15 @@ export default function KnitProductionAllTable({
               </th>
 
               <th style={{ padding: 6, borderBottom: "1px solid #ddd", background: "#fff" }}>
+                <input
+                  value={employeeNumber}
+                  onChange={(e) => setEmployeeNumber(e.target.value)}
+                  placeholder="Emp#"
+                  style={{ ...input, width: 100 }}
+                />
+              </th>
+
+              <th style={{ padding: 6, borderBottom: "1px solid #ddd", background: "#fff" }}>
                 <input disabled placeholder="(shift)" style={{ ...input, width: 90, opacity: 0.55 }} />
               </th>
 
@@ -570,7 +640,25 @@ export default function KnitProductionAllTable({
               </th>
 
               <th style={{ padding: 6, borderBottom: "1px solid #ddd", background: "#fff" }}>
-                <input disabled placeholder="(lines)" style={{ ...input, width: 90, opacity: 0.55 }} />
+                <input
+                  value={detailNumber}
+                  onChange={(e) => setDetailNumber(e.target.value)}
+                  placeholder="Detail #"
+                  style={{ ...input, width: 100 }}
+                />
+              </th>
+
+              <th style={{ padding: 6, borderBottom: "1px solid #ddd", background: "#fff" }}>
+                <input
+                  value={itemStyle}
+                  onChange={(e) => setItemStyle(e.target.value)}
+                  placeholder="Item Style"
+                  style={{ ...input, width: 140 }}
+                />
+              </th>
+
+              <th style={{ padding: 6, borderBottom: "1px solid #ddd", background: "#fff" }}>
+                <input value={logo} onChange={(e) => setLogo(e.target.value)} placeholder="Logo" style={{ ...input, width: 140 }} />
               </th>
 
               <th style={{ padding: 6, borderBottom: "1px solid #ddd", background: "#fff" }}>
@@ -610,17 +698,20 @@ export default function KnitProductionAllTable({
                 <td style={{ padding: 10, borderBottom: "1px solid #eee", whiteSpace: "nowrap" }}>{fmtDateOnly(r.entryDate)}</td>
                 <td style={{ padding: 10, borderBottom: "1px solid #eee", whiteSpace: "nowrap" }}>{fmtTimestamp(r.entryTs)}</td>
                 <td style={{ padding: 10, borderBottom: "1px solid #eee" }}>{fmtText(r.name)}</td>
+                <td style={{ padding: 10, borderBottom: "1px solid #eee" }}>{fmtEmployeeNumberNoCommas(r.employeeNumber)}</td>
                 <td style={{ padding: 10, borderBottom: "1px solid #eee" }}>{fmtText(r.shift)}</td>
                 <td style={{ padding: 10, borderBottom: "1px solid #eee" }}>{stockOrderBadge(!!r.stockOrder)}</td>
                 <td style={{ padding: 10, borderBottom: "1px solid #eee" }}>{fmtSalesOrderNoCommas(r.salesOrder)}</td>
                 <td style={{ padding: 10, borderBottom: "1px solid #eee" }}>{knitAreaBadge(r.knitArea)}</td>
-                <td style={{ padding: 10, borderBottom: "1px solid #eee" }}>{fmtInt(r.lineCount)}</td>
-                <td style={{ padding: 10, borderBottom: "1px solid #eee" }}>{fmtInt(r.totalQuantity)}</td>
+                <td style={{ padding: 10, borderBottom: "1px solid #eee" }}>{fmtInt(r.detailNumber)}</td>
+                <td style={{ padding: 10, borderBottom: "1px solid #eee" }}>{fmtText(r.itemStyle)}</td>
+                <td style={{ padding: 10, borderBottom: "1px solid #eee" }}>{fmtText(r.logo)}</td>
+                <td style={{ padding: 10, borderBottom: "1px solid #eee" }}>{fmtInt(r.quantity)}</td>
                 <td style={{ padding: 10, borderBottom: "1px solid #eee", maxWidth: 500 }}>{fmtText(r.notes)}</td>
                 <td style={{ padding: 10, borderBottom: "1px solid #eee" }}>{statusBadge(!!r.isVoided)}</td>
                 <td style={{ padding: 10, borderBottom: "1px solid #eee" }}>
                   <Link
-                    href={`/knit-production/${r.id}`}
+                    href={`/knit-production/${r.submissionId}`}
                     style={{
                       display: "inline-flex",
                       alignItems: "center",
@@ -641,7 +732,7 @@ export default function KnitProductionAllTable({
                 </td>
                 <td style={{ padding: 10, borderBottom: "1px solid #eee" }}>
                   <Link
-                    href={`/knit-production/${r.id}/edit`}
+                    href={`/knit-production/${r.submissionId}/edit`}
                     style={{
                       display: "inline-flex",
                       alignItems: "center",
@@ -665,7 +756,7 @@ export default function KnitProductionAllTable({
 
             {!loading && rows.length === 0 && (
               <tr>
-                <td colSpan={13} style={{ padding: 16, color: "#666" }}>
+                <td colSpan={16} style={{ padding: 16, color: "#666" }}>
                   No results for the current filters.
                 </td>
               </tr>
@@ -676,7 +767,7 @@ export default function KnitProductionAllTable({
 
       {error ? null : (
         <div style={{ marginTop: 10, fontSize: 12, color: "#6b7280" }}>
-          Tip: Filters auto-refresh after you stop typing. Click column headers to sort.
+          Tip: Global search and filters auto-refresh after you stop typing. Click column headers to sort.
         </div>
       )}
     </div>

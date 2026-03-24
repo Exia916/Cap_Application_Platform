@@ -14,6 +14,7 @@ export type MasterKey =
   | "recut_requested_departments"
   | "recut_items"
   | "machines"
+  | "knit_areas"
   | "priorities"
   | "statuses"
   | "issue_catalog"
@@ -39,7 +40,8 @@ export type EditableField =
   | "item_code"
   | "description"
   | "department"
-  | "department_id";
+  | "department_id"
+  | "area_name";
 
 export type MasterRegistryItem = {
   key: MasterKey;
@@ -196,13 +198,24 @@ export const MASTER_DATA: Record<MasterKey, MasterRegistryItem> = {
     allowDelete: false,
   },
 
+  knit_areas: {
+    key: "knit_areas",
+    table: "public.knit_area_lookup",
+    idCol: "id",
+    editable: ["area_name", "sort_order", "is_active"],
+    selectCols: ["id", "area_name AS name", "sort_order", "is_active", "created_at", "updated_at"],
+    orderBy: "sort_order ASC, area_name ASC",
+    supportsInactive: true,
+    allowDelete: false,
+  },
+
   priorities: {
     key: "priorities",
     table: "cmms.priorities",
     idCol: "id",
-    editable: ["name", "is_active"],
-    selectCols: ["id", "name", "is_active"],
-    orderBy: "name ASC",
+    editable: ["code", "label", "sort_order", "is_active"],
+    selectCols: ["id", "code", "label", "sort_order", "is_active", "created_at", "updated_at"],
+    orderBy: "sort_order ASC, code ASC",
     supportsInactive: true,
     allowDelete: false,
   },
@@ -211,9 +224,9 @@ export const MASTER_DATA: Record<MasterKey, MasterRegistryItem> = {
     key: "statuses",
     table: "cmms.statuses",
     idCol: "id",
-    editable: ["name", "is_active"],
-    selectCols: ["id", "name", "is_active"],
-    orderBy: "name ASC",
+    editable: ["code", "label", "sort_order", "is_active"],
+    selectCols: ["id", "code", "label", "sort_order", "is_active", "created_at", "updated_at"],
+    orderBy: "sort_order ASC, code ASC",
     supportsInactive: true,
     allowDelete: false,
   },
@@ -222,9 +235,9 @@ export const MASTER_DATA: Record<MasterKey, MasterRegistryItem> = {
     key: "issue_catalog",
     table: "cmms.issue_catalog",
     idCol: "id",
-    editable: ["name", "is_active"],
-    selectCols: ["id", "name", "is_active"],
-    orderBy: "name ASC",
+    editable: ["code", "label", "sort_order", "is_active"],
+    selectCols: ["id", "code", "label", "sort_order", "is_active", "created_at", "updated_at"],
+    orderBy: "sort_order ASC, code ASC",
     supportsInactive: true,
     allowDelete: false,
   },
@@ -234,7 +247,7 @@ export const MASTER_DATA: Record<MasterKey, MasterRegistryItem> = {
     table: "cmms.techs",
     idCol: "id",
     editable: ["name", "is_active"],
-    selectCols: ["id", "name", "is_active"],
+    selectCols: ["id", "name", "is_active", "created_at", "updated_at"],
     orderBy: "name ASC",
     supportsInactive: true,
     allowDelete: false,
@@ -244,9 +257,9 @@ export const MASTER_DATA: Record<MasterKey, MasterRegistryItem> = {
     key: "wo_types",
     table: "cmms.wo_types",
     idCol: "id",
-    editable: ["name", "is_active"],
-    selectCols: ["id", "name", "is_active"],
-    orderBy: "name ASC",
+    editable: ["code", "label", "sort_order", "is_active"],
+    selectCols: ["id", "code", "label", "sort_order", "is_active", "created_at", "updated_at"],
+    orderBy: "sort_order ASC, code ASC",
     supportsInactive: true,
     allowDelete: false,
   },
@@ -256,7 +269,7 @@ export const MASTER_DATA: Record<MasterKey, MasterRegistryItem> = {
     table: "cmms.departments",
     idCol: "id",
     editable: ["name", "is_active"],
-    selectCols: ["id", "name", "is_active"],
+    selectCols: ["id", "name", "is_active", "created_at", "updated_at"],
     orderBy: "name ASC",
     supportsInactive: true,
     allowDelete: false,
@@ -273,27 +286,27 @@ export const MASTER_DATA: Record<MasterKey, MasterRegistryItem> = {
       "a.department_id",
       "d.name AS department_name",
       "a.is_active",
+      "a.created_at",
+      "a.updated_at",
     ],
-    orderBy: "d.name ASC, a.name ASC",
+    orderBy: "a.name ASC",
     supportsInactive: true,
     allowDelete: false,
   },
 };
 
-export const CMMS_MASTER_KEYS: ReadonlySet<MasterKey> = new Set<MasterKey>([
-  "priorities",
-  "statuses",
-  "issue_catalog",
-  "techs",
-  "wo_types",
-  "cmms_departments",
-  "cmms_assets",
-]);
-
-export function isMasterKey(x: string): x is MasterKey {
-  return Object.prototype.hasOwnProperty.call(MASTER_DATA, x);
+export function isMasterKey(value: string): value is MasterKey {
+  return value in MASTER_DATA;
 }
 
-export function isCmmsMasterKey(key: string): key is MasterKey {
-  return isMasterKey(key) && CMMS_MASTER_KEYS.has(key);
+export function isCmmsMasterKey(value: string): value is MasterKey {
+  return (
+    value === "priorities" ||
+    value === "statuses" ||
+    value === "issue_catalog" ||
+    value === "techs" ||
+    value === "wo_types" ||
+    value === "cmms_departments" ||
+    value === "cmms_assets"
+  );
 }
