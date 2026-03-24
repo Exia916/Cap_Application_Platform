@@ -33,13 +33,27 @@ function bad(msg: string, status = 400) {
   return NextResponse.json({ error: msg }, { status });
 }
 
+function mapUiBodyToDbFields(key: MasterKey, body: any) {
+  const raw = { ...(body || {}) };
+
+  if (key === "knit_areas") {
+    if (raw.name !== undefined && raw.area_name === undefined) {
+      raw.area_name = raw.name;
+    }
+    delete raw.name;
+  }
+
+  return raw;
+}
+
 function pickEditable(key: MasterKey, body: any) {
   const cfg = MASTER_DATA[key];
   const allowed = new Set(cfg.editable as string[]);
+  const mappedBody = mapUiBodyToDbFields(key, body);
   const data: Record<string, any> = {};
 
-  for (const k of Object.keys(body || {})) {
-    if (allowed.has(k)) data[k] = body[k];
+  for (const k of Object.keys(mappedBody || {})) {
+    if (allowed.has(k)) data[k] = mappedBody[k];
   }
 
   return data;
@@ -49,6 +63,7 @@ function normalizeCommon(data: Record<string, any>) {
   if (typeof data.code === "string") data.code = data.code.trim().toUpperCase();
   if (typeof data.name === "string") data.name = data.name.trim();
   if (typeof data.label === "string") data.label = data.label.trim();
+  if (typeof data.area_name === "string") data.area_name = data.area_name.trim();
 
   if (typeof data.location === "string") data.location = data.location.trim();
   if (typeof data.emb_type === "string") data.emb_type = data.emb_type.trim();

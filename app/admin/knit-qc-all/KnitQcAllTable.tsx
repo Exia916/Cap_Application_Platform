@@ -12,6 +12,7 @@ type Totals = {
 
 type Row = {
   id: string;
+  submissionId: string;
   entryTs: string;
   entryDate: string;
   name: string;
@@ -19,9 +20,12 @@ type Row = {
   shift: string | null;
   stockOrder: boolean;
   salesOrder: string | null;
-  lineCount: number;
-  totalInspected: number;
-  totalRejected: number;
+  detailNumber: number | null;
+  logo: string | null;
+  orderQuantity: number;
+  inspectedQuantity: number;
+  rejectedQuantity: number;
+  qcEmployeeNumber: number | null;
   notes: string | null;
   isVoided: boolean;
 };
@@ -44,9 +48,12 @@ type SortKey =
   | "shift"
   | "stock_order"
   | "sales_order"
-  | "line_count"
-  | "total_inspected"
-  | "total_rejected"
+  | "detail_number"
+  | "logo"
+  | "order_quantity"
+  | "inspected_quantity"
+  | "rejected_quantity"
+  | "qc_employee_number"
   | "is_voided";
 
 const nf0 = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
@@ -205,9 +212,13 @@ export default function KnitQcAllTable({
   const [start, setStart] = useState(defaultStart);
   const [end, setEnd] = useState(defaultEnd);
 
+  const [q, setQ] = useState("");
   const [name, setName] = useState("");
   const [employeeNumber, setEmployeeNumber] = useState("");
   const [salesOrder, setSalesOrder] = useState("");
+  const [detailNumber, setDetailNumber] = useState("");
+  const [logo, setLogo] = useState("");
+  const [qcEmployeeNumber, setQcEmployeeNumber] = useState("");
   const [notes, setNotes] = useState("");
   const [stockOrder, setStockOrder] = useState("");
   const [status, setStatus] = useState("");
@@ -228,9 +239,13 @@ export default function KnitQcAllTable({
     if (start) p.set("entryDateFrom", start);
     if (end) p.set("entryDateTo", end);
 
+    if (q) p.set("q", q);
     if (name) p.set("name", name);
     if (employeeNumber) p.set("employeeNumber", employeeNumber);
     if (salesOrder) p.set("salesOrder", salesOrder);
+    if (detailNumber) p.set("detailNumber", detailNumber);
+    if (logo) p.set("logo", logo);
+    if (qcEmployeeNumber) p.set("qcEmployeeNumber", qcEmployeeNumber);
     if (notes) p.set("notes", notes);
     if (stockOrder) p.set("stockOrder", stockOrder);
 
@@ -251,9 +266,13 @@ export default function KnitQcAllTable({
   }, [
     start,
     end,
+    q,
     name,
     employeeNumber,
     salesOrder,
+    detailNumber,
+    logo,
+    qcEmployeeNumber,
     notes,
     stockOrder,
     status,
@@ -292,7 +311,7 @@ export default function KnitQcAllTable({
 
   useEffect(() => {
     setPage(1);
-  }, [start, end, name, employeeNumber, salesOrder, notes, stockOrder, status, pageSize]);
+  }, [start, end, q, name, employeeNumber, salesOrder, detailNumber, logo, qcEmployeeNumber, notes, stockOrder, status, pageSize]);
 
   function exportCsv() {
     const p = new URLSearchParams(query);
@@ -312,9 +331,13 @@ export default function KnitQcAllTable({
   function resetAll() {
     setStart(defaultStart);
     setEnd(defaultEnd);
+    setQ("");
     setName("");
     setEmployeeNumber("");
     setSalesOrder("");
+    setDetailNumber("");
+    setLogo("");
+    setQcEmployeeNumber("");
     setNotes("");
     setStockOrder("");
     setStatus("");
@@ -392,6 +415,18 @@ export default function KnitQcAllTable({
           </div>
         </div>
 
+        <div style={controlBox}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+            <span style={label}>Search</span>
+            <input
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              placeholder="Search SO, name, detail, logo, QC emp#, notes..."
+              style={{ ...input, width: 300 }}
+            />
+          </div>
+        </div>
+
         <button type="button" onClick={resetAll} style={btn("ghost")}>
           Reset
         </button>
@@ -459,33 +494,36 @@ export default function KnitQcAllTable({
           background: "#fff",
         }}
       >
-        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, minWidth: 1650 }}>
+        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, minWidth: 1900 }}>
           <thead>
             <tr>
               <SortHeader label="Date" sortKey="entry_date" activeSort={sort} activeDir={dir} onChange={toggleSort} />
               <SortHeader label="Data Timestamp" sortKey="entry_ts" activeSort={sort} activeDir={dir} onChange={toggleSort} />
               <SortHeader label="Name" sortKey="name" activeSort={sort} activeDir={dir} onChange={toggleSort} />
-              <SortHeader
-                label="Employee #"
-                sortKey="employee_number"
-                activeSort={sort}
-                activeDir={dir}
-                onChange={toggleSort}
-              />
+              <SortHeader label="Employee #" sortKey="employee_number" activeSort={sort} activeDir={dir} onChange={toggleSort} />
               <SortHeader label="Shift" sortKey="shift" activeSort={sort} activeDir={dir} onChange={toggleSort} />
               <SortHeader label="Stock Order" sortKey="stock_order" activeSort={sort} activeDir={dir} onChange={toggleSort} />
               <SortHeader label="Sales Order" sortKey="sales_order" activeSort={sort} activeDir={dir} onChange={toggleSort} />
-              <SortHeader label="Line Count" sortKey="line_count" activeSort={sort} activeDir={dir} onChange={toggleSort} />
+              <SortHeader label="Detail #" sortKey="detail_number" activeSort={sort} activeDir={dir} onChange={toggleSort} />
+              <SortHeader label="Logo" sortKey="logo" activeSort={sort} activeDir={dir} onChange={toggleSort} />
+              <SortHeader label="Order Qty" sortKey="order_quantity" activeSort={sort} activeDir={dir} onChange={toggleSort} />
               <SortHeader
-                label="Total Inspected"
-                sortKey="total_inspected"
+                label="Inspected Qty"
+                sortKey="inspected_quantity"
                 activeSort={sort}
                 activeDir={dir}
                 onChange={toggleSort}
               />
               <SortHeader
-                label="Total Rejected"
-                sortKey="total_rejected"
+                label="Rejected Qty"
+                sortKey="rejected_quantity"
+                activeSort={sort}
+                activeDir={dir}
+                onChange={toggleSort}
+              />
+              <SortHeader
+                label="QC Employee #"
+                sortKey="qc_employee_number"
                 activeSort={sort}
                 activeDir={dir}
                 onChange={toggleSort}
@@ -565,7 +603,20 @@ export default function KnitQcAllTable({
               </th>
 
               <th style={{ padding: 6, borderBottom: "1px solid #ddd", background: "#fff" }}>
-                <input disabled placeholder="(lines)" style={{ ...input, width: 90, opacity: 0.55 }} />
+                <input
+                  value={detailNumber}
+                  onChange={(e) => setDetailNumber(e.target.value)}
+                  placeholder="Detail #"
+                  style={{ ...input, width: 100 }}
+                />
+              </th>
+
+              <th style={{ padding: 6, borderBottom: "1px solid #ddd", background: "#fff" }}>
+                <input value={logo} onChange={(e) => setLogo(e.target.value)} placeholder="Logo" style={{ ...input, width: 140 }} />
+              </th>
+
+              <th style={{ padding: 6, borderBottom: "1px solid #ddd", background: "#fff" }}>
+                <input disabled placeholder="(order)" style={{ ...input, width: 90, opacity: 0.55 }} />
               </th>
 
               <th style={{ padding: 6, borderBottom: "1px solid #ddd", background: "#fff" }}>
@@ -574,6 +625,15 @@ export default function KnitQcAllTable({
 
               <th style={{ padding: 6, borderBottom: "1px solid #ddd", background: "#fff" }}>
                 <input disabled placeholder="(rejected)" style={{ ...input, width: 100, opacity: 0.55 }} />
+              </th>
+
+              <th style={{ padding: 6, borderBottom: "1px solid #ddd", background: "#fff" }}>
+                <input
+                  value={qcEmployeeNumber}
+                  onChange={(e) => setQcEmployeeNumber(e.target.value)}
+                  placeholder="QC Emp#"
+                  style={{ ...input, width: 110 }}
+                />
               </th>
 
               <th style={{ padding: 6, borderBottom: "1px solid #ddd", background: "#fff" }}>
@@ -608,14 +668,17 @@ export default function KnitQcAllTable({
                 <td style={{ padding: 10, borderBottom: "1px solid #eee" }}>{fmtText(r.shift)}</td>
                 <td style={{ padding: 10, borderBottom: "1px solid #eee" }}>{stockOrderBadge(!!r.stockOrder)}</td>
                 <td style={{ padding: 10, borderBottom: "1px solid #eee" }}>{fmtSalesOrderNoCommas(r.salesOrder)}</td>
-                <td style={{ padding: 10, borderBottom: "1px solid #eee" }}>{fmtInt(r.lineCount)}</td>
-                <td style={{ padding: 10, borderBottom: "1px solid #eee" }}>{fmtInt(r.totalInspected)}</td>
-                <td style={{ padding: 10, borderBottom: "1px solid #eee" }}>{fmtInt(r.totalRejected)}</td>
+                <td style={{ padding: 10, borderBottom: "1px solid #eee" }}>{fmtInt(r.detailNumber)}</td>
+                <td style={{ padding: 10, borderBottom: "1px solid #eee" }}>{fmtText(r.logo)}</td>
+                <td style={{ padding: 10, borderBottom: "1px solid #eee" }}>{fmtInt(r.orderQuantity)}</td>
+                <td style={{ padding: 10, borderBottom: "1px solid #eee" }}>{fmtInt(r.inspectedQuantity)}</td>
+                <td style={{ padding: 10, borderBottom: "1px solid #eee" }}>{fmtInt(r.rejectedQuantity)}</td>
+                <td style={{ padding: 10, borderBottom: "1px solid #eee" }}>{fmtEmployeeNumberNoCommas(r.qcEmployeeNumber)}</td>
                 <td style={{ padding: 10, borderBottom: "1px solid #eee", maxWidth: 500 }}>{fmtText(r.notes)}</td>
                 <td style={{ padding: 10, borderBottom: "1px solid #eee" }}>{statusBadge(!!r.isVoided)}</td>
                 <td style={{ padding: 10, borderBottom: "1px solid #eee" }}>
                   <Link
-                    href={`/knit-qc/${r.id}`}
+                    href={`/knit-qc/${r.submissionId}`}
                     style={{
                       display: "inline-flex",
                       alignItems: "center",
@@ -636,7 +699,7 @@ export default function KnitQcAllTable({
                 </td>
                 <td style={{ padding: 10, borderBottom: "1px solid #eee" }}>
                   <Link
-                    href={`/knit-qc/${r.id}/edit`}
+                    href={`/knit-qc/${r.submissionId}/edit`}
                     style={{
                       display: "inline-flex",
                       alignItems: "center",
@@ -660,7 +723,7 @@ export default function KnitQcAllTable({
 
             {!loading && rows.length === 0 && (
               <tr>
-                <td colSpan={14} style={{ padding: 16, color: "#666" }}>
+                <td colSpan={17} style={{ padding: 16, color: "#666" }}>
                   No results for the current filters.
                 </td>
               </tr>
@@ -671,7 +734,7 @@ export default function KnitQcAllTable({
 
       {error ? null : (
         <div style={{ marginTop: 10, fontSize: 12, color: "#6b7280" }}>
-          Tip: Filters auto-refresh after you stop typing. Click column headers to sort.
+          Tip: Global search and filters auto-refresh after you stop typing. Click column headers to sort.
         </div>
       )}
     </div>

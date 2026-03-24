@@ -12,9 +12,12 @@ type SortKey =
   | "shift"
   | "stock_order"
   | "sales_order"
-  | "line_count"
-  | "total_inspected"
-  | "total_rejected"
+  | "detail_number"
+  | "logo"
+  | "order_quantity"
+  | "inspected_quantity"
+  | "rejected_quantity"
+  | "qc_employee_number"
   | "is_voided";
 
 function toInt(v: string | null, fallback: number) {
@@ -77,9 +80,13 @@ export async function GET(req: NextRequest) {
     ? String(searchParams.get("entryDateTo"))
     : defaults.to;
 
+  const q = (searchParams.get("q") || "").trim();
   const name = (searchParams.get("name") || "").trim();
   const employeeNumberRaw = (searchParams.get("employeeNumber") || "").trim();
   const salesOrder = (searchParams.get("salesOrder") || "").trim();
+  const detailNumberRaw = (searchParams.get("detailNumber") || "").trim();
+  const logo = (searchParams.get("logo") || "").trim();
+  const qcEmployeeNumberRaw = (searchParams.get("qcEmployeeNumber") || "").trim();
   const notes = (searchParams.get("notes") || "").trim();
 
   const stockOrderRaw = (searchParams.get("stockOrder") || "").trim().toLowerCase();
@@ -102,36 +109,69 @@ export async function GET(req: NextRequest) {
   const params: any[] = [];
 
   params.push(entryDateFrom);
-  where.push(`s.entry_date >= $${params.length}::date`);
+  where.push(`l.entry_date >= $${params.length}::date`);
 
   params.push(entryDateTo);
-  where.push(`s.entry_date <= $${params.length}::date`);
+  where.push(`l.entry_date <= $${params.length}::date`);
+
+  if (q) {
+    params.push(`%${q}%`);
+    const qp = `$${params.length}`;
+    where.push(`
+      (
+        l.name ILIKE ${qp}
+        OR COALESCE(l.employee_number::text, '') LIKE ${qp}
+        OR COALESCE(l.sales_order_display, '') ILIKE ${qp}
+        OR COALESCE(l.sales_order_base, '') ILIKE ${qp}
+        OR COALESCE(l.detail_number::text, '') LIKE ${qp}
+        OR COALESCE(l.logo, '') ILIKE ${qp}
+        OR COALESCE(l.qc_employee_number::text, '') LIKE ${qp}
+        OR COALESCE(l.line_notes, '') ILIKE ${qp}
+        OR COALESCE(l.shift, '') ILIKE ${qp}
+      )
+    `);
+  }
 
   if (name) {
     params.push(`%${name}%`);
-    where.push(`s.name ILIKE $${params.length}`);
+    where.push(`l.name ILIKE $${params.length}`);
   }
 
   if (employeeNumberRaw) {
     params.push(`${employeeNumberRaw}%`);
-    where.push(`COALESCE(s.employee_number::text, '') LIKE $${params.length}`);
+    where.push(`COALESCE(l.employee_number::text, '') LIKE $${params.length}`);
   }
 
   if (salesOrder) {
     params.push(`${salesOrder}%`);
     where.push(
-      `(COALESCE(s.sales_order_display, '') ILIKE $${params.length} OR COALESCE(s.sales_order_base, '') ILIKE $${params.length})`
+      `(COALESCE(l.sales_order_display, '') ILIKE $${params.length} OR COALESCE(l.sales_order_base, '') ILIKE $${params.length})`
     );
+  }
+
+  if (detailNumberRaw) {
+    params.push(`${detailNumberRaw}%`);
+    where.push(`COALESCE(l.detail_number::text, '') LIKE $${params.length}`);
+  }
+
+  if (logo) {
+    params.push(`%${logo}%`);
+    where.push(`COALESCE(l.logo, '') ILIKE $${params.length}`);
+  }
+
+  if (qcEmployeeNumberRaw) {
+    params.push(`${qcEmployeeNumberRaw}%`);
+    where.push(`COALESCE(l.qc_employee_number::text, '') LIKE $${params.length}`);
   }
 
   if (notes) {
     params.push(`%${notes}%`);
-    where.push(`COALESCE(s.notes, '') ILIKE $${params.length}`);
+    where.push(`COALESCE(l.line_notes, '') ILIKE $${params.length}`);
   }
 
   if (stockOrder !== null) {
     params.push(stockOrder);
-    where.push(`s.stock_order = $${params.length}`);
+    where.push(`l.stock_order = $${params.length}`);
   }
 
   if (onlyVoided) {
@@ -143,34 +183,29 @@ export async function GET(req: NextRequest) {
   const whereSql = where.length ? `WHERE ${where.join(" AND ")}` : "";
 
   const ORDER_MAP: Record<SortKey, string> = {
-    entry_date: "s.entry_date",
-    entry_ts: "s.entry_ts",
-    name: "s.name",
-    employee_number: "s.employee_number",
-    shift: "s.shift",
-    stock_order: "s.stock_order",
-    sales_order: "COALESCE(s.sales_order_display, s.sales_order_base)",
-    line_count: "COALESCE(agg.line_count, 0)",
-    total_inspected: "COALESCE(agg.total_inspected, 0)",
-    total_rejected: "COALESCE(agg.total_rejected, 0)",
+    entry_date: "l.entry_date",
+    entry_ts: "l.entry_ts",
+    name: "l.name",
+    employee_number: "l.employee_number",
+    shift: "l.shift",
+    stock_order: "l.stock_order",
+    sales_order: "COALESCE(l.sales_order_display, l.sales_order_base)",
+    detail_number: "l.detail_number",
+    logo: "l.logo",
+    order_quantity: "l.order_quantity",
+    inspected_quantity: "l.inspected_quantity",
+    rejected_quantity: "l.rejected_quantity",
+    qc_employee_number: "l.qc_employee_number",
     is_voided: "COALESCE(s.is_voided, false)",
   };
 
   const orderExpr = ORDER_MAP[sort] ?? ORDER_MAP.entry_ts;
-  const orderBySql = `${orderExpr} ${dir}, s.id DESC`;
+  const orderBySql = `${orderExpr} ${dir}, l.entry_ts DESC, l.id DESC`;
 
   const baseFrom = `
-    FROM public.knit_qc_submissions s
-    LEFT JOIN (
-      SELECT
-        l.submission_id,
-        COUNT(*)::int AS line_count,
-        COALESCE(SUM(l.inspected_quantity), 0)::int AS total_inspected,
-        COALESCE(SUM(l.rejected_quantity), 0)::int AS total_rejected
-      FROM public.knit_qc_submission_lines l
-      GROUP BY l.submission_id
-    ) agg
-      ON agg.submission_id = s.id
+    FROM public.knit_qc_submission_lines l
+    INNER JOIN public.knit_qc_submissions s
+      ON s.id = l.submission_id
     ${whereSql}
   `;
 
@@ -182,9 +217,9 @@ export async function GET(req: NextRequest) {
   }>(
     `
     SELECT
-      COALESCE(SUM(COALESCE(agg.total_inspected, 0)), 0)::int AS total_inspected,
-      COALESCE(SUM(COALESCE(agg.total_rejected, 0)), 0)::int AS total_rejected,
-      COALESCE(SUM(COALESCE(agg.line_count, 0)), 0)::int AS total_lines,
+      COALESCE(SUM(COALESCE(l.inspected_quantity, 0)), 0)::int AS total_inspected,
+      COALESCE(SUM(COALESCE(l.rejected_quantity, 0)), 0)::int AS total_rejected,
+      COUNT(*)::int AS total_lines,
       COUNT(*)::int AS total_rows
     ${baseFrom}
     `,
@@ -211,18 +246,22 @@ export async function GET(req: NextRequest) {
 
   const baseSelect = `
     SELECT
-      s.id,
-      s.entry_ts AS "entryTs",
-      s.entry_date::text AS "entryDate",
-      s.name,
-      s.employee_number AS "employeeNumber",
-      s.shift,
-      s.stock_order AS "stockOrder",
-      COALESCE(s.sales_order_display, s.sales_order_base) AS "salesOrder",
-      COALESCE(agg.line_count, 0) AS "lineCount",
-      COALESCE(agg.total_inspected, 0) AS "totalInspected",
-      COALESCE(agg.total_rejected, 0) AS "totalRejected",
-      s.notes,
+      l.id,
+      l.submission_id AS "submissionId",
+      l.entry_ts AS "entryTs",
+      l.entry_date::text AS "entryDate",
+      l.name,
+      l.employee_number AS "employeeNumber",
+      l.shift,
+      l.stock_order AS "stockOrder",
+      COALESCE(l.sales_order_display, l.sales_order_base) AS "salesOrder",
+      l.detail_number AS "detailNumber",
+      l.logo,
+      COALESCE(l.order_quantity, 0) AS "orderQuantity",
+      COALESCE(l.inspected_quantity, 0) AS "inspectedQuantity",
+      COALESCE(l.rejected_quantity, 0) AS "rejectedQuantity",
+      l.qc_employee_number AS "qcEmployeeNumber",
+      l.line_notes AS "notes",
       COALESCE(s.is_voided, false) AS "isVoided"
     ${baseFrom}
     ORDER BY ${orderBySql}
@@ -231,6 +270,7 @@ export async function GET(req: NextRequest) {
   if (format === "csv") {
     const csvRes = await db.query<{
       id: string;
+      submissionId: string;
       entryTs: string;
       entryDate: string;
       name: string;
@@ -238,9 +278,12 @@ export async function GET(req: NextRequest) {
       shift: string | null;
       stockOrder: boolean;
       salesOrder: string | null;
-      lineCount: number;
-      totalInspected: number;
-      totalRejected: number;
+      detailNumber: number | null;
+      logo: string | null;
+      orderQuantity: number;
+      inspectedQuantity: number;
+      rejectedQuantity: number;
+      qcEmployeeNumber: number | null;
       notes: string | null;
       isVoided: boolean;
     }>(baseSelect, params);
@@ -253,9 +296,12 @@ export async function GET(req: NextRequest) {
       "Shift",
       "Stock Order",
       "Sales Order",
-      "Line Count",
-      "Total Inspected",
-      "Total Rejected",
+      "Detail #",
+      "Logo",
+      "Order Qty",
+      "Inspected Qty",
+      "Rejected Qty",
+      "QC Employee #",
       "Notes",
       "Status",
     ];
@@ -271,9 +317,12 @@ export async function GET(req: NextRequest) {
           escCsvCell(r.shift),
           escCsvCell(r.stockOrder ? "Yes" : "No"),
           escCsvCell(r.salesOrder),
-          escCsvCell(r.lineCount),
-          escCsvCell(r.totalInspected),
-          escCsvCell(r.totalRejected),
+          escCsvCell(r.detailNumber),
+          escCsvCell(r.logo),
+          escCsvCell(r.orderQuantity),
+          escCsvCell(r.inspectedQuantity),
+          escCsvCell(r.rejectedQuantity),
+          escCsvCell(r.qcEmployeeNumber),
           escCsvCell(r.notes),
           escCsvCell(r.isVoided ? "Voided" : "Active"),
         ].join(",")
@@ -304,6 +353,7 @@ export async function GET(req: NextRequest) {
 
   const dataRes = await db.query<{
     id: string;
+    submissionId: string;
     entryTs: string;
     entryDate: string;
     name: string;
@@ -311,9 +361,12 @@ export async function GET(req: NextRequest) {
     shift: string | null;
     stockOrder: boolean;
     salesOrder: string | null;
-    lineCount: number;
-    totalInspected: number;
-    totalRejected: number;
+    detailNumber: number | null;
+    logo: string | null;
+    orderQuantity: number;
+    inspectedQuantity: number;
+    rejectedQuantity: number;
+    qcEmployeeNumber: number | null;
     notes: string | null;
     isVoided: boolean;
   }>(
