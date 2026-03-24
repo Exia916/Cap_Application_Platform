@@ -116,9 +116,15 @@ export function proxy(request: NextRequest) {
       return NextResponse.next();
     }
 
-    if (role !== "ADMIN") {
-      return NextResponse.redirect(new URL("/dashboard", request.url));
-    }
+    const MANAGER_ACCESS_ROLES = new Set([
+  "ADMIN",
+  "MANAGER",
+  "SUPERVISOR",
+]);
+
+if (!MANAGER_ACCESS_ROLES.has(role)) {
+  return NextResponse.redirect(new URL("/dashboard", request.url));
+}
   }
 
   if (pathname.startsWith("/cmms") || pathname.startsWith("/api/cmms")) {
