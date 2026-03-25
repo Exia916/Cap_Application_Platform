@@ -44,6 +44,8 @@ export default function NavBar() {
   const [globalQ, setGlobalQ] = useState("");
   const [searchFocused, setSearchFocused] = useState(false);
   const [openMenu, setOpenMenu] = useState<OpenMenu>(null);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
   const menusWrapRef = useRef<HTMLDivElement | null>(null);
 
   const [navMode, setNavMode] = useState<"wide" | "medium" | "small">("wide");
@@ -51,7 +53,7 @@ export default function NavBar() {
   useEffect(() => {
     function compute() {
       const w = window.innerWidth || 1400;
-      if (w < 900) setNavMode("small");
+      if (w < 768) setNavMode("small");
       else if (w < 1400) setNavMode("medium");
       else setNavMode("wide");
     }
@@ -173,10 +175,19 @@ export default function NavBar() {
     };
   }, []);
 
-  const display =
-    me?.displayName?.trim() ||
-    me?.username?.trim() ||
-    (me?.employeeNumber != null ? `#${me.employeeNumber}` : "");
+  // Close mobile menu on navigation
+  useEffect(() => {
+    setMobileMenuOpen(false);
+    setMobileSearchOpen(false);
+  }, [pathname]);
+
+  const display = useMemo(
+    () =>
+      me?.displayName?.trim() ||
+      me?.username?.trim() ||
+      (me?.employeeNumber != null ? `#${me.employeeNumber}` : ""),
+    [me?.displayName, me?.username, me?.employeeNumber]
+  );
 
   const role = useMemo(() => (me?.role ?? "").trim().toUpperCase(), [me?.role]);
   const username = useMemo(() => (me?.username ?? "").trim().toLowerCase(), [me?.username]);
@@ -375,8 +386,18 @@ export default function NavBar() {
   ]);
 
   return (
-    <nav style={nav}>
-      <div ref={menusWrapRef} style={navInner}>
+    <nav style={navMode === "small" ? { ...nav, flexDirection: "column", padding: 0 } : nav}>
+
+      {/* ── Top bar ───────────────────────────────────────────────── */}
+      <div
+        ref={menusWrapRef}
+        style={
+          navMode === "small"
+            ? { ...navInner, maxWidth: "none", padding: "10px 16px" }
+            : navInner
+        }
+      >
+        {/* Left: brand + desktop nav */}
         <div style={left}>
           <Link href="/dashboard" style={brandWrap} title="Cap America - Cap Application Platform">
             <Image
@@ -387,93 +408,104 @@ export default function NavBar() {
               priority
               style={{ objectFit: "contain" }}
             />
-            <span style={brandTitle}>CAP | Cap Application Platform</span>
+            {navMode !== "small" ? (
+              <span style={brandTitle}>CAP | Cap Application Platform</span>
+            ) : null}
           </Link>
 
-          {showHomeAsPrimary ? <NavLink href="/dashboard" label="Home" pathname={pathname} /> : null}
+          {/* Desktop-only nav items */}
+          {navMode !== "small" ? (
+            <>
+              {showHomeAsPrimary ? (
+                <NavLink href="/dashboard" label="Home" pathname={pathname} />
+              ) : null}
 
-          <Dropdown
-            label="Production"
-            active={productionActive}
-            open={openMenu === "production"}
-            onToggle={() => toggle("production")}
-            items={productionItems}
-            pathname={pathname}
-            onNavigate={() => setOpenMenu(null)}
-          />
+              <Dropdown
+                label="Production"
+                active={productionActive}
+                open={openMenu === "production"}
+                onToggle={() => toggle("production")}
+                items={productionItems}
+                pathname={pathname}
+                onNavigate={() => setOpenMenu(null)}
+              />
 
-          {showRecutAsPrimary ? (
-            <Dropdown
-              label="Recut"
-              active={recutActive}
-              open={openMenu === "recut"}
-              onToggle={() => toggle("recut")}
-              items={recutItems}
-              pathname={pathname}
-              onNavigate={() => setOpenMenu(null)}
-              disabled={recutItems.length === 0}
-            />
-          ) : null}
+              {showRecutAsPrimary ? (
+                <Dropdown
+                  label="Recut"
+                  active={recutActive}
+                  open={openMenu === "recut"}
+                  onToggle={() => toggle("recut")}
+                  items={recutItems}
+                  pathname={pathname}
+                  onNavigate={() => setOpenMenu(null)}
+                  disabled={recutItems.length === 0}
+                />
+              ) : null}
 
-          {showMaintenanceAsPrimary ? (
-            <Dropdown
-              label="Maintenance"
-              active={maintenanceActive}
-              open={openMenu === "maintenance"}
-              onToggle={() => toggle("maintenance")}
-              items={maintenanceItems}
-              pathname={pathname}
-              onNavigate={() => setOpenMenu(null)}
-              disabled={maintenanceItems.length === 0}
-            />
-          ) : null}
+              {showMaintenanceAsPrimary ? (
+                <Dropdown
+                  label="Maintenance"
+                  active={maintenanceActive}
+                  open={openMenu === "maintenance"}
+                  onToggle={() => toggle("maintenance")}
+                  items={maintenanceItems}
+                  pathname={pathname}
+                  onNavigate={() => setOpenMenu(null)}
+                  disabled={maintenanceItems.length === 0}
+                />
+              ) : null}
 
-          {showManagerAsPrimary ? (
-            <Dropdown
-              label="Manager"
-              active={managerActive}
-              open={openMenu === "manager"}
-              onToggle={() => toggle("manager")}
-              items={managerItems}
-              pathname={pathname}
-              onNavigate={() => setOpenMenu(null)}
-              disabled={managerItems.length === 0}
-            />
-          ) : null}
+              {showManagerAsPrimary ? (
+                <Dropdown
+                  label="Manager"
+                  active={managerActive}
+                  open={openMenu === "manager"}
+                  onToggle={() => toggle("manager")}
+                  items={managerItems}
+                  pathname={pathname}
+                  onNavigate={() => setOpenMenu(null)}
+                  disabled={managerItems.length === 0}
+                />
+              ) : null}
 
-          {showAdminAsPrimary ? (
-            <Dropdown
-              label="Admin"
-              active={adminActive}
-              open={openMenu === "admin"}
-              onToggle={() => toggle("admin")}
-              items={adminItems}
-              pathname={pathname}
-              onNavigate={() => setOpenMenu(null)}
-              disabled={adminItems.length === 0}
-            />
-          ) : null}
+              {showAdminAsPrimary ? (
+                <Dropdown
+                  label="Admin"
+                  active={adminActive}
+                  open={openMenu === "admin"}
+                  onToggle={() => toggle("admin")}
+                  items={adminItems}
+                  pathname={pathname}
+                  onNavigate={() => setOpenMenu(null)}
+                  disabled={adminItems.length === 0}
+                />
+              ) : null}
 
-          {showMore ? (
-            <MoreMenu
-              open={openMenu === "more"}
-              active={
-                (!showRecutAsPrimary && recutActive) ||
-                (!showMaintenanceAsPrimary && maintenanceActive) ||
-                (!showManagerAsPrimary && managerActive) ||
-                (!showAdminAsPrimary && adminActive) ||
-                (!showHomeAsPrimary && isActive(pathname, "/dashboard"))
-              }
-              onToggle={() => toggle("more")}
-              sections={moreSections}
-              pathname={pathname}
-              onNavigate={() => setOpenMenu(null)}
-            />
+              {showMore ? (
+                <MoreMenu
+                  open={openMenu === "more"}
+                  active={
+                    (!showRecutAsPrimary && recutActive) ||
+                    (!showMaintenanceAsPrimary && maintenanceActive) ||
+                    (!showManagerAsPrimary && managerActive) ||
+                    (!showAdminAsPrimary && adminActive) ||
+                    (!showHomeAsPrimary && isActive(pathname, "/dashboard"))
+                  }
+                  onToggle={() => toggle("more")}
+                  sections={moreSections}
+                  pathname={pathname}
+                  onNavigate={() => setOpenMenu(null)}
+                />
+              ) : null}
+            </>
           ) : null}
         </div>
 
+        {/* Right: search, quick action, user pill, hamburger */}
         <div style={right}>
-          {meLoaded && canGlobalSearch ? (
+          {/* Desktop global search */}
+          {navMode !== "small" && meLoaded && canGlobalSearch ? (
             <div
               style={{
                 ...searchWrap,
@@ -497,7 +529,51 @@ export default function NavBar() {
             </div>
           ) : null}
 
-          {quickAction ? (
+          {/* Mobile inline search — expands on icon click */}
+          {navMode === "small" && meLoaded && canGlobalSearch ? (
+            mobileSearchOpen ? (
+              <div style={{ ...searchWrap, flex: 1 }}>
+                <input
+                  value={globalQ}
+                  onChange={(e) => setGlobalQ(e.target.value)}
+                  onKeyDown={onGlobalKeyDown}
+                  onFocus={() => setSearchFocused(true)}
+                  onBlur={() => setSearchFocused(false)}
+                  placeholder="Search SO, name, notes…"
+                  style={{ ...searchInput, flex: 1, minWidth: 0 }}
+                  // eslint-disable-next-line jsx-a11y/no-autofocus
+                  autoFocus
+                />
+                <button onClick={runGlobalSearch} style={searchBtn}>
+                  Go
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMobileSearchOpen(false);
+                    setGlobalQ("");
+                  }}
+                  style={{ ...searchBtn, padding: "0 10px" }}
+                  aria-label="Close search"
+                >
+                  ✕
+                </button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                style={mobileIconBtn}
+                onClick={() => setMobileSearchOpen(true)}
+                title="Search"
+                aria-label="Open search"
+              >
+                🔍
+              </button>
+            )
+          ) : null}
+
+          {/* Quick action — hide when mobile search is open */}
+          {quickAction && !mobileSearchOpen ? (
             <Link
               href={quickAction.href}
               style={quickActionBtn}
@@ -508,65 +584,113 @@ export default function NavBar() {
             </Link>
           ) : null}
 
-          <div style={{ position: "relative" }}>
+          {/* User pill — hide when mobile search is open */}
+          {!mobileSearchOpen ? (
+            <div style={{ position: "relative" }}>
+              <button
+                type="button"
+                style={{
+                  ...userPillBtn,
+                  ...(openMenu === "user" ? pillOpen : {}),
+                }}
+                onClick={() => toggle("user")}
+                aria-expanded={openMenu === "user"}
+                aria-haspopup="menu"
+                title="User menu"
+              >
+                <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                  <span
+                    style={navMode === "small" ? userPillTextMobile : userPillText}
+                  >
+                    {meLoaded ? display || "Unknown" : "…"}
+                  </span>
+                  <span style={chev} aria-hidden>
+                    ▾
+                  </span>
+                </span>
+              </button>
+
+              {openMenu === "user" ? (
+                <div
+                  style={{
+                    ...menuPanel,
+                    ...(navMode === "small" ? { right: 0, left: "auto" } : {}),
+                  }}
+                  role="menu"
+                  aria-label="User menu"
+                >
+                  <div style={menuHeader}>
+                    <div style={menuUserName}>{meLoaded ? display || "Unknown" : "…"}</div>
+                    <div style={menuUserMeta}>{meLoaded ? (role ? role : "USER") : ""}</div>
+                  </div>
+
+                  <div style={menuDivider} />
+
+                  <Link
+                    href="/playbooks"
+                    role="menuitem"
+                    style={menuItem}
+                    onClick={() => setOpenMenu(null)}
+                  >
+                    Playbooks
+                  </Link>
+
+                  <div style={menuDivider} />
+
+                  <Link
+                    href="/logout"
+                    role="menuitem"
+                    style={menuItemDanger}
+                    onClick={() => {
+                      setMe(null);
+                      setMeLoaded(false);
+                      setOpenMenu(null);
+                    }}
+                  >
+                    Logout
+                  </Link>
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+
+          {/* Hamburger — mobile only, hidden while search is open */}
+          {navMode === "small" && !mobileSearchOpen ? (
             <button
               type="button"
-              style={{
-                ...userPillBtn,
-                ...(openMenu === "user" ? pillOpen : {}),
-              }}
-              onClick={() => toggle("user")}
-              aria-expanded={openMenu === "user"}
-              aria-haspopup="menu"
-              title="User menu"
+              style={hamburgerBtn}
+              onClick={() => setMobileMenuOpen((prev) => !prev)}
+              aria-expanded={mobileMenuOpen}
+              aria-label={mobileMenuOpen ? "Close menu" : "Open menu"}
             >
-              <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-                <span style={userPillText}>{meLoaded ? display || "Unknown" : "…"}</span>
-                <span style={chev} aria-hidden>
-                  ▾
-                </span>
-              </span>
+              {mobileMenuOpen ? "✕" : "☰"}
             </button>
-
-            {openMenu === "user" ? (
-              <div style={menuPanel} role="menu" aria-label="User menu">
-                <div style={menuHeader}>
-                  <div style={menuUserName}>{meLoaded ? display || "Unknown" : "…"}</div>
-                  <div style={menuUserMeta}>{meLoaded ? (role ? role : "USER") : ""}</div>
-                </div>
-
-                <div style={menuDivider} />
-
-                <Link
-                  href="/playbooks"
-                  role="menuitem"
-                  style={menuItem}
-                  onClick={() => {
-                    setOpenMenu(null);
-                  }}
-                >
-                  Playbooks
-                </Link>
-
-                <div style={menuDivider} />
-
-                <Link
-                  href="/logout"
-                  role="menuitem"
-                  style={menuItemDanger}
-                  onClick={() => {
-                    setMe(null);
-                    setMeLoaded(false);
-                    setOpenMenu(null);
-                  }}
-                >
-                  Logout
-                </Link>
-              </div>
-            ) : null}
-          </div>
+          ) : null}
         </div>
       </div>
+
+      {/* ── Mobile full-width dropdown panel ─────────────────────── */}
+      {navMode === "small" && mobileMenuOpen ? (
+        <div style={mobilePanelStyle}>
+          <MobileNavPanel
+            sections={[
+              {
+                title: "Quick Links",
+                items: [{ href: "/dashboard", label: "Home", show: true }],
+              },
+              { title: "Production", items: productionItems },
+              ...(recutItems.length > 0 ? [{ title: "Recut", items: recutItems }] : []),
+              ...(maintenanceItems.length > 0
+                ? [{ title: "Maintenance", items: maintenanceItems }]
+                : []),
+              ...(managerItems.length > 0 ? [{ title: "Manager", items: managerItems }] : []),
+              ...(adminItems.length > 0 ? [{ title: "Admin", items: adminItems }] : []),
+            ]}
+            pathname={pathname}
+            onNavigate={() => setMobileMenuOpen(false)}
+          />
+        </div>
+      ) : null}
     </nav>
   );
 }
@@ -753,6 +877,69 @@ function MoreMenu({
           ))}
         </div>
       ) : null}
+    </div>
+  );
+}
+
+function MobileNavPanel({
+  sections,
+  pathname,
+  onNavigate,
+}: {
+  sections: { title: string; items: MenuItem[] }[];
+  pathname: string;
+  onNavigate: () => void;
+}) {
+  return (
+    <div>
+      {sections.map((sec, idx) => {
+        const visibleItems = sec.items.filter((it) => it.show !== false);
+        if (visibleItems.length === 0) return null;
+
+        return (
+          <div key={sec.title}>
+            {idx > 0 ? <div style={menuDivider} /> : null}
+            <div style={{ ...menuSectionTitle, padding: "10px 16px 6px" }}>{sec.title}</div>
+            {visibleItems.map((it, itemIdx) => {
+              if (it.kind === "section") {
+                return (
+                  <div
+                    key={`mobile-sec:${it.label}:${itemIdx}`}
+                    style={{
+                      ...menuSectionTitle,
+                      paddingLeft: 24,
+                      fontSize: 11,
+                    }}
+                  >
+                    {it.label}
+                  </div>
+                );
+              }
+
+              const href = it.href || "#";
+              const active = isActive(pathname, href);
+
+              return (
+                <Link
+                  key={href}
+                  href={href}
+                  role="menuitem"
+                  style={{
+                    ...menuItem,
+                    ...(active ? menuItemActive : {}),
+                    padding: "0 16px",
+                    minHeight: 44,
+                    fontSize: 15,
+                  }}
+                  onClick={onNavigate}
+                >
+                  {it.label}
+                </Link>
+              );
+            })}
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -998,4 +1185,51 @@ const userPillText: React.CSSProperties = {
   overflow: "hidden",
   textOverflow: "ellipsis",
   whiteSpace: "nowrap",
+};
+
+const userPillTextMobile: React.CSSProperties = {
+  fontWeight: 800,
+  fontSize: 13,
+  maxWidth: 90,
+  overflow: "hidden",
+  textOverflow: "ellipsis",
+  whiteSpace: "nowrap",
+};
+
+const mobileIconBtn: React.CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  justifyContent: "center",
+  minHeight: 38,
+  width: 38,
+  borderRadius: 10,
+  border: "1px solid #d1d5db",
+  background: "#ffffff",
+  color: "#111827",
+  cursor: "pointer",
+  fontSize: 16,
+};
+
+const hamburgerBtn: React.CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  justifyContent: "center",
+  minHeight: 38,
+  width: 38,
+  borderRadius: 10,
+  border: "1px solid #d1d5db",
+  background: "#ffffff",
+  color: "#111827",
+  cursor: "pointer",
+  fontSize: 18,
+  fontWeight: 700,
+};
+
+const mobilePanelStyle: React.CSSProperties = {
+  width: "100%",
+  background: "#ffffff",
+  borderTop: "1px solid #e5e7eb",
+  maxHeight: "calc(100vh - 58px)",
+  overflowY: "auto",
+  paddingBottom: 16,
 };

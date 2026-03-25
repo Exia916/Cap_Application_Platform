@@ -161,6 +161,28 @@ export default function WorkSessionCard({
 
   return (
     <div className="card">
+      <style>{`
+        /* Session detail: Module / Area / Time In / Shift */
+        .wsc-detail-grid {
+          display: grid;
+          grid-template-columns: repeat(2, minmax(180px, 1fr));
+          gap: 12px;
+        }
+
+        /* Start session form: Area / Time In */
+        .wsc-form-grid {
+          display: grid;
+          grid-template-columns: minmax(220px, 1fr) minmax(220px, 240px);
+          gap: 12px;
+        }
+
+        @media (max-width: 560px) {
+          .wsc-detail-grid,
+          .wsc-form-grid {
+            grid-template-columns: 1fr;
+          }
+        }
+      `}</style>
       <div className="section-card-header">
         <div>
           <h3 style={{ margin: 0 }}>Work Session</h3>
@@ -177,13 +199,7 @@ export default function WorkSessionCard({
       {session ? (
         <div className="section-stack">
           <div className="muted-box">
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "repeat(2, minmax(180px, 1fr))",
-                gap: 12,
-              }}
-            >
+            <div className="wsc-detail-grid">
               <div>
                 <div className="field-label">Module</div>
                 <div>{resolvedModuleLabel}</div>
@@ -218,13 +234,7 @@ export default function WorkSessionCard({
         </div>
       ) : (
         <div className="section-stack">
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "minmax(220px, 1fr) minmax(220px, 240px)",
-              gap: 12,
-            }}
-          >
+          <div className="wsc-form-grid">
             <div>
               <label className="field-label">Area *</label>
               <select
