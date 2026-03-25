@@ -179,6 +179,10 @@ export default function ManagerPage() {
             <Link href="/recuts/warehouse" className="btn btn-secondary">
               Warehouse Recuts
             </Link>
+
+             <Link href="/platform/work-sessions" className="btn btn-secondary">
+              Work Sessions
+            </Link>
           </div>
         </section>
 

@@ -5,6 +5,7 @@ import {
   knitAreaExists,
   type KnitProductionLineInput,
 } from "@/lib/repositories/knitProductionRepo";
+import { validateSessionBelongsToUser } from "@/lib/repositories/productionWorkSessionRepo";
 import { createActivityHistory } from "@/lib/repositories/activityHistoryRepo";
 import { logAuditEvent, logError, logWarn } from "@/lib/logging/logger";
 
@@ -15,6 +16,7 @@ type PostBody = {
   stockOrder?: boolean;
   salesOrder?: string | null;
   knitArea?: string | null;
+  sessionId?: string | null;
   notes?: string | null;
   lines?: Array<{
     detailNumber?: string | number | null;
@@ -118,6 +120,7 @@ async function validateBody(body: any):
           salesOrderDisplay: string | null;
           salesOrderBase: string | null;
           knitArea: string;
+          sessionId: string | null;
           notes: string | null;
           lines: KnitProductionLineInput[];
         };
@@ -131,6 +134,7 @@ async function validateBody(body: any):
   const stockOrder = !!body.stockOrder;
   const salesOrderInput = toNullableTrimmed(body.salesOrder);
   const knitArea = toRequiredTrimmed(body.knitArea);
+  const sessionId = toNullableTrimmed(body.sessionId);
   const notes = toNullableTrimmed(body.notes);
   const entryTs = body.entryTs ? new Date(body.entryTs) : new Date();
 
@@ -178,6 +182,7 @@ async function validateBody(body: any):
       salesOrderDisplay: so.salesOrderDisplay,
       salesOrderBase: so.salesOrderBase,
       knitArea,
+      sessionId,
       notes,
       lines: lines as KnitProductionLineInput[],
     },
@@ -234,6 +239,22 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    if (validated.value.sessionId) {
+      const session = await validateSessionBelongsToUser({
+        sessionId: validated.value.sessionId,
+        moduleKey: "knit_production",
+        employeeNumber,
+        requireOpen: true,
+      });
+
+      if (!session) {
+        return NextResponse.json<Resp>(
+          { error: "Session is invalid, closed, or does not belong to the current user." },
+          { status: 400 }
+        );
+      }
+    }
+
     const result = await createKnitProductionSubmission({
       entryTs: validated.value.entryTs,
       name: authName,
@@ -241,6 +262,7 @@ export async function POST(req: NextRequest) {
       stockOrder: validated.value.stockOrder,
       salesOrderDisplay: validated.value.salesOrderDisplay,
       knitArea: validated.value.knitArea,
+      sessionId: validated.value.sessionId,
       notes: validated.value.notes,
       lines: validated.value.lines,
     });
@@ -263,6 +285,7 @@ export async function POST(req: NextRequest) {
         salesOrder: validated.value.salesOrderDisplay,
         salesOrderBase: validated.value.salesOrderBase,
         knitArea: validated.value.knitArea,
+        sessionId: validated.value.sessionId,
         lineCount: validated.value.lines.length,
       },
     });

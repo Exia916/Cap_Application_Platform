@@ -493,6 +493,31 @@ export default function KnitQcForm({ initialSubmissionId }: Props) {
 
   return (
     <div className="section-stack">
+      <style>{`
+        /* Header card: Sales Order / Stock Order */
+        .knitqc-header-grid {
+          display: grid;
+          grid-template-columns: minmax(260px, 1fr) 220px;
+          gap: 12px;
+          align-items: start;
+        }
+
+        /* Line row: 7 fields auto-fit, Line Notes spans full width */
+        .knitqc-line-grid {
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+          gap: 12px;
+          align-items: start;
+        }
+
+        @media (max-width: 640px) {
+          .knitqc-header-grid,
+          .knitqc-line-grid {
+            grid-template-columns: 1fr;
+          }
+        }
+      `}</style>
+
       {serverError ? <div className="alert alert-danger">{serverError}</div> : null}
       {successMsg ? <div className="alert alert-success">{successMsg}</div> : null}
 
@@ -520,14 +545,7 @@ export default function KnitQcForm({ initialSubmissionId }: Props) {
 
       <form onSubmit={onSubmit} className="section-stack">
         <div className="card">
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "minmax(260px, 1fr) 220px",
-              gap: 12,
-              alignItems: "start",
-            }}
-          >
+          <div className="knitqc-header-grid">
             <FieldBlock
               label="Sales Order"
               error={errors.salesOrder}
@@ -639,14 +657,7 @@ export default function KnitQcForm({ initialSubmissionId }: Props) {
                     </button>
                   </div>
 
-                  <div
-                    style={{
-                      display: "grid",
-                      gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))",
-                      gap: 12,
-                      alignItems: "start",
-                    }}
-                  >
+                  <div className="knitqc-line-grid">
                     <FieldBlock label="Detail #" error={rowErr.detailNumber} required>
                       <input
                         className={`input${rowErr.detailNumber ? " input-error" : ""}`}
