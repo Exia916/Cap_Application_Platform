@@ -236,6 +236,7 @@ export default function NavBar() {
     { href: "/knit-production", label: "Knit Production" },
     { href: "/knit-qc", label: "Knit QC" },
     { href: "/production/sample-embroidery", label: "Sample Embroidery" },
+    { href: "/platform/work-sessions", label: "Work Sessions" },
   ];
 
   const recutItems: MenuItem[] = [

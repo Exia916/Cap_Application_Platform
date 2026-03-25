@@ -21,6 +21,7 @@ export type KnitProductionSubmission = {
   salesOrderBase: string | null;
   salesOrderDisplay: string | null;
   knitArea: string;
+  sessionId: string | null;
   notes: string | null;
   isVoided: boolean;
   voidedAt: string | null;
@@ -68,6 +69,7 @@ export type CreateKnitProductionSubmissionInput = {
   stockOrder: boolean;
   salesOrderDisplay: string | null;
   knitArea: string;
+  sessionId?: string | null;
   notes: string | null;
   lines: KnitProductionLineInput[];
 };
@@ -277,6 +279,7 @@ function submissionSelectSql() {
       s.sales_order_base AS "salesOrderBase",
       s.sales_order_display AS "salesOrderDisplay",
       s.knit_area AS "knitArea",
+      s.session_id AS "sessionId",
       s.notes,
       COALESCE(s.is_voided, false) AS "isVoided",
       s.voided_at AS "voidedAt",
@@ -503,9 +506,10 @@ export async function createKnitProductionSubmission(
         sales_order_base,
         sales_order_display,
         knit_area,
+        session_id,
         notes
       )
-      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
       RETURNING id
       `,
       [
@@ -518,6 +522,7 @@ export async function createKnitProductionSubmission(
         so.salesOrderBase,
         so.salesOrderDisplay,
         input.knitArea,
+        input.sessionId ?? null,
         input.notes,
       ]
     );

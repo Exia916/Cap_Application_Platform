@@ -14,8 +14,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Cap MES",
-  description: "Cap America MES",
+  title: "Cap Application Platform",
+  description: "Cap America application platform",
 };
 
 export default function RootLayout({

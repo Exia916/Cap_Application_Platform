@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import WorkSessionCard from "@/components/platform/WorkSessionCard";
 
 type LookupOption = {
   id: string;
@@ -13,6 +14,32 @@ type KnitAreaOption = {
   areaName: string;
   sortOrder?: number;
   isActive?: boolean;
+};
+
+type WorkSessionArea = {
+  id: string;
+  moduleKey: string;
+  areaCode: string;
+  areaLabel: string;
+  sortOrder: number;
+  isActive: boolean;
+};
+
+type WorkSession = {
+  id: string;
+  moduleKey: string;
+  areaCode: string;
+  workDate: string;
+  shiftDate: string | null;
+  shift: string | null;
+  userId: string | null;
+  username: string | null;
+  employeeNumber: number | null;
+  operatorName: string;
+  timeIn: string;
+  timeOut: string | null;
+  isOpen: boolean;
+  notes: string | null;
 };
 
 type Line = {
@@ -35,6 +62,7 @@ type LoadedSubmission = {
   salesOrderBase: string | null;
   salesOrderDisplay: string | null;
   knitArea: string;
+  sessionId?: string | null;
   notes: string | null;
   isVoided?: boolean;
   voidedAt?: string | null;
@@ -64,6 +92,7 @@ type LoadedLine = {
 };
 
 type MeResponse = {
+  userId?: string | null;
   username?: string | null;
   displayName?: string | null;
   employeeNumber?: number | null;
@@ -284,11 +313,14 @@ export default function KnitProductionForm({ initialSubmissionId }: Props) {
   const router = useRouter();
   const isEditMode = !!initialSubmissionId;
 
-  const [, setMe] = useState<MeResponse | null>(null);
+  const [me, setMe] = useState<MeResponse | null>(null);
   const [items, setItems] = useState<LookupOption[]>([]);
   const [knitAreaOptions, setKnitAreaOptions] = useState<KnitAreaOption[]>([]);
+  const [sessionAreas, setSessionAreas] = useState<WorkSessionArea[]>([]);
+  const [openSession, setOpenSession] = useState<WorkSession | null>(null);
 
   const [loading, setLoading] = useState(isEditMode);
+  const [sessionLoading, setSessionLoading] = useState(!isEditMode);
   const [saving, setSaving] = useState(false);
   const [serverError, setServerError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
@@ -307,7 +339,7 @@ export default function KnitProductionForm({ initialSubmissionId }: Props) {
   useEffect(() => {
     (async () => {
       try {
-        const [meRes, itemsRes, knitAreaRes] = await Promise.all([
+        const [meRes, itemsRes, knitAreaRes, sessionAreaRes] = await Promise.all([
           fetch("/api/me", { cache: "no-store", credentials: "include" }),
           fetch("/api/recuts/lookups/items", {
             cache: "no-store",
@@ -317,10 +349,16 @@ export default function KnitProductionForm({ initialSubmissionId }: Props) {
             cache: "no-store",
             credentials: "include",
           }),
+          fetch("/api/platform/work-sessions/areas?moduleKey=knit_production", {
+            cache: "no-store",
+            credentials: "include",
+          }),
         ]);
 
+        let meData: MeResponse | null = null;
+
         if (meRes.ok) {
-          const meData = await meRes.json();
+          meData = await meRes.json();
           setMe(meData);
         }
 
@@ -338,8 +376,30 @@ export default function KnitProductionForm({ initialSubmissionId }: Props) {
             setKnitArea((prev) => prev || String(rows[0]?.areaName ?? ""));
           }
         }
+
+        if (sessionAreaRes.ok) {
+          const data = await sessionAreaRes.json();
+          setSessionAreas(Array.isArray(data?.rows) ? data.rows : []);
+        }
+
+        if (!isEditMode && meData?.employeeNumber) {
+          setSessionLoading(true);
+
+          const sessionRes = await fetch(
+            `/api/platform/work-sessions?moduleKey=knit_production&employeeNumber=${encodeURIComponent(
+              String(meData.employeeNumber)
+            )}&isOpen=true&limit=1&offset=0`,
+            { cache: "no-store", credentials: "include" }
+          );
+
+          const sessionData = await sessionRes.json().catch(() => ({}));
+          const rows = Array.isArray(sessionData?.rows) ? sessionData.rows : [];
+          setOpenSession(rows[0] ?? null);
+        }
       } catch {
         // ignore bootstrap errors
+      } finally {
+        setSessionLoading(false);
       }
     })();
   }, [isEditMode]);
@@ -407,6 +467,20 @@ export default function KnitProductionForm({ initialSubmissionId }: Props) {
       }
     })();
   }, [isEditMode, initialSubmissionId]);
+
+  useEffect(() => {
+    if (!isEditMode && openSession?.areaCode) {
+      const matched = knitAreaOptions.find(
+        (x) =>
+          String(x.areaName ?? "").trim().toUpperCase() ===
+          String(openSession.areaCode).trim().toUpperCase()
+      );
+
+      if (matched?.areaName) {
+        setKnitArea(String(matched.areaName));
+      }
+    }
+  }, [isEditMode, openSession?.areaCode, knitAreaOptions]);
 
   function clearSalesOrderError() {
     setErrors((prev) => {
@@ -529,6 +603,11 @@ export default function KnitProductionForm({ initialSubmissionId }: Props) {
       return;
     }
 
+    if (!isEditMode && !openSession?.id) {
+      setServerError("You must start a knit production work session before submitting production.");
+      return;
+    }
+
     const nextErrors = validate();
     setErrors(nextErrors);
 
@@ -559,6 +638,7 @@ export default function KnitProductionForm({ initialSubmissionId }: Props) {
           stockOrder,
           salesOrder: salesOrder.trim(),
           knitArea: knitArea.trim(),
+          sessionId: !isEditMode ? openSession?.id ?? null : null,
           notes: notes.trim() || null,
           lines: lines.map((l) => ({
             detailNumber: l.detailNumber.trim(),
@@ -603,8 +683,34 @@ export default function KnitProductionForm({ initialSubmissionId }: Props) {
     );
   }
 
+  const knitAreaLockedToSession = !isEditMode && !!openSession?.id;
+
   return (
     <div className="section-stack">
+      <style>{`
+        /* Header card: Sales Order / Knit Area / Stock Order */
+        .knit-header-grid {
+          display: grid;
+          grid-template-columns: minmax(220px, 1fr) minmax(220px, 280px) 220px;
+          gap: 12px;
+          align-items: start;
+        }
+
+        /* Line row: Detail # / Item Style / Logo / Quantity (+ full-width Line Notes) */
+        .knit-line-grid {
+          display: grid;
+          grid-template-columns: 140px minmax(220px, 1.5fr) minmax(160px, 1fr) 160px;
+          gap: 12px;
+        }
+
+        @media (max-width: 860px) {
+          .knit-header-grid,
+          .knit-line-grid {
+            grid-template-columns: 1fr;
+          }
+        }
+      `}</style>
+
       {serverError ? <div className="alert alert-danger">{serverError}</div> : null}
       {successMsg ? <div className="alert alert-success">{successMsg}</div> : null}
 
@@ -624,6 +730,32 @@ export default function KnitProductionForm({ initialSubmissionId }: Props) {
         </button>
       </div>
 
+      {!isEditMode ? (
+        <WorkSessionCard
+          moduleKey="knit_production"
+          moduleLabel="Knit Production"
+          session={openSession}
+          areas={sessionAreas}
+          disabled={saving || sessionLoading || isVoided}
+          onStarted={(session) => {
+            setOpenSession(session);
+
+            const matched = knitAreaOptions.find(
+              (x) =>
+                String(x.areaName ?? "").trim().toUpperCase() ===
+                String(session.areaCode ?? "").trim().toUpperCase()
+            );
+
+            if (matched?.areaName) {
+              setKnitArea(String(matched.areaName));
+            }
+          }}
+          onClosed={() => {
+            setOpenSession(null);
+          }}
+        />
+      ) : null}
+
       <div>
         <h1 style={{ margin: 0, marginBottom: 6 }}>
           {isEditMode ? "Edit Knit Production Submission" : "Add Knit Production Entry"}
@@ -632,14 +764,7 @@ export default function KnitProductionForm({ initialSubmissionId }: Props) {
 
       <form onSubmit={onSubmit} className="section-stack">
         <div className="card">
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "minmax(220px, 1fr) minmax(220px, 280px) 220px",
-              gap: 12,
-              alignItems: "start",
-            }}
-          >
+          <div className="knit-header-grid">
             <FieldBlock
               label="Sales Order"
               error={errors.salesOrder}
@@ -667,12 +792,16 @@ export default function KnitProductionForm({ initialSubmissionId }: Props) {
               label="Knit Area"
               error={errors.knitArea}
               required
-              helperText="Select the knit production area for this submission."
+              helperText={
+                knitAreaLockedToSession
+                  ? "Knit Area is locked to the active work session."
+                  : "Select the knit production area for this submission."
+              }
             >
               <select
                 className={`select${errors.knitArea ? " input-error" : ""}`}
                 value={knitArea}
-                disabled={isVoided}
+                disabled={isVoided || knitAreaLockedToSession}
                 onChange={(e) => {
                   setKnitArea(e.target.value);
                   if (e.target.value.trim()) clearKnitAreaError();
@@ -769,13 +898,7 @@ export default function KnitProductionForm({ initialSubmissionId }: Props) {
                     </button>
                   </div>
 
-                  <div
-                    style={{
-                      display: "grid",
-                      gridTemplateColumns: "140px minmax(220px, 1.5fr) minmax(160px, 1fr) 160px",
-                      gap: 12,
-                    }}
-                  >
+                  <div className="knit-line-grid">
                     <FieldBlock label="Detail #" error={rowErr.detailNumber} required>
                       <input
                         className={`input${rowErr.detailNumber ? " input-error" : ""}`}
