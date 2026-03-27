@@ -59,8 +59,6 @@ export type MasterColumn = {
   type: "text" | "number" | "boolean" | "time" | "select";
   required?: boolean;
   widthClass?: string;
-
-  // for select fields
   optionsSource?: "cmms_departments";
   displayKey?: string;
 };
@@ -243,9 +241,7 @@ export const MASTER_UI: Record<MasterKey, MasterUiConfig> = {
     title: "CMMS Priorities",
     description: "Priority values used on CMMS work orders.",
     columns: [
-      { key: "code", label: "Code", type: "text", required: true, widthClass: "w-28" },
-      { key: "label", label: "Label", type: "text", required: true },
-      { key: "sort_order", label: "Sort", type: "number", widthClass: "w-24" },
+      { key: "name", label: "Name", type: "text", required: true },
       { key: "is_active", label: "Active", type: "boolean", widthClass: "w-24" },
     ],
   },
@@ -255,9 +251,7 @@ export const MASTER_UI: Record<MasterKey, MasterUiConfig> = {
     title: "CMMS Statuses",
     description: "Status values used on CMMS work orders.",
     columns: [
-      { key: "code", label: "Code", type: "text", required: true, widthClass: "w-28" },
-      { key: "label", label: "Label", type: "text", required: true },
-      { key: "sort_order", label: "Sort", type: "number", widthClass: "w-24" },
+      { key: "name", label: "Name", type: "text", required: true },
       { key: "is_active", label: "Active", type: "boolean", widthClass: "w-24" },
     ],
   },
@@ -267,9 +261,7 @@ export const MASTER_UI: Record<MasterKey, MasterUiConfig> = {
     title: "Issue Catalog",
     description: "Issue values used on CMMS work orders.",
     columns: [
-      { key: "code", label: "Code", type: "text", required: true, widthClass: "w-28" },
-      { key: "label", label: "Label", type: "text", required: true },
-      { key: "sort_order", label: "Sort", type: "number", widthClass: "w-24" },
+      { key: "name", label: "Name", type: "text", required: true },
       { key: "is_active", label: "Active", type: "boolean", widthClass: "w-24" },
     ],
   },
@@ -289,9 +281,7 @@ export const MASTER_UI: Record<MasterKey, MasterUiConfig> = {
     title: "Work Order Types",
     description: "Work order type values used on CMMS work orders.",
     columns: [
-      { key: "code", label: "Code", type: "text", required: true, widthClass: "w-28" },
-      { key: "label", label: "Label", type: "text", required: true },
-      { key: "sort_order", label: "Sort", type: "number", widthClass: "w-24" },
+      { key: "name", label: "Name", type: "text", required: true },
       { key: "is_active", label: "Active", type: "boolean", widthClass: "w-24" },
     ],
   },
@@ -307,22 +297,22 @@ export const MASTER_UI: Record<MasterKey, MasterUiConfig> = {
   },
 
   cmms_assets: {
-    key: "cmms_assets",
-    title: "CMMS Assets",
-    description: "Asset values used in CMMS.",
-    columns: [
-      { key: "name", label: "Name", type: "text", required: true },
-      {
-        key: "department_id",
-        label: "Department",
-        type: "select",
-        required: true,
-        optionsSource: "cmms_departments",
-        displayKey: "department_name",
-      },
-      { key: "is_active", label: "Active", type: "boolean", widthClass: "w-24" },
-    ],
-  },
+  key: "cmms_assets",
+  title: "CMMS Assets",
+  description: "Asset values used in CMMS.",
+  columns: [
+    { key: "name", label: "Name", type: "text", required: true },
+    {
+      key: "department_id",
+      label: "Department",
+      type: "select",
+      required: true,
+      optionsSource: "cmms_departments",
+      displayKey: "department",
+    },
+    { key: "is_active", label: "Active", type: "boolean", widthClass: "w-24" },
+  ],
+},
 };
 
 export function isMasterKey(value: string): value is MasterKey {
