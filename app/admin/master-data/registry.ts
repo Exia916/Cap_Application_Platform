@@ -20,6 +20,7 @@ export const MASTER_KEYS = [
   // Shared production / misc
   "machines",
   "knit_areas",
+  "work_session_areas",
 
   // CMMS lookups
   "priorities",
@@ -54,7 +55,10 @@ export type MasterColumn = {
     | "item_code"
     | "description"
     | "department"
-    | "department_id";
+    | "department_id"
+    | "module_key"
+    | "area_code"
+    | "area_label";
   label: string;
   type: "text" | "number" | "boolean" | "time" | "select";
   required?: boolean;
@@ -236,6 +240,19 @@ export const MASTER_UI: Record<MasterKey, MasterUiConfig> = {
     ],
   },
 
+  work_session_areas: {
+    key: "work_session_areas",
+    title: "Work Session Areas",
+    description: "Area values used by production work sessions across modules.",
+    columns: [
+      { key: "module_key", label: "Module Key", type: "text", required: true, widthClass: "w-40" },
+      { key: "area_code", label: "Area Code", type: "text", required: true, widthClass: "w-40" },
+      { key: "area_label", label: "Area Label", type: "text", required: true },
+      { key: "sort_order", label: "Sort", type: "number", widthClass: "w-24" },
+      { key: "is_active", label: "Active", type: "boolean", widthClass: "w-24" },
+    ],
+  },
+
   priorities: {
     key: "priorities",
     title: "CMMS Priorities",
@@ -297,22 +314,22 @@ export const MASTER_UI: Record<MasterKey, MasterUiConfig> = {
   },
 
   cmms_assets: {
-  key: "cmms_assets",
-  title: "CMMS Assets",
-  description: "Asset values used in CMMS.",
-  columns: [
-    { key: "name", label: "Name", type: "text", required: true },
-    {
-      key: "department_id",
-      label: "Department",
-      type: "select",
-      required: true,
-      optionsSource: "cmms_departments",
-      displayKey: "department",
-    },
-    { key: "is_active", label: "Active", type: "boolean", widthClass: "w-24" },
-  ],
-},
+    key: "cmms_assets",
+    title: "CMMS Assets",
+    description: "Asset values used in CMMS.",
+    columns: [
+      { key: "name", label: "Name", type: "text", required: true },
+      {
+        key: "department_id",
+        label: "Department",
+        type: "select",
+        required: true,
+        optionsSource: "cmms_departments",
+        displayKey: "department",
+      },
+      { key: "is_active", label: "Active", type: "boolean", widthClass: "w-24" },
+    ],
+  },
 };
 
 export function isMasterKey(value: string): value is MasterKey {

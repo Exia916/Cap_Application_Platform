@@ -37,17 +37,19 @@ type WorkSessionRow = {
   voidReason: string | null;
 };
 
-type SortBy = "timeIn" | "workDate" | "shiftDate" | "operatorName" | "areaCode" | "isOpen";
+type SortBy = "timeIn" | "workDate" | "operatorName" | "areaCode" | "isOpen";
 
 type Filters = {
   moduleKey: string;
   areaCode: string;
+  operatorName: string;
   isOpen: string;
 };
 
 const DEFAULT_FILTERS: Filters = {
   moduleKey: "",
   areaCode: "",
+  operatorName: "",
   isOpen: "",
 };
 
@@ -154,7 +156,17 @@ export default function WorkSessionsPage() {
 
   useEffect(() => {
     setPageIndex(0);
-  }, [workDateFrom, workDateTo, sortBy, sortDir, filters.moduleKey, filters.areaCode, filters.isOpen, pageSize]);
+  }, [
+    workDateFrom,
+    workDateTo,
+    sortBy,
+    sortDir,
+    filters.moduleKey,
+    filters.areaCode,
+    filters.operatorName,
+    filters.isOpen,
+    pageSize,
+  ]);
 
   const queryString = useMemo(() => {
     const sp = new URLSearchParams();
@@ -168,7 +180,10 @@ export default function WorkSessionsPage() {
 
     if (filters.moduleKey.trim()) sp.set("moduleKey", filters.moduleKey.trim());
     if (filters.areaCode.trim()) sp.set("areaCode", filters.areaCode.trim());
-    if (filters.isOpen === "true" || filters.isOpen === "false") sp.set("isOpen", filters.isOpen);
+    if (filters.operatorName.trim()) sp.set("operatorName", filters.operatorName.trim());
+    if (filters.isOpen === "true" || filters.isOpen === "false") {
+      sp.set("isOpen", filters.isOpen);
+    }
 
     if (!elevated && me?.employeeNumber != null) {
       sp.set("employeeNumber", String(me.employeeNumber));
@@ -277,8 +292,11 @@ export default function WorkSessionsPage() {
         key: "operatorName",
         header: "OPERATOR",
         sortable: true,
+        filterable: true,
+        placeholder: "Operator",
         render: (r) => r.operatorName ?? "",
-        getSearchText: (r) => `${r.operatorName ?? ""} ${r.username ?? ""} ${r.employeeNumber ?? ""}`,
+        getSearchText: (r) =>
+          `${r.operatorName ?? ""} ${r.username ?? ""} ${r.employeeNumber ?? ""}`,
       },
       {
         key: "areaCode",
@@ -310,13 +328,6 @@ export default function WorkSessionsPage() {
           </span>
         ),
         getSearchText: (r) => (r.isOpen ? "Open" : "Closed"),
-      },
-      {
-        key: "shiftDate",
-        header: "SHIFT DATE",
-        sortable: true,
-        render: (r) => fmtDateOnly(r.shiftDate),
-        getSearchText: (r) => fmtDateOnly(r.shiftDate),
       },
       {
         key: "moduleKey",
@@ -393,18 +404,15 @@ export default function WorkSessionsPage() {
         rowKey={(row) => row.id}
         emptyText="No work sessions found."
         toolbar={
-          <>
-            <button type="button" className="btn btn-secondary" onClick={clearFilters}>
-              Clear Filters
-            </button>
-          </>
+          <button type="button" className="btn btn-secondary" onClick={clearFilters}>
+            Clear Filters
+          </button>
         }
         rowToCsv={(row) => ({
           id: row.id,
           module: row.moduleKey,
           area: row.areaCode,
           work_date: row.workDate,
-          shift_date: row.shiftDate,
           shift: row.shift,
           operator_name: row.operatorName,
           employee_number: row.employeeNumber,

@@ -15,6 +15,7 @@ export type MasterKey =
   | "recut_items"
   | "machines"
   | "knit_areas"
+  | "work_session_areas"
   | "priorities"
   | "statuses"
   | "issue_catalog"
@@ -41,7 +42,10 @@ export type EditableField =
   | "description"
   | "department"
   | "department_id"
-  | "area_name";
+  | "area_name"
+  | "module_key"
+  | "area_code"
+  | "area_label";
 
 export type MasterRegistryItem = {
   key: MasterKey;
@@ -209,88 +213,108 @@ export const MASTER_DATA: Record<MasterKey, MasterRegistryItem> = {
     allowDelete: false,
   },
 
+  work_session_areas: {
+    key: "work_session_areas",
+    table: "public.production_work_area_config",
+    idCol: "id",
+    editable: ["module_key", "area_code", "area_label", "sort_order", "is_active"],
+    selectCols: [
+      "id",
+      "module_key",
+      "area_code",
+      "area_label",
+      "sort_order",
+      "is_active",
+      "created_at",
+      "updated_at",
+    ],
+    orderBy: "module_key ASC, sort_order ASC, area_label ASC",
+    supportsInactive: true,
+    allowDelete: false,
+  },
+
   priorities: {
-  key: "priorities",
-  table: "cmms.priorities",
-  idCol: "id",
-  editable: ["name", "is_active"],
-  selectCols: ["id", "name", "is_active"],
-  orderBy: "name ASC",
-  supportsInactive: true,
-  allowDelete: false,
-},
+    key: "priorities",
+    table: "cmms.priorities",
+    idCol: "id",
+    editable: ["name", "is_active"],
+    selectCols: ["id", "name", "is_active"],
+    orderBy: "name ASC",
+    supportsInactive: true,
+    allowDelete: false,
+  },
 
   statuses: {
-  key: "statuses",
-  table: "cmms.statuses",
-  idCol: "id",
-  editable: ["name", "is_active"],
-  selectCols: ["id", "name", "is_active"],
-  orderBy: "name ASC",
-  supportsInactive: true,
-  allowDelete: false,
-},
+    key: "statuses",
+    table: "cmms.statuses",
+    idCol: "id",
+    editable: ["name", "is_active"],
+    selectCols: ["id", "name", "is_active"],
+    orderBy: "name ASC",
+    supportsInactive: true,
+    allowDelete: false,
+  },
 
   issue_catalog: {
-  key: "issue_catalog",
-  table: "cmms.issue_catalog",
-  idCol: "id",
-  editable: ["name", "is_active"],
-  selectCols: ["id", "name", "is_active"],
-  orderBy: "name ASC",
-  supportsInactive: true,
-  allowDelete: false,
-},
+    key: "issue_catalog",
+    table: "cmms.issue_catalog",
+    idCol: "id",
+    editable: ["name", "is_active"],
+    selectCols: ["id", "name", "is_active"],
+    orderBy: "name ASC",
+    supportsInactive: true,
+    allowDelete: false,
+  },
 
   techs: {
-  key: "techs",
-  table: "cmms.techs",
-  idCol: "id",
-  editable: ["name", "is_active"],
-  selectCols: ["id", "name", "is_active"],
-  orderBy: "name ASC",
-  supportsInactive: true,
-  allowDelete: false,
-},
+    key: "techs",
+    table: "cmms.techs",
+    idCol: "id",
+    editable: ["name", "is_active"],
+    selectCols: ["id", "name", "is_active"],
+    orderBy: "name ASC",
+    supportsInactive: true,
+    allowDelete: false,
+  },
 
   wo_types: {
-  key: "wo_types",
-  table: "cmms.wo_types",
-  idCol: "id",
-  editable: ["name", "is_active"],
-  selectCols: ["id", "name", "is_active"],
-  orderBy: "name ASC",
-  supportsInactive: true,
-  allowDelete: false,
-},
+    key: "wo_types",
+    table: "cmms.wo_types",
+    idCol: "id",
+    editable: ["name", "is_active"],
+    selectCols: ["id", "name", "is_active"],
+    orderBy: "name ASC",
+    supportsInactive: true,
+    allowDelete: false,
+  },
 
- cmms_departments: {
-  key: "cmms_departments",
-  table: "cmms.departments",
-  idCol: "id",
-  editable: ["name", "is_active"],
-  selectCols: ["id", "name", "is_active"],
-  orderBy: "name ASC",
-  supportsInactive: true,
-  allowDelete: false,
-},
+  cmms_departments: {
+    key: "cmms_departments",
+    table: "cmms.departments",
+    idCol: "id",
+    editable: ["name", "is_active"],
+    selectCols: ["id", "name", "is_active"],
+    orderBy: "name ASC",
+    supportsInactive: true,
+    allowDelete: false,
+  },
 
   cmms_assets: {
-  key: "cmms_assets",
-  table: "cmms.assets",
-  idCol: "id",
-  editable: ["name", "department_id", "is_active"],
-  selectCols: [
-    "a.id",
-    "a.name",
-    "a.department_id",
-    "d.name AS department",
-    "a.is_active",
-  ],
-  orderBy: "a.name ASC",
-  supportsInactive: true,
-  allowDelete: false,
-},
+    key: "cmms_assets",
+    table: "cmms.assets",
+    idCol: "id",
+    editable: ["name", "department_id", "is_active"],
+    selectCols: [
+      "a.id",
+      "a.name",
+      "a.department_id",
+      "d.name AS department",
+      "a.is_active",
+    ],
+    orderBy: "a.name ASC",
+    supportsInactive: true,
+    allowDelete: false,
+  },
 };
 
 export function isMasterKey(value: string): value is MasterKey {
