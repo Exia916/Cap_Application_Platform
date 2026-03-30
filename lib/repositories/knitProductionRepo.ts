@@ -57,7 +57,7 @@ export type KnitProductionLine = {
 export type KnitProductionLineInput = {
   detailNumber: number;
   itemStyle: string;
-  logo: string;
+  logo: string | null;
   quantity: number;
   notes: string | null;
 };
@@ -196,19 +196,11 @@ function deriveShiftInfo(entryTs: Date): { shift: string; shiftDate: string } {
 }
 
 function normalizeSalesOrder(
-  salesOrderDisplay: string | null,
-  stockOrder: boolean
+  salesOrderDisplay: string | null
 ): {
   salesOrderDisplay: string | null;
   salesOrderBase: string | null;
 } {
-  if (stockOrder) {
-    return {
-      salesOrderDisplay: null,
-      salesOrderBase: null,
-    };
-  }
-
   const display = String(salesOrderDisplay ?? "").trim();
   if (!display) {
     return {
@@ -365,7 +357,10 @@ function buildWhere(args: ListKnitSubmissionSummariesRangeArgs) {
 
   if (args.salesOrderStartsWith?.trim()) {
     params.push(`${args.salesOrderStartsWith.trim()}%`);
-    pushWhere(where, `COALESCE(s.sales_order_display, s.sales_order_base, '') ILIKE $${params.length}`);
+    pushWhere(
+      where,
+      `COALESCE(s.sales_order_display, s.sales_order_base, '') ILIKE $${params.length}`
+    );
   }
 
   if (args.notes?.trim()) {
@@ -492,7 +487,7 @@ export async function createKnitProductionSubmission(
 
     const entryDate = ymdChicago(input.entryTs);
     const shiftInfo = deriveShiftInfo(input.entryTs);
-    const so = normalizeSalesOrder(input.salesOrderDisplay, input.stockOrder);
+    const so = normalizeSalesOrder(input.salesOrderDisplay);
 
     const submissionInsert = await client.query<{ id: string }>(
       `
@@ -630,7 +625,7 @@ export async function replaceKnitProductionSubmission(
 
     const entryDate = ymdChicago(input.entryTs);
     const shiftInfo = deriveShiftInfo(input.entryTs);
-    const so = normalizeSalesOrder(input.salesOrderDisplay, input.stockOrder);
+    const so = normalizeSalesOrder(input.salesOrderDisplay);
 
     await client.query(
       `
@@ -713,7 +708,10 @@ export async function listKnitProductionSubmissionsBySalesOrder(
   const so = String(salesOrder ?? "").trim();
   if (so) {
     params.push(`${so}%`);
-    pushWhere(where, `COALESCE(s.sales_order_display, s.sales_order_base, '') ILIKE $${params.length}`);
+    pushWhere(
+      where,
+      `COALESCE(s.sales_order_display, s.sales_order_base, '') ILIKE $${params.length}`
+    );
   }
 
   if (employeeNumber != null) {

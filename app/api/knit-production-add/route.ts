@@ -52,17 +52,10 @@ function toRequiredTrimmed(value: unknown): string {
 }
 
 function parseSalesOrderBase(
-  salesOrderDisplay: string | null,
-  stockOrder: boolean
+  salesOrderDisplay: string | null
 ): { salesOrderDisplay: string | null; salesOrderBase: string | null } {
-  if (stockOrder) {
-    return {
-      salesOrderDisplay: null,
-      salesOrderBase: null,
-    };
-  }
-
   const display = String(salesOrderDisplay ?? "").trim();
+
   if (!display) {
     return {
       salesOrderDisplay: null,
@@ -98,13 +91,12 @@ function parseLine(
 
   if (!detailNumber || !isWholeNumberString(detailNumber)) return null;
   if (!itemStyle) return null;
-  if (!logo) return null;
   if (!quantity || !isWholeNumberString(quantity)) return null;
 
   return {
     detailNumber: Number(detailNumber),
     itemStyle,
-    logo,
+    logo: logo || null,
     quantity: Number(quantity),
     notes: notes || null,
   };
@@ -151,12 +143,12 @@ async function validateBody(body: any):
     return { ok: false, error: "Knit Area is invalid or inactive." };
   }
 
-  const so = parseSalesOrderBase(salesOrderInput, stockOrder);
+  const so = parseSalesOrderBase(salesOrderInput);
 
-  if (!stockOrder && !so.salesOrderDisplay) {
+  if (!so.salesOrderDisplay) {
     return {
       ok: false,
-      error: "Sales Order is required unless Stock Order is checked.",
+      error: "Sales Order is required.",
     };
   }
 
@@ -170,7 +162,7 @@ async function validateBody(body: any):
     return {
       ok: false,
       error:
-        "One or more lines are invalid. Detail #, Item Style, Logo, and Quantity are required.",
+        "One or more lines are invalid. Detail #, Item Style, and Quantity are required.",
     };
   }
 
@@ -320,7 +312,9 @@ export async function POST(req: NextRequest) {
       entityType: "knit_production_submissions",
       entityId: result.id,
       eventType: "LINES_ADDED",
-      message: `${validated.value.lines.length} knit production line${validated.value.lines.length === 1 ? "" : "s"} added`,
+      message: `${validated.value.lines.length} knit production line${
+        validated.value.lines.length === 1 ? "" : "s"
+      } added`,
       newValue: validated.value.lines,
       module: "KNIT_PRODUCTION",
       userId,

@@ -48,17 +48,10 @@ function toRequiredTrimmed(value: unknown): string {
 }
 
 function parseSalesOrderBase(
-  salesOrderDisplay: string | null,
-  stockOrder: boolean
+  salesOrderDisplay: string | null
 ): { salesOrderDisplay: string | null; salesOrderBase: string | null } {
-  if (stockOrder) {
-    return {
-      salesOrderDisplay: null,
-      salesOrderBase: null,
-    };
-  }
-
   const display = String(salesOrderDisplay ?? "").trim();
+
   if (!display) {
     return {
       salesOrderDisplay: null,
@@ -86,7 +79,7 @@ function parseSalesOrderNumber(value: string | null | undefined): number | null 
 type IncomingLine = {
   detailNumber: number;
   itemStyle: string;
-  logo: string;
+  logo: string | null;
   quantity: number;
   notes: string | null;
 };
@@ -112,7 +105,7 @@ function normalizeNextLines(lines: IncomingLine[]) {
   return lines.map((line) => ({
     detailNumber: line.detailNumber,
     itemStyle: line.itemStyle,
-    logo: line.logo,
+    logo: line.logo ?? "",
     quantity: line.quantity,
     notes: line.notes ?? null,
   }));
@@ -173,21 +166,26 @@ function buildChanges(
   return candidates.filter((x) => !same(x.previousValue, x.newValue));
 }
 
-async function validateBody(body: any): Promise<{
-  ok: true;
-  value: {
-    entryTs: Date;
-    stockOrder: boolean;
-    salesOrderDisplay: string | null;
-    salesOrderBase: string | null;
-    knitArea: string;
-    notes: string | null;
-    lines: IncomingLine[];
-  };
-} | {
-  ok: false;
-  error: string;
-}> {
+async function validateBody(
+  body: any
+): Promise<
+  | {
+      ok: true;
+      value: {
+        entryTs: Date;
+        stockOrder: boolean;
+        salesOrderDisplay: string | null;
+        salesOrderBase: string | null;
+        knitArea: string;
+        notes: string | null;
+        lines: IncomingLine[];
+      };
+    }
+  | {
+      ok: false;
+      error: string;
+    }
+> {
   if (!body || typeof body !== "object") {
     return { ok: false, error: "Invalid request body." };
   }
@@ -201,7 +199,7 @@ async function validateBody(body: any): Promise<{
 
   const stockOrder = !!body.stockOrder;
   const salesOrderInput = toNullableTrimmed(body.salesOrder);
-  const so = parseSalesOrderBase(salesOrderInput, stockOrder);
+  const so = parseSalesOrderBase(salesOrderInput);
   const knitArea = toRequiredTrimmed(body.knitArea);
 
   if (!knitArea) {
@@ -213,8 +211,8 @@ async function validateBody(body: any): Promise<{
     return { ok: false, error: "Knit Area is invalid or inactive." };
   }
 
-  if (!stockOrder && !so.salesOrderDisplay) {
-    return { ok: false, error: "Sales Order is required unless Stock Order is checked." };
+  if (!so.salesOrderDisplay) {
+    return { ok: false, error: "Sales Order is required." };
   }
 
   const notes = toNullableTrimmed(body.notes);
@@ -246,10 +244,6 @@ async function validateBody(body: any): Promise<{
       return { ok: false, error: `Line ${i + 1}: Item Style is required.` };
     }
 
-    if (!logo) {
-      return { ok: false, error: `Line ${i + 1}: Logo is required.` };
-    }
-
     if (!Number.isInteger(quantity) || quantity < 0) {
       return { ok: false, error: `Line ${i + 1}: Quantity must be a whole number.` };
     }
@@ -257,7 +251,7 @@ async function validateBody(body: any): Promise<{
     lines.push({
       detailNumber,
       itemStyle,
-      logo,
+      logo: logo || null,
       quantity,
       notes,
     });
@@ -308,7 +302,8 @@ export async function GET(req: NextRequest) {
 
     const role = String(auth.role ?? "").trim().toUpperCase();
     const isPowerUser = POWER_EDIT_ROLES.has(role);
-    const includeVoided = isPowerUser && req.nextUrl.searchParams.get("includeVoided") === "true";
+    const includeVoided =
+      isPowerUser && req.nextUrl.searchParams.get("includeVoided") === "true";
 
     const submission = await getKnitProductionSubmissionById(id, {
       includeVoided,
@@ -407,9 +402,7 @@ export async function PUT(req: NextRequest) {
 
     if (!isPowerEditor) {
       const employeeNumber =
-        auth.employeeNumber != null
-          ? Number(auth.employeeNumber)
-          : null;
+        auth.employeeNumber != null ? Number(auth.employeeNumber) : null;
 
       if (!employeeNumber || !Number.isFinite(employeeNumber)) {
         return NextResponse.json<PutResp>(
@@ -494,7 +487,9 @@ export async function PUT(req: NextRequest) {
       entityId: id,
       eventType: "UPDATED",
       message: changes.length
-        ? `Knit production submission updated (${changes.length} field${changes.length === 1 ? "" : "s"} changed)`
+        ? `Knit production submission updated (${changes.length} field${
+            changes.length === 1 ? "" : "s"
+          } changed)`
         : "Knit production submission updated",
       module: "KNIT_PRODUCTION",
       userId,
