@@ -65,6 +65,10 @@ function normalizeCommon(data: Record<string, any>) {
   if (typeof data.label === "string") data.label = data.label.trim();
   if (typeof data.area_name === "string") data.area_name = data.area_name.trim();
 
+  if (typeof data.module_key === "string") data.module_key = data.module_key.trim().toLowerCase();
+  if (typeof data.area_code === "string") data.area_code = data.area_code.trim().toUpperCase();
+  if (typeof data.area_label === "string") data.area_label = data.area_label.trim();
+
   if (typeof data.location === "string") data.location = data.location.trim();
   if (typeof data.emb_type === "string") data.emb_type = data.emb_type.trim();
   if (typeof data.flat_or_3d === "string") data.flat_or_3d = data.flat_or_3d.trim();

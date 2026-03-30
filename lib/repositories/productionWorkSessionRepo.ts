@@ -88,6 +88,7 @@ export type UpdateWorkSessionInput = {
 export type ListWorkSessionsArgs = StandardRepoOptions & {
   moduleKey?: string;
   areaCode?: string;
+  operatorName?: string;
   employeeNumber?: number;
   userId?: string;
   isOpen?: boolean | null;
@@ -211,13 +212,29 @@ function buildWhere(args: ListWorkSessionsArgs) {
   pushWhere(where, buildVoidedWhereClause("s", resolveVoidMode(args)));
 
   if (args.moduleKey?.trim()) {
-    params.push(args.moduleKey.trim());
-    pushWhere(where, `s.module_key = $${params.length}`);
+    params.push(`%${args.moduleKey.trim()}%`);
+    pushWhere(where, `COALESCE(s.module_key, '') ILIKE $${params.length}`);
   }
 
   if (args.areaCode?.trim()) {
-    params.push(args.areaCode.trim());
-    pushWhere(where, `s.area_code = $${params.length}`);
+    params.push(`%${args.areaCode.trim()}%`);
+    pushWhere(where, `COALESCE(s.area_code, '') ILIKE $${params.length}`);
+  }
+
+  if (args.operatorName?.trim()) {
+    params.push(`%${args.operatorName.trim()}%`);
+    const p = `$${params.length}`;
+
+    pushWhere(
+      where,
+      `
+      (
+        COALESCE(s.operator_name, '') ILIKE ${p}
+        OR COALESCE(s.username, '') ILIKE ${p}
+        OR CAST(s.employee_number AS text) ILIKE ${p}
+      )
+      `
+    );
   }
 
   if (args.employeeNumber != null) {
@@ -705,7 +722,7 @@ export async function updateWorkSession(
     }
 
     const nextNotes =
-      input.notes === undefined ? current.notes : (input.notes?.trim() || null);
+      input.notes === undefined ? current.notes : input.notes?.trim() || null;
 
     const shiftInfo = deriveShiftInfo(nextTimeIn);
     const nextIsOpen = nextTimeOut == null;

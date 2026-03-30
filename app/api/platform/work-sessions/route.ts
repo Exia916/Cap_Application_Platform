@@ -79,10 +79,10 @@ export async function GET(req: NextRequest) {
     const result = await listWorkSessions({
       moduleKey: sp.get("moduleKey")?.trim() || undefined,
       areaCode: sp.get("areaCode")?.trim() || undefined,
+      operatorName: sp.get("operatorName")?.trim() || undefined,
       employeeNumber: effectiveEmployeeNumber,
       userId: elevated ? sp.get("userId")?.trim() || undefined : undefined,
-      isOpen:
-        isOpenRaw === "true" ? true : isOpenRaw === "false" ? false : null,
+      isOpen: isOpenRaw === "true" ? true : isOpenRaw === "false" ? false : null,
       workDateFrom: sp.get("workDateFrom")?.trim() || undefined,
       workDateTo: sp.get("workDateTo")?.trim() || undefined,
       shiftDateFrom: sp.get("shiftDateFrom")?.trim() || undefined,
@@ -95,8 +95,7 @@ export async function GET(req: NextRequest) {
         roleOk(auth.role, new Set(["ADMIN", "MANAGER", "SUPERVISOR"])) &&
         sp.get("includeVoided") === "true",
       onlyVoided:
-        roleOk(auth.role, new Set(["ADMIN"])) &&
-        sp.get("onlyVoided") === "true",
+        roleOk(auth.role, new Set(["ADMIN"])) && sp.get("onlyVoided") === "true",
     });
 
     return NextResponse.json<GetResp>(result, { status: 200 });
@@ -169,7 +168,10 @@ export async function POST(req: NextRequest) {
     }
 
     if (Number.isNaN(timeIn.getTime())) {
-      return NextResponse.json<PostResp>({ error: "A valid timeIn is required." }, { status: 400 });
+      return NextResponse.json<PostResp>(
+        { error: "A valid timeIn is required." },
+        { status: 400 }
+      );
     }
 
     if (!employeeNumber) {
@@ -186,8 +188,6 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const authName = operatorName;
-
     const session = await startWorkSession({
       moduleKey,
       areaCode,
@@ -197,14 +197,14 @@ export async function POST(req: NextRequest) {
       employeeNumber,
       operatorName,
       notes,
-      createdBy: authName,
+      createdBy: operatorName,
     });
 
     await logAuditEvent({
       req,
       auth,
       module: "PLATFORM",
-      eventType: "WORK_SESSION_STARTED",
+      eventType: "WORK_SESSION_CREATED",
       message: "Production work session started",
       recordType: "production_work_sessions",
       recordId: session.id,
@@ -224,7 +224,7 @@ export async function POST(req: NextRequest) {
       message: `Work session started for ${session.moduleKey} / ${session.areaCode}`,
       module: "PLATFORM",
       userId: auth.userId != null ? String(auth.userId) : null,
-      userName: authName,
+      userName: operatorName,
       employeeNumber,
     });
 
@@ -236,7 +236,7 @@ export async function POST(req: NextRequest) {
       category: "API",
       module: "PLATFORM",
       eventType: "WORK_SESSION_CREATE_FAILED",
-      message: err?.message || "Failed to start work session",
+      message: err?.message || "Failed to create work session",
       error: err,
     });
 
