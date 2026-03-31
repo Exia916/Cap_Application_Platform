@@ -55,6 +55,51 @@ export type RelatedKnitSubmissionRow = {
   totalQuantity: number;
 };
 
+export type WorkSessionAllViewRow = {
+  id: string;
+  moduleKey: string;
+  areaCode: string;
+  areaLabel: string | null;
+  workDate: string;
+  shiftDate: string | null;
+  shift: string | null;
+  userId: string | null;
+  username: string | null;
+  employeeNumber: number | null;
+  operatorName: string;
+  timeIn: string;
+  timeOut: string | null;
+  isOpen: boolean;
+  notes: string | null;
+  createdAt: string;
+  updatedAt: string;
+  createdBy: string | null;
+  updatedBy: string | null;
+  isVoided: boolean;
+  voidedAt: string | null;
+  voidedBy: string | null;
+  voidReason: string | null;
+  submissionCount: number;
+  totalQuantity: number;
+};
+
+export type WorkSessionAllViewRelatedSubmissionRow = {
+  id: string;
+  sessionId: string;
+  entryTs: string;
+  entryDate: string;
+  name: string;
+  employeeNumber: number | null;
+  shift: string | null;
+  stockOrder: boolean;
+  salesOrder: string | null;
+  knitArea: string | null;
+  notes: string | null;
+  isVoided: boolean;
+  lineCount: number;
+  totalQuantity: number;
+};
+
 export type StartWorkSessionInput = {
   moduleKey: string;
   areaCode: string;
@@ -99,6 +144,31 @@ export type ListWorkSessionsArgs = StandardRepoOptions & {
   limit?: number;
   offset?: number;
   sortBy?: "timeIn" | "workDate" | "shiftDate" | "operatorName" | "areaCode" | "isOpen";
+  sortDir?: "asc" | "desc";
+};
+
+export type ListWorkSessionsAllViewArgs = StandardRepoOptions & {
+  moduleKey?: string;
+  areaCode?: string;
+  operatorName?: string;
+  employeeNumber?: number;
+  isOpen?: boolean;
+  workDateFrom?: string;
+  workDateTo?: string;
+  limit?: number;
+  offset?: number;
+  sortBy?:
+    | "workDate"
+    | "timeIn"
+    | "timeOut"
+    | "operatorName"
+    | "employeeNumber"
+    | "moduleKey"
+    | "areaCode"
+    | "shift"
+    | "isOpen"
+    | "submissionCount"
+    | "totalQuantity";
   sortDir?: "asc" | "desc";
 };
 
@@ -205,6 +275,29 @@ function resolveOrderBy(sortBy?: ListWorkSessionsArgs["sortBy"], sortDir?: ListW
   return map[sortBy ?? "timeIn"] ?? map.timeIn;
 }
 
+function resolveAllViewOrderBy(
+  sortBy?: ListWorkSessionsAllViewArgs["sortBy"],
+  sortDir?: ListWorkSessionsAllViewArgs["sortDir"]
+) {
+  const dir = String(sortDir ?? "desc").toLowerCase() === "asc" ? "ASC" : "DESC";
+
+  const map: Record<NonNullable<ListWorkSessionsAllViewArgs["sortBy"]>, string> = {
+    workDate: `ws.work_date ${dir}, ws.time_in DESC, ws.id DESC`,
+    timeIn: `ws.time_in ${dir}, ws.id DESC`,
+    timeOut: `ws.time_out ${dir} NULLS LAST, ws.time_in DESC, ws.id DESC`,
+    operatorName: `ws.operator_name ${dir}, ws.time_in DESC, ws.id DESC`,
+    employeeNumber: `ws.employee_number ${dir}, ws.time_in DESC, ws.id DESC`,
+    moduleKey: `ws.module_key ${dir}, ws.time_in DESC, ws.id DESC`,
+    areaCode: `ws.area_code ${dir}, ws.time_in DESC, ws.id DESC`,
+    shift: `ws.shift ${dir}, ws.time_in DESC, ws.id DESC`,
+    isOpen: `ws.is_open ${dir}, ws.time_in DESC, ws.id DESC`,
+    submissionCount: `"submissionCount" ${dir}, ws.time_in DESC, ws.id DESC`,
+    totalQuantity: `"totalQuantity" ${dir}, ws.time_in DESC, ws.id DESC`,
+  };
+
+  return map[sortBy ?? "timeIn"] ?? map.timeIn;
+}
+
 function buildWhere(args: ListWorkSessionsArgs) {
   const where: string[] = [];
   const params: any[] = [];
@@ -270,6 +363,64 @@ function buildWhere(args: ListWorkSessionsArgs) {
   if (args.shiftDateTo?.trim()) {
     params.push(args.shiftDateTo.trim());
     pushWhere(where, `s.shift_date <= $${params.length}::date`);
+  }
+
+  return {
+    whereSql: joinWhere(where),
+    params,
+  };
+}
+
+function buildAllViewWhere(args: ListWorkSessionsAllViewArgs) {
+  const where: string[] = [];
+  const params: any[] = [];
+
+  pushWhere(where, buildVoidedWhereClause("ws", resolveVoidMode(args)));
+
+  if (args.moduleKey?.trim()) {
+    params.push(`%${args.moduleKey.trim()}%`);
+    pushWhere(where, `COALESCE(ws.module_key, '') ILIKE $${params.length}`);
+  }
+
+  if (args.areaCode?.trim()) {
+    params.push(`%${args.areaCode.trim()}%`);
+    pushWhere(where, `COALESCE(ws.area_code, '') ILIKE $${params.length}`);
+  }
+
+  if (args.operatorName?.trim()) {
+    params.push(`%${args.operatorName.trim()}%`);
+    const p = `$${params.length}`;
+
+    pushWhere(
+      where,
+      `
+      (
+        COALESCE(ws.operator_name, '') ILIKE ${p}
+        OR COALESCE(ws.username, '') ILIKE ${p}
+        OR CAST(ws.employee_number AS text) ILIKE ${p}
+      )
+      `
+    );
+  }
+
+  if (args.employeeNumber != null) {
+    params.push(args.employeeNumber);
+    pushWhere(where, `ws.employee_number = $${params.length}`);
+  }
+
+  if (typeof args.isOpen === "boolean") {
+    params.push(args.isOpen);
+    pushWhere(where, `ws.is_open = $${params.length}`);
+  }
+
+  if (args.workDateFrom?.trim()) {
+    params.push(args.workDateFrom.trim());
+    pushWhere(where, `ws.work_date >= $${params.length}::date`);
+  }
+
+  if (args.workDateTo?.trim()) {
+    params.push(args.workDateTo.trim());
+    pushWhere(where, `ws.work_date <= $${params.length}::date`);
   }
 
   return {
@@ -820,6 +971,201 @@ export async function listRelatedKnitSubmissionsForSession(
   );
 
   return rows;
+}
+
+export async function listWorkSessionsAllView(
+  args: ListWorkSessionsAllViewArgs
+): Promise<{
+  rows: WorkSessionAllViewRow[];
+  relatedBySessionId: Record<string, WorkSessionAllViewRelatedSubmissionRow[]>;
+  totalCount: number;
+  totals: {
+    totalSessions: number;
+    totalSubmissions: number;
+    totalQuantity: number;
+  };
+}> {
+  const { whereSql, params } = buildAllViewWhere(args);
+  const orderBy = resolveAllViewOrderBy(args.sortBy, args.sortDir);
+  const limit = Number.isFinite(args.limit) ? Math.max(1, Number(args.limit)) : 25;
+  const offset = Number.isFinite(args.offset) ? Math.max(0, Number(args.offset)) : 0;
+
+  const pagedParams = [...params, limit, offset];
+  const limitParam = `$${params.length + 1}`;
+  const offsetParam = `$${params.length + 2}`;
+
+  const rowsSql = `
+    SELECT
+      ws.id,
+      ws.module_key AS "moduleKey",
+      ws.area_code AS "areaCode",
+      cfg.area_label AS "areaLabel",
+      ws.work_date AS "workDate",
+      ws.shift_date AS "shiftDate",
+      ws.shift,
+      ws.user_id AS "userId",
+      ws.username,
+      ws.employee_number AS "employeeNumber",
+      ws.operator_name AS "operatorName",
+      ws.time_in AS "timeIn",
+      ws.time_out AS "timeOut",
+      ws.is_open AS "isOpen",
+      ws.notes,
+      ws.created_at AS "createdAt",
+      ws.updated_at AS "updatedAt",
+      ws.created_by AS "createdBy",
+      ws.updated_by AS "updatedBy",
+      COALESCE(ws.is_voided, false) AS "isVoided",
+      ws.voided_at AS "voidedAt",
+      ws.voided_by AS "voidedBy",
+      ws.void_reason AS "voidReason",
+      COUNT(DISTINCT ks.id)::int AS "submissionCount",
+      COALESCE(SUM(kpl.quantity), 0)::int AS "totalQuantity"
+    FROM public.production_work_sessions ws
+    LEFT JOIN public.production_work_area_config cfg
+      ON cfg.module_key = ws.module_key
+     AND cfg.area_code = ws.area_code
+    LEFT JOIN public.knit_production_submissions ks
+      ON ks.session_id = ws.id
+     AND COALESCE(ks.is_voided, false) = false
+    LEFT JOIN public.knit_production_lines kpl
+      ON kpl.submission_id = ks.id
+    ${whereSql}
+    GROUP BY
+      ws.id,
+      ws.module_key,
+      ws.area_code,
+      cfg.area_label,
+      ws.work_date,
+      ws.shift_date,
+      ws.shift,
+      ws.user_id,
+      ws.username,
+      ws.employee_number,
+      ws.operator_name,
+      ws.time_in,
+      ws.time_out,
+      ws.is_open,
+      ws.notes,
+      ws.created_at,
+      ws.updated_at,
+      ws.created_by,
+      ws.updated_by,
+      ws.is_voided,
+      ws.voided_at,
+      ws.voided_by,
+      ws.void_reason
+    ORDER BY ${orderBy}
+    LIMIT ${limitParam}
+    OFFSET ${offsetParam}
+  `;
+
+  const countSql = `
+    SELECT COUNT(*)::text AS count
+    FROM public.production_work_sessions ws
+    ${whereSql}
+  `;
+
+  const totalsSql = `
+    SELECT
+      COUNT(*)::int AS "totalSessions",
+      COALESCE(SUM(x."submissionCount"), 0)::int AS "totalSubmissions",
+      COALESCE(SUM(x."totalQuantity"), 0)::int AS "totalQuantity"
+    FROM (
+      SELECT
+        ws.id,
+        COUNT(DISTINCT ks.id)::int AS "submissionCount",
+        COALESCE(SUM(kpl.quantity), 0)::int AS "totalQuantity"
+      FROM public.production_work_sessions ws
+      LEFT JOIN public.knit_production_submissions ks
+        ON ks.session_id = ws.id
+       AND COALESCE(ks.is_voided, false) = false
+      LEFT JOIN public.knit_production_lines kpl
+        ON kpl.submission_id = ks.id
+      ${whereSql}
+      GROUP BY ws.id
+    ) x
+  `;
+
+  const [rowsRes, countRes, totalsRes] = await Promise.all([
+    db.query<WorkSessionAllViewRow>(rowsSql, pagedParams),
+    db.query<{ count: string }>(countSql, params),
+    db.query<{
+      totalSessions: number;
+      totalSubmissions: number;
+      totalQuantity: number;
+    }>(totalsSql, params),
+  ]);
+
+  const rows = rowsRes.rows ?? [];
+  const sessionIds = rows.map((row) => row.id).filter(Boolean);
+
+  let relatedBySessionId: Record<string, WorkSessionAllViewRelatedSubmissionRow[]> = {};
+
+  if (sessionIds.length > 0) {
+    const relatedRes = await db.query<WorkSessionAllViewRelatedSubmissionRow>(
+      `
+      SELECT
+        s.id,
+        s.session_id AS "sessionId",
+        s.entry_ts AS "entryTs",
+        s.entry_date AS "entryDate",
+        s.name,
+        s.employee_number AS "employeeNumber",
+        s.shift,
+        s.stock_order AS "stockOrder",
+        COALESCE(s.sales_order_display, s.sales_order_base) AS "salesOrder",
+        s.knit_area AS "knitArea",
+        s.notes,
+        COALESCE(s.is_voided, false) AS "isVoided",
+        COUNT(l.id)::int AS "lineCount",
+        COALESCE(SUM(l.quantity), 0)::int AS "totalQuantity"
+      FROM public.knit_production_submissions s
+      LEFT JOIN public.knit_production_lines l
+        ON l.submission_id = s.id
+      WHERE s.session_id = ANY($1::uuid[])
+        AND COALESCE(s.is_voided, false) = false
+      GROUP BY
+        s.id,
+        s.session_id,
+        s.entry_ts,
+        s.entry_date,
+        s.name,
+        s.employee_number,
+        s.shift,
+        s.stock_order,
+        s.sales_order_display,
+        s.sales_order_base,
+        s.knit_area,
+        s.notes,
+        s.is_voided
+      ORDER BY s.entry_ts DESC, s.id DESC
+      `,
+      [sessionIds]
+    );
+
+    relatedBySessionId = relatedRes.rows.reduce<Record<string, WorkSessionAllViewRelatedSubmissionRow[]>>(
+      (acc, row) => {
+        const key = String(row.sessionId ?? "");
+        if (!key) return acc;
+        if (!acc[key]) acc[key] = [];
+        acc[key].push(row);
+        return acc;
+      },
+      {}
+    );
+  }
+
+  return {
+    rows,
+    relatedBySessionId,
+    totalCount: Number(countRes.rows[0]?.count ?? 0),
+    totals: {
+      totalSessions: Number(totalsRes.rows[0]?.totalSessions ?? 0),
+      totalSubmissions: Number(totalsRes.rows[0]?.totalSubmissions ?? 0),
+      totalQuantity: Number(totalsRes.rows[0]?.totalQuantity ?? 0),
+    },
+  };
 }
 
 export async function validateSessionBelongsToUser(input: {
