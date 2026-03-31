@@ -123,6 +123,11 @@ export default function ManagerPage() {
           title: "Knit QC (All)",
           description: "Review all knit QC submissions and records.",
         },
+        {
+          href: "/admin/work-sessions-all",
+          title: "Work Sessions (All)",
+          description: "Review work sessions with session totals and related knit submissions.",
+        },
       ],
     },
   ];
