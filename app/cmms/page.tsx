@@ -310,7 +310,7 @@ export default function CMMSPage() {
   }, []);
 
   return (
-    <div className="page-shell-wide">
+    <div className="page-shell-table">
       <div className="page-header">
         <h1 className="page-title">CMMS</h1>
         <Link href="/cmms/add" className="btn btn-primary">

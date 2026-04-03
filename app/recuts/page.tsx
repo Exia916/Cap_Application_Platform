@@ -269,7 +269,7 @@ export default function RecutsPage() {
   }
 
   return (
-    <div className="page-shell-wide">
+    <div className="page-shell-table">
       <div className="page-header">
         <div className="page-header-title-wrap">
           <h1 className="page-title">Recuts</h1>
