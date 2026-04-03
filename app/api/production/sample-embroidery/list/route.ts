@@ -40,6 +40,8 @@ function ymdChicago(d: Date): string {
 const ALLOWED_SORT = new Set([
   "entryTs",
   "entryDate",
+  "shift",
+  "shiftDate",
   "name",
   "salesOrder",
   "detailCount",
@@ -79,6 +81,26 @@ export async function GET(req: NextRequest) {
       );
     }
 
+    const shiftDateFromRaw = sp.get("shiftDateFrom")?.trim() ?? "";
+    const shiftDateToRaw = sp.get("shiftDateTo")?.trim() ?? "";
+
+    const shiftDateFrom = shiftDateFromRaw || undefined;
+    const shiftDateTo = shiftDateToRaw || undefined;
+
+    if (shiftDateFrom && !isValidDate(shiftDateFrom)) {
+      return NextResponse.json<Resp>(
+        { error: "Invalid shiftDateFrom (expected YYYY-MM-DD)" },
+        { status: 400 }
+      );
+    }
+
+    if (shiftDateTo && !isValidDate(shiftDateTo)) {
+      return NextResponse.json<Resp>(
+        { error: "Invalid shiftDateTo (expected YYYY-MM-DD)" },
+        { status: 400 }
+      );
+    }
+
     const limit = clampInt(sp.get("limit"), 25, 1, 200);
     const offset = clampInt(sp.get("offset"), 0, 0, 1_000_000);
 
@@ -86,6 +108,8 @@ export async function GET(req: NextRequest) {
     const sortBy = (ALLOWED_SORT.has(sortByRaw) ? sortByRaw : "entryTs") as
       | "entryTs"
       | "entryDate"
+      | "shift"
+      | "shiftDate"
       | "name"
       | "salesOrder"
       | "detailCount"
@@ -99,6 +123,7 @@ export async function GET(req: NextRequest) {
     const salesOrderStartsWith = sp.get("salesOrder")?.trim() ?? "";
     const detailCount = sp.get("detailCount")?.trim() ?? "";
     const quantity = sp.get("quantity")?.trim() ?? "";
+    const shift = sp.get("shift")?.trim() ?? "";
 
     const result = await listSampleEmbroideryEntriesRange({
       entryDateFrom,
@@ -112,6 +137,9 @@ export async function GET(req: NextRequest) {
       notes,
       detailCount,
       quantity,
+      shift,
+      shiftDateFrom,
+      shiftDateTo,
       sortBy,
       sortDir,
       limit,

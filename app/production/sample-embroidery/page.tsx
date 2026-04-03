@@ -35,6 +35,8 @@ type Row = {
   id: string;
   entryTs: string;
   entryDate: string;
+  shift: string | null;
+  shiftDate: string | null;
   name: string;
   employeeNumber: number | null;
   salesOrder: string | null;
@@ -46,12 +48,17 @@ type Row = {
 type SortBy =
   | "entryTs"
   | "entryDate"
+  | "shift"
+  | "shiftDate"
   | "name"
   | "salesOrder"
   | "detailCount"
   | "quantity";
 
 type Filters = {
+  shiftDate: string;
+  entryDate: string;
+  shift: string;
   name: string;
   salesOrder: string;
   detailCount: string;
@@ -60,6 +67,9 @@ type Filters = {
 };
 
 const DEFAULT_FILTERS: Filters = {
+  shiftDate: "",
+  entryDate: "",
+  shift: "",
   name: "",
   salesOrder: "",
   detailCount: "",
@@ -67,10 +77,26 @@ const DEFAULT_FILTERS: Filters = {
   notes: "",
 };
 
+function formatEntryTime(v?: string | null): string {
+  if (!v) return "";
+  const d = new Date(v);
+  return Number.isNaN(d.getTime())
+    ? String(v)
+    : d.toLocaleTimeString([], {
+        hour: "2-digit",
+        minute: "2-digit",
+      });
+}
+
+const filterInputStyle: React.CSSProperties = {
+  width: "100%",
+  minWidth: 120,
+};
+
 export default function SampleEmbroideryListPage() {
   const def = useMemo(() => getRangeLastNDays(30), []);
-  const [entryDateFrom, setEntryDateFrom] = useState(def.from);
-  const [entryDateTo, setEntryDateTo] = useState(def.to);
+  const [shiftDateFrom, setShiftDateFrom] = useState(def.from);
+  const [shiftDateTo, setShiftDateTo] = useState(def.to);
 
   const [rows, setRows] = useState<Row[]>([]);
   const [totalCount, setTotalCount] = useState(0);
@@ -78,7 +104,7 @@ export default function SampleEmbroideryListPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const [sortBy, setSortBy] = useState<SortBy>("entryTs");
+  const [sortBy, setSortBy] = useState<SortBy>("shiftDate");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
 
   const [filters, setFilters] = useState<Filters>(DEFAULT_FILTERS);
@@ -96,17 +122,21 @@ export default function SampleEmbroideryListPage() {
 
   useEffect(() => {
     setPageIndex(0);
-  }, [entryDateFrom, entryDateTo, sortBy, sortDir, debouncedFilters, pageSize]);
+  }, [shiftDateFrom, shiftDateTo, sortBy, sortDir, debouncedFilters, pageSize]);
 
   const queryString = useMemo(() => {
     const sp = new URLSearchParams();
-    sp.set("entryDateFrom", entryDateFrom);
-    sp.set("entryDateTo", entryDateTo);
+
+    sp.set("shiftDateFrom", shiftDateFrom);
+    sp.set("shiftDateTo", shiftDateTo);
     sp.set("sortBy", sortBy);
     sp.set("sortDir", sortDir);
     sp.set("limit", String(pageSize));
     sp.set("offset", String(offset));
 
+    if (debouncedFilters.shiftDate.trim()) sp.set("shiftDate", debouncedFilters.shiftDate.trim());
+    if (debouncedFilters.entryDate.trim()) sp.set("entryDate", debouncedFilters.entryDate.trim());
+    if (debouncedFilters.shift.trim()) sp.set("shift", debouncedFilters.shift.trim());
     if (debouncedFilters.name.trim()) sp.set("name", debouncedFilters.name.trim());
     if (debouncedFilters.salesOrder.trim()) sp.set("salesOrder", debouncedFilters.salesOrder.trim());
     if (debouncedFilters.detailCount.trim()) sp.set("detailCount", debouncedFilters.detailCount.trim());
@@ -114,7 +144,7 @@ export default function SampleEmbroideryListPage() {
     if (debouncedFilters.notes.trim()) sp.set("notes", debouncedFilters.notes.trim());
 
     return sp.toString();
-  }, [entryDateFrom, entryDateTo, sortBy, sortDir, debouncedFilters, pageSize, offset]);
+  }, [shiftDateFrom, shiftDateTo, sortBy, sortDir, debouncedFilters, pageSize, offset]);
 
   async function load(qs: string) {
     setLoading(true);
@@ -125,7 +155,8 @@ export default function SampleEmbroideryListPage() {
         credentials: "include",
         cache: "no-store",
       });
-      const data = await res.json();
+
+      const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data?.error || "Failed to load entries.");
 
       setRows(Array.isArray(data?.entries) ? data.entries : []);
@@ -159,24 +190,65 @@ export default function SampleEmbroideryListPage() {
     }
   }
 
+  function clearFilters() {
+    const r = getRangeLastNDays(30);
+    setShiftDateFrom(r.from);
+    setShiftDateTo(r.to);
+    setFilters(DEFAULT_FILTERS);
+    setSortBy("shiftDate");
+    setSortDir("desc");
+    setPageIndex(0);
+  }
+
   const columns: Column<Row>[] = [
     {
-      key: "entryDate",
-      header: "Date",
+      key: "shiftDate",
+      header: "Shift Date",
       sortable: true,
+      filterRender: (
+        <input
+          className="input dt-filter-input"
+          style={filterInputStyle}
+          type="date"
+          value={filters.shiftDate}
+          onChange={(e) => onFilterChange("shiftDate", e.target.value)}
+          title="Filter Shift Date"
+        />
+      ),
+      render: (row) => row.shiftDate ?? "",
+      getSearchText: (row) => row.shiftDate ?? "",
+    },
+    {
+      key: "shift",
+      header: "Shift",
+      sortable: true,
+      filterable: true,
+      render: (row) => row.shift ?? "",
+      getSearchText: (row) => row.shift ?? "",
+    },
+    {
+      key: "entryDate",
+      header: "Entry Date",
+      sortable: true,
+      filterRender: (
+        <input
+          className="input dt-filter-input"
+          style={filterInputStyle}
+          type="date"
+          value={filters.entryDate}
+          onChange={(e) => onFilterChange("entryDate", e.target.value)}
+          title="Filter Entry Date"
+        />
+      ),
       render: (row) => row.entryDate || "",
+      getSearchText: (row) => row.entryDate || "",
     },
     {
       key: "entryTs",
-      header: "Time",
+      header: "Entry Time",
       sortable: true,
-      render: (row) =>
-        row.entryTs
-          ? new Date(row.entryTs).toLocaleTimeString([], {
-              hour: "2-digit",
-              minute: "2-digit",
-            })
-          : "",
+      render: (row) => formatEntryTime(row.entryTs),
+      getSearchText: (row) => formatEntryTime(row.entryTs),
     },
     {
       key: "name",
@@ -184,6 +256,7 @@ export default function SampleEmbroideryListPage() {
       sortable: true,
       filterable: true,
       render: (row) => row.name,
+      getSearchText: (row) => row.name ?? "",
     },
     {
       key: "salesOrder",
@@ -191,6 +264,7 @@ export default function SampleEmbroideryListPage() {
       sortable: true,
       filterable: true,
       render: (row) => row.salesOrder ?? "",
+      getSearchText: (row) => row.salesOrder ?? "",
     },
     {
       key: "detailCount",
@@ -198,6 +272,7 @@ export default function SampleEmbroideryListPage() {
       sortable: true,
       filterable: true,
       render: (row) => row.detailCount ?? "",
+      getSearchText: (row) => String(row.detailCount ?? ""),
     },
     {
       key: "quantity",
@@ -205,12 +280,14 @@ export default function SampleEmbroideryListPage() {
       sortable: true,
       filterable: true,
       render: (row) => row.quantity ?? "",
+      getSearchText: (row) => String(row.quantity ?? ""),
     },
     {
       key: "notes",
       header: "Notes",
       filterable: true,
       render: (row) => row.notes ?? "",
+      getSearchText: (row) => row.notes ?? "",
     },
     {
       key: "view",
@@ -243,7 +320,10 @@ export default function SampleEmbroideryListPage() {
           <p>Track sample embroidery production entries.</p>
         </div>
 
-        <div className="page-actions">
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <button type="button" className="btn btn-secondary" onClick={clearFilters}>
+            Clear Filters
+          </button>
           <Link className="btn btn-primary" href="/production/sample-embroidery/add">
             Add Entry
           </Link>
@@ -251,33 +331,35 @@ export default function SampleEmbroideryListPage() {
       </div>
 
       <div className="section-card">
-        <div className="form-grid form-grid-3">
+        <div className="form-grid" style={{ marginBottom: 16 }}>
           <div>
-            <label className="form-label">From</label>
+            <label className="field-label">Shift Date From</label>
             <input
               type="date"
-              className="w-full rounded border p-2"
-              value={entryDateFrom}
-              onChange={(e) => setEntryDateFrom(e.target.value)}
+              className="input"
+              value={shiftDateFrom}
+              onChange={(e) => setShiftDateFrom(e.target.value)}
             />
           </div>
+
           <div>
-            <label className="form-label">To</label>
+            <label className="field-label">Shift Date To</label>
             <input
               type="date"
-              className="w-full rounded border p-2"
-              value={entryDateTo}
-              onChange={(e) => setEntryDateTo(e.target.value)}
+              className="input"
+              value={shiftDateTo}
+              onChange={(e) => setShiftDateTo(e.target.value)}
             />
           </div>
-          <div className="section-actions" style={{ alignItems: "flex-end" }}>
+
+          <div style={{ display: "flex", alignItems: "flex-end" }}>
             <button
               type="button"
               className="btn btn-secondary"
               onClick={() => {
                 const r = getRangeLastNDays(30);
-                setEntryDateFrom(r.from);
-                setEntryDateTo(r.to);
+                setShiftDateFrom(r.from);
+                setShiftDateTo(r.to);
               }}
             >
               Last 30 Days
@@ -303,13 +385,15 @@ export default function SampleEmbroideryListPage() {
           rowKey={(row) => row.id}
           csvFilename="sample-embroidery.csv"
           rowToCsv={(row) => ({
-            Date: row.entryDate,
-            Time: row.entryTs,
+            ShiftDate: row.shiftDate ?? "",
+            Shift: row.shift ?? "",
+            EntryDate: row.entryDate,
+            EntryTime: formatEntryTime(row.entryTs),
             Name: row.name,
             SalesOrder: row.salesOrder,
             DetailCount: row.detailCount,
             Quantity: row.quantity,
-            Notes: row.notes,
+            Notes: row.notes ?? "",
           })}
         />
       </div>

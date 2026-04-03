@@ -4,6 +4,8 @@ export type SampleEmbroideryEntry = {
   id: string;
   entryTs: string;
   entryDate: string;
+  shift: string | null;
+  shiftDate: string | null;
   name: string;
   employeeNumber: number | null;
   salesOrder: string | null;
@@ -43,9 +45,14 @@ export type ListSampleEmbroideryEntriesArgs = {
   notes?: string;
   detailCount?: string;
   quantity?: string;
+  shift?: string;
+  shiftDateFrom?: string;
+  shiftDateTo?: string;
   sortBy?:
     | "entryTs"
     | "entryDate"
+    | "shift"
+    | "shiftDate"
     | "name"
     | "salesOrder"
     | "detailCount"
@@ -55,13 +62,79 @@ export type ListSampleEmbroideryEntriesArgs = {
   offset: number;
 };
 
+function chicagoParts(d: Date) {
+  const dtf = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Chicago",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hourCycle: "h23",
+  });
+
+  const parts = dtf.formatToParts(d);
+  const get = (type: string, fallback: string) =>
+    parts.find((p) => p.type === type)?.value ?? fallback;
+
+  return {
+    year: get("year", "1970"),
+    month: get("month", "01"),
+    day: get("day", "01"),
+    hour: Number(get("hour", "0")),
+    minute: Number(get("minute", "0")),
+    second: Number(get("second", "0")),
+  };
+}
+
+function ymdChicago(d: Date): string {
+  const p = chicagoParts(d);
+  return `${p.year}-${p.month}-${p.day}`;
+}
+
+function addDaysToYmd(ymd: string, deltaDays: number): string {
+  const [y, m, d] = ymd.split("-").map(Number);
+  const dt = new Date(Date.UTC(y, (m || 1) - 1, d || 1));
+  dt.setUTCDate(dt.getUTCDate() + deltaDays);
+
+  const yyyy = dt.getUTCFullYear();
+  const mm = String(dt.getUTCMonth() + 1).padStart(2, "0");
+  const dd = String(dt.getUTCDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
+}
+
+function deriveShiftInfo(entryTs: Date): { shift: string; shiftDate: string; entryDate: string } {
+  const p = chicagoParts(entryTs);
+  const entryDate = `${p.year}-${p.month}-${p.day}`;
+
+  if (p.hour >= 6 && p.hour < 18) {
+    return {
+      shift: "Day",
+      shiftDate: entryDate,
+      entryDate,
+    };
+  }
+
+  return {
+    shift: "Night",
+    shiftDate: p.hour < 6 ? addDaysToYmd(entryDate, -1) : entryDate,
+    entryDate,
+  };
+}
+
 export async function addSampleEmbroideryEntry(
   input: AddSampleEmbroideryEntryInput
 ): Promise<{ id: string }> {
+  const entryTs = input.entryTs ?? new Date();
+  const shiftInfo = deriveShiftInfo(entryTs);
+
   const { rows } = await db.query<{ id: string }>(
     `
     INSERT INTO public.sample_embroidery_entries (
       entry_ts,
+      shift,
+      shift_date,
       name,
       employee_number,
       sales_order,
@@ -69,11 +142,13 @@ export async function addSampleEmbroideryEntry(
       quantity,
       notes
     )
-    VALUES ($1,$2,$3,$4,$5,$6,$7)
+    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
     RETURNING id
     `,
     [
-      input.entryTs ?? new Date(),
+      entryTs,
+      shiftInfo.shift,
+      shiftInfo.shiftDate,
       input.name,
       input.employeeNumber,
       input.salesOrder,
@@ -95,6 +170,8 @@ export async function getSampleEmbroideryEntryById(
       id,
       entry_ts AS "entryTs",
       entry_date::text AS "entryDate",
+      shift,
+      shift_date::text AS "shiftDate",
       name,
       employee_number AS "employeeNumber",
       sales_order::text AS "salesOrder",
@@ -213,12 +290,29 @@ export async function listSampleEmbroideryEntriesRange(
     where += ` AND COALESCE(s.quantity::text,'') LIKE $${params.length}`;
   }
 
+  if (input.shift?.trim()) {
+    params.push(input.shift.trim());
+    where += ` AND COALESCE(s.shift, '') = $${params.length}`;
+  }
+
+  if (input.shiftDateFrom?.trim()) {
+    params.push(input.shiftDateFrom.trim());
+    where += ` AND s.shift_date >= $${params.length}::date`;
+  }
+
+  if (input.shiftDateTo?.trim()) {
+    params.push(input.shiftDateTo.trim());
+    where += ` AND s.shift_date <= $${params.length}::date`;
+  }
+
   const sortBy = input.sortBy ?? "entryTs";
   const sortDir = input.sortDir === "asc" ? "ASC" : "DESC";
 
   const ORDER_MAP: Record<string, string> = {
     entryTs: `s.entry_ts`,
     entryDate: `s.entry_date`,
+    shift: `s.shift`,
+    shiftDate: `s.shift_date`,
     name: `s.name`,
     salesOrder: `s.sales_order`,
     detailCount: `s.detail_count`,
@@ -250,6 +344,8 @@ export async function listSampleEmbroideryEntriesRange(
       s.id,
       s.entry_ts AS "entryTs",
       s.entry_date::text AS "entryDate",
+      s.shift,
+      s.shift_date::text AS "shiftDate",
       s.name,
       s.employee_number AS "employeeNumber",
       s.sales_order::text AS "salesOrder",

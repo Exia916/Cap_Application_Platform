@@ -10,6 +10,8 @@ type SampleEmbroideryRow = {
   id: string;
   entryTs: string;
   entryDate: string;
+  shift: string | null;
+  shiftDate: string | null;
   name: string;
   employeeNumber: number | null;
   salesOrder: string | null;
@@ -24,6 +26,17 @@ function fmtTs(v?: string | null) {
   if (!v) return "";
   const d = new Date(v);
   return Number.isNaN(d.getTime()) ? String(v) : d.toLocaleString();
+}
+
+function fmtTimeOnly(v?: string | null) {
+  if (!v) return "";
+  const d = new Date(v);
+  return Number.isNaN(d.getTime())
+    ? String(v)
+    : d.toLocaleTimeString([], {
+        hour: "2-digit",
+        minute: "2-digit",
+      });
 }
 
 function Info({
@@ -182,8 +195,10 @@ export default function SampleEmbroideryRecordClient({ id }: { id: string }) {
               <div style={grid}>
                 <Info label="Name" value={row.name} />
                 <Info label="Employee Number" value={row.employeeNumber} />
+                <Info label="Shift Date" value={row.shiftDate || "—"} />
+                <Info label="Shift" value={row.shift || "—"} />
                 <Info label="Entry Date" value={row.entryDate} />
-                <Info label="Entry Time" value={fmtTs(row.entryTs)} />
+                <Info label="Entry Time" value={fmtTimeOnly(row.entryTs)} />
                 <Info label="Sales Order" value={row.salesOrder} />
                 <Info label="Number of Details" value={row.detailCount} />
                 <Info label="Quantity" value={row.quantity} />
