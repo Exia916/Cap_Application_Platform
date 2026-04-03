@@ -5,6 +5,8 @@ import { requireManagerOrAdmin } from "../_shared/adminAuth";
 export const runtime = "nodejs";
 
 type SortKey =
+  | "shift_date"
+  | "shift"
   | "entry_date"
   | "entry_ts"
   | "name"
@@ -29,6 +31,10 @@ function escCsvCell(v: unknown) {
   return s;
 }
 
+function isValidDate(value: string) {
+  return /^\d{4}-\d{2}-\d{2}$/.test(value);
+}
+
 export async function GET(req: Request) {
   const auth = await requireManagerOrAdmin();
   if (!auth.ok) {
@@ -37,9 +43,12 @@ export async function GET(req: Request) {
 
   const { searchParams } = new URL(req.url);
 
-  const entryDateFrom = searchParams.get("entryDateFrom") || "";
-  const entryDateTo = searchParams.get("entryDateTo") || "";
+  const shiftDateFrom = searchParams.get("shiftDateFrom") || "";
+  const shiftDateTo = searchParams.get("shiftDateTo") || "";
 
+  const shiftDate = (searchParams.get("shiftDate") || "").trim();
+  const entryDate = (searchParams.get("entryDate") || "").trim();
+  const shift = (searchParams.get("shift") || "").trim();
   const name = (searchParams.get("name") || "").trim();
   const employeeNumber = (searchParams.get("employeeNumber") || "").trim();
   const salesOrder = (searchParams.get("salesOrder") || "").trim();
@@ -56,9 +65,30 @@ export async function GET(req: Request) {
 
   const format = (searchParams.get("format") || "").toLowerCase();
 
-  if (!entryDateFrom || !entryDateTo) {
+  if (!shiftDateFrom || !shiftDateTo) {
     return NextResponse.json(
-      { error: "entryDateFrom and entryDateTo are required." },
+      { error: "shiftDateFrom and shiftDateTo are required." },
+      { status: 400 }
+    );
+  }
+
+  if (!isValidDate(shiftDateFrom) || !isValidDate(shiftDateTo)) {
+    return NextResponse.json(
+      { error: "shiftDateFrom and shiftDateTo must be valid YYYY-MM-DD dates." },
+      { status: 400 }
+    );
+  }
+
+  if (shiftDate && !isValidDate(shiftDate)) {
+    return NextResponse.json(
+      { error: "shiftDate must be a valid YYYY-MM-DD date." },
+      { status: 400 }
+    );
+  }
+
+  if (entryDate && !isValidDate(entryDate)) {
+    return NextResponse.json(
+      { error: "entryDate must be a valid YYYY-MM-DD date." },
       { status: 400 }
     );
   }
@@ -66,11 +96,26 @@ export async function GET(req: Request) {
   const where: string[] = [];
   const params: any[] = [];
 
-  params.push(entryDateFrom);
-  where.push(`s.entry_date >= $${params.length}::date`);
+  params.push(shiftDateFrom);
+  where.push(`s.shift_date >= $${params.length}::date`);
 
-  params.push(entryDateTo);
-  where.push(`s.entry_date <= $${params.length}::date`);
+  params.push(shiftDateTo);
+  where.push(`s.shift_date <= $${params.length}::date`);
+
+  if (shiftDate) {
+    params.push(shiftDate);
+    where.push(`s.shift_date = $${params.length}::date`);
+  }
+
+  if (entryDate) {
+    params.push(entryDate);
+    where.push(`s.entry_date = $${params.length}::date`);
+  }
+
+  if (shift) {
+    params.push(`%${shift}%`);
+    where.push(`COALESCE(s.shift, '') ILIKE $${params.length}`);
+  }
 
   if (name) {
     params.push(`%${name}%`);
@@ -105,6 +150,8 @@ export async function GET(req: Request) {
   const whereSql = where.length ? `WHERE ${where.join(" AND ")}` : "";
 
   const ORDER_MAP: Record<SortKey, string> = {
+    shift_date: "s.shift_date",
+    shift: "s.shift",
     entry_date: "s.entry_date",
     entry_ts: "s.entry_ts",
     name: "s.name",
@@ -153,6 +200,8 @@ export async function GET(req: Request) {
       s.id,
       s.entry_ts AS "entryTs",
       s.entry_date::text AS "entryDate",
+      s.shift,
+      s.shift_date::text AS "shiftDate",
       s.name,
       s.employee_number AS "employeeNumber",
       s.sales_order::text AS "salesOrder",
@@ -169,6 +218,8 @@ export async function GET(req: Request) {
       id: string;
       entryTs: string;
       entryDate: string;
+      shift: string | null;
+      shiftDate: string | null;
       name: string;
       employeeNumber: number | null;
       salesOrder: string | null;
@@ -178,8 +229,10 @@ export async function GET(req: Request) {
     }>(baseSelect, params);
 
     const header = [
-      "Date",
-      "Data Timestamp",
+      "Shift Date",
+      "Shift",
+      "Entry Date",
+      "Entry Timestamp",
       "Name",
       "Employee #",
       "Sales Order",
@@ -192,6 +245,8 @@ export async function GET(req: Request) {
       header.join(","),
       ...csvRes.rows.map((r) =>
         [
+          escCsvCell(r.shiftDate),
+          escCsvCell(r.shift),
           escCsvCell(r.entryDate),
           escCsvCell(r.entryTs),
           escCsvCell(r.name),
@@ -230,6 +285,8 @@ export async function GET(req: Request) {
     id: string;
     entryTs: string;
     entryDate: string;
+    shift: string | null;
+    shiftDate: string | null;
     name: string;
     employeeNumber: number | null;
     salesOrder: string | null;

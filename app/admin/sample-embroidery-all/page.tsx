@@ -33,12 +33,12 @@ export default function SampleEmbroideryAllPage() {
   const def = getRangeLastNDays(30);
 
   return (
-    <div className="page-shell">
+    <div className="page-shell-table">
       <div className="page-header">
         <div>
           <h1 className="page-title">Sample Embroidery — All</h1>
           <p className="page-subtitle">
-            Manager/admin list for all Sample Embroidery entries.
+            Manager/admin list for all Sample Embroidery entries by shift date.
           </p>
         </div>
       </div>

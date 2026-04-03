@@ -12,6 +12,8 @@ type Row = {
   id: string;
   entryTs: string;
   entryDate: string;
+  shift: string | null;
+  shiftDate: string | null;
   name: string;
   employeeNumber: number | null;
   salesOrder: string | null;
@@ -31,6 +33,8 @@ type ApiResponse = {
 
 type SortDir = "asc" | "desc";
 type SortKey =
+  | "shift_date"
+  | "shift"
   | "entry_date"
   | "entry_ts"
   | "name"
@@ -103,20 +107,6 @@ function fmtTimestamp(value: any) {
   return tsFmt.format(dt);
 }
 
-function csvFileDateChicago() {
-  const parts = new Intl.DateTimeFormat("en-CA", {
-    timeZone: "America/Chicago",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).formatToParts(new Date());
-
-  const yyyy = parts.find((p) => p.type === "year")?.value ?? "1970";
-  const mm = parts.find((p) => p.type === "month")?.value ?? "01";
-  const dd = parts.find((p) => p.type === "day")?.value ?? "01";
-  return `${yyyy}-${mm}-${dd}`;
-}
-
 function SortHeader({
   label,
   sortKey,
@@ -163,6 +153,9 @@ export default function SampleEmbroideryAllTable({
   const [start, setStart] = useState(defaultStart);
   const [end, setEnd] = useState(defaultEnd);
 
+  const [shiftDate, setShiftDate] = useState("");
+  const [entryDate, setEntryDate] = useState("");
+  const [shift, setShift] = useState("");
   const [name, setName] = useState("");
   const [employeeNumber, setEmployeeNumber] = useState("");
   const [salesOrder, setSalesOrder] = useState("");
@@ -183,9 +176,12 @@ export default function SampleEmbroideryAllTable({
   const query = useMemo(() => {
     const p = new URLSearchParams();
 
-    if (start) p.set("entryDateFrom", start);
-    if (end) p.set("entryDateTo", end);
+    if (start) p.set("shiftDateFrom", start);
+    if (end) p.set("shiftDateTo", end);
 
+    if (shiftDate) p.set("shiftDate", shiftDate);
+    if (entryDate) p.set("entryDate", entryDate);
+    if (shift) p.set("shift", shift);
     if (name) p.set("name", name);
     if (employeeNumber) p.set("employeeNumber", employeeNumber);
     if (salesOrder) p.set("salesOrder", salesOrder);
@@ -202,6 +198,9 @@ export default function SampleEmbroideryAllTable({
   }, [
     start,
     end,
+    shiftDate,
+    entryDate,
+    shift,
     name,
     employeeNumber,
     salesOrder,
@@ -243,7 +242,20 @@ export default function SampleEmbroideryAllTable({
 
   useEffect(() => {
     setPage(1);
-  }, [start, end, name, employeeNumber, salesOrder, detailCount, quantity, notes, pageSize]);
+  }, [
+    start,
+    end,
+    shiftDate,
+    entryDate,
+    shift,
+    name,
+    employeeNumber,
+    salesOrder,
+    detailCount,
+    quantity,
+    notes,
+    pageSize,
+  ]);
 
   function exportCsv() {
     const p = new URLSearchParams(query);
@@ -263,6 +275,9 @@ export default function SampleEmbroideryAllTable({
   function resetAll() {
     setStart(defaultStart);
     setEnd(defaultEnd);
+    setShiftDate("");
+    setEntryDate("");
+    setShift("");
     setName("");
     setEmployeeNumber("");
     setSalesOrder("");
@@ -333,12 +348,12 @@ export default function SampleEmbroideryAllTable({
 
         <div style={controlBox}>
           <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-            <span style={label}>Start</span>
+            <span style={label}>Shift Date From</span>
             <input type="date" value={start} onChange={(e) => setStart(e.target.value)} style={input} />
           </div>
 
           <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-            <span style={label}>End</span>
+            <span style={label}>Shift Date To</span>
             <input type="date" value={end} onChange={(e) => setEnd(e.target.value)} style={input} />
           </div>
         </div>
@@ -401,11 +416,13 @@ export default function SampleEmbroideryAllTable({
           background: "#fff",
         }}
       >
-        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, minWidth: 1220 }}>
+        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, minWidth: 1480 }}>
           <thead>
             <tr>
-              <SortHeader label="Date" sortKey="entry_date" activeSort={sort} activeDir={dir} onChange={toggleSort} />
-              <SortHeader label="Data Timestamp" sortKey="entry_ts" activeSort={sort} activeDir={dir} onChange={toggleSort} />
+              <SortHeader label="Shift Date" sortKey="shift_date" activeSort={sort} activeDir={dir} onChange={toggleSort} />
+              <SortHeader label="Shift" sortKey="shift" activeSort={sort} activeDir={dir} onChange={toggleSort} />
+              <SortHeader label="Entry Date" sortKey="entry_date" activeSort={sort} activeDir={dir} onChange={toggleSort} />
+              <SortHeader label="Entry Timestamp" sortKey="entry_ts" activeSort={sort} activeDir={dir} onChange={toggleSort} />
               <SortHeader label="Name" sortKey="name" activeSort={sort} activeDir={dir} onChange={toggleSort} />
               <SortHeader
                 label="Employee #"
@@ -453,12 +470,37 @@ export default function SampleEmbroideryAllTable({
             </tr>
 
             <tr>
-              <th style={{ padding: 6, borderBottom: "1px solid #ddd", background: "#fff", whiteSpace: "nowrap" }}>
-                <span style={{ fontSize: 11, color: "#6b7280" }}>Range</span>
+              <th style={{ padding: 6, borderBottom: "1px solid #ddd", background: "#fff" }}>
+                <input
+                  type="date"
+                  value={shiftDate}
+                  onChange={(e) => setShiftDate(e.target.value)}
+                  placeholder="Shift Date"
+                  style={{ ...input, width: 145 }}
+                />
               </th>
 
               <th style={{ padding: 6, borderBottom: "1px solid #ddd", background: "#fff" }}>
-                <input disabled placeholder="(timestamp)" style={{ ...input, width: 140, opacity: 0.55 }} />
+                <input
+                  value={shift}
+                  onChange={(e) => setShift(e.target.value)}
+                  placeholder="Shift"
+                  style={{ ...input, width: 90 }}
+                />
+              </th>
+
+              <th style={{ padding: 6, borderBottom: "1px solid #ddd", background: "#fff" }}>
+                <input
+                  type="date"
+                  value={entryDate}
+                  onChange={(e) => setEntryDate(e.target.value)}
+                  placeholder="Entry Date"
+                  style={{ ...input, width: 145 }}
+                />
+              </th>
+
+              <th style={{ padding: 6, borderBottom: "1px solid #ddd", background: "#fff" }}>
+                <input disabled placeholder="(timestamp)" style={{ ...input, width: 150, opacity: 0.55 }} />
               </th>
 
               <th style={{ padding: 6, borderBottom: "1px solid #ddd", background: "#fff" }}>
@@ -508,6 +550,8 @@ export default function SampleEmbroideryAllTable({
           <tbody>
             {rows.map((r) => (
               <tr key={r.id}>
+                <td style={{ padding: 10, borderBottom: "1px solid #eee", whiteSpace: "nowrap" }}>{fmtDateOnly(r.shiftDate)}</td>
+                <td style={{ padding: 10, borderBottom: "1px solid #eee", whiteSpace: "nowrap" }}>{fmtText(r.shift)}</td>
                 <td style={{ padding: 10, borderBottom: "1px solid #eee", whiteSpace: "nowrap" }}>{fmtDateOnly(r.entryDate)}</td>
                 <td style={{ padding: 10, borderBottom: "1px solid #eee", whiteSpace: "nowrap" }}>{fmtTimestamp(r.entryTs)}</td>
                 <td style={{ padding: 10, borderBottom: "1px solid #eee" }}>{fmtText(r.name)}</td>
@@ -563,7 +607,7 @@ export default function SampleEmbroideryAllTable({
 
             {!loading && rows.length === 0 && (
               <tr>
-                <td colSpan={10} style={{ padding: 16, color: "#666" }}>
+                <td colSpan={12} style={{ padding: 16, color: "#666" }}>
                   No results for the current filters.
                 </td>
               </tr>
