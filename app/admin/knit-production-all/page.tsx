@@ -33,7 +33,7 @@ export default function KnitProductionAllPage() {
   const def = getRangeLastNDays(30);
 
   return (
-    <div className="page-shell-wide">
+    <div className="page-shell-table">
       <div className="page-header">
         <div>
           <h1 className="page-title">Knit Production — All</h1>

@@ -465,7 +465,7 @@ export default function RepairRequestsPage() {
   );
 
   return (
-    <div className="page-shell-wide">
+    <div className="page-shell-table">
       <div className="page-header">
         <h1 className="page-title">Repair Requests</h1>
         <Link href="/cmms/repair-requests/add" className="btn btn-primary">

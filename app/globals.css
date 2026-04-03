@@ -74,6 +74,8 @@
   --btn-danger-text: #ffffff;
   --btn-danger-hover-bg: #b51f25;
   --btn-danger-hover-border: #b51f25;
+
+  --app-sticky-offset: 56px;
 }
 
 @theme inline {
@@ -270,6 +272,13 @@ main:has(table) {
   max-width: 1400px;
   margin: 0 auto;
   padding: 20px;
+}
+
+.page-shell-table {
+  width: 100%;
+  max-width: 100%;
+  margin: 0 auto;
+  padding: 20px 24px;
 }
 
 .page-shell-wide {
@@ -1830,3 +1839,4 @@ table {
     grid-template-columns: 1fr;
   }
 }
+

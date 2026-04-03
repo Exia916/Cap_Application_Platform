@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 export type SortDir = "asc" | "desc";
 
@@ -182,6 +182,12 @@ export default function DataTable<T>({
   const showingTo = Math.min(offset + rows.length, totalCount);
 
   const [globalSearch, setGlobalSearch] = useState("");
+  const [topSpacerWidth, setTopSpacerWidth] = useState(1);
+
+  const topScrollRef = useRef<HTMLDivElement | null>(null);
+  const bottomScrollRef = useRef<HTMLDivElement | null>(null);
+  const syncLockRef = useRef<"top" | "bottom" | null>(null);
+  const rafRef = useRef<number | null>(null);
 
   const searchableColumns = useMemo(() => {
     return columns.filter((c) => c.key !== "edit");
@@ -245,6 +251,97 @@ export default function DataTable<T>({
     downloadCsv(filename, headers, outRows);
   }
 
+  function updateTopScrollbar() {
+    const top = topScrollRef.current;
+    const bottom = bottomScrollRef.current;
+    if (!top || !bottom) return;
+
+    const width = Math.max(bottom.scrollWidth, bottom.clientWidth, 1);
+    setTopSpacerWidth(width);
+
+    if (syncLockRef.current !== "top") {
+      top.scrollLeft = bottom.scrollLeft;
+    }
+  }
+
+  useLayoutEffect(() => {
+    updateTopScrollbar();
+  }, [columns, rows, filteredRows.length, loading, pageIndex, pageSize]);
+
+  useEffect(() => {
+    const bottom = bottomScrollRef.current;
+    if (!bottom) return;
+
+    const run = () => updateTopScrollbar();
+
+    run();
+
+    const timeout1 = window.setTimeout(run, 0);
+    const timeout2 = window.setTimeout(run, 50);
+    const timeout3 = window.setTimeout(run, 150);
+
+    let ro: ResizeObserver | null = null;
+    if (typeof ResizeObserver !== "undefined") {
+      ro = new ResizeObserver(() => {
+        run();
+      });
+      ro.observe(bottom);
+      if (bottom.firstElementChild instanceof HTMLElement) {
+        ro.observe(bottom.firstElementChild);
+      }
+    }
+
+    window.addEventListener("resize", run);
+
+    return () => {
+      window.clearTimeout(timeout1);
+      window.clearTimeout(timeout2);
+      window.clearTimeout(timeout3);
+      window.removeEventListener("resize", run);
+      if (ro) ro.disconnect();
+    };
+  }, [columns, rows]);
+
+  useEffect(() => {
+    const top = topScrollRef.current;
+    const bottom = bottomScrollRef.current;
+    if (!top || !bottom) return;
+
+    const clearLock = () => {
+      if (rafRef.current != null) {
+        cancelAnimationFrame(rafRef.current);
+      }
+      rafRef.current = requestAnimationFrame(() => {
+        syncLockRef.current = null;
+      });
+    };
+
+    const onTopScroll = () => {
+      if (syncLockRef.current === "bottom") return;
+      syncLockRef.current = "top";
+      bottom.scrollLeft = top.scrollLeft;
+      clearLock();
+    };
+
+    const onBottomScroll = () => {
+      if (syncLockRef.current === "top") return;
+      syncLockRef.current = "bottom";
+      top.scrollLeft = bottom.scrollLeft;
+      clearLock();
+    };
+
+    top.addEventListener("scroll", onTopScroll, { passive: true });
+    bottom.addEventListener("scroll", onBottomScroll, { passive: true });
+
+    return () => {
+      top.removeEventListener("scroll", onTopScroll);
+      bottom.removeEventListener("scroll", onBottomScroll);
+      if (rafRef.current != null) {
+        cancelAnimationFrame(rafRef.current);
+      }
+    };
+  }, []);
+
   return (
     <div className="section-stack" style={{ marginTop: 16 }}>
       <style>{`
@@ -280,6 +377,60 @@ export default function DataTable<T>({
         .dt-count {
           font-size: 12px;
           color: var(--text-muted);
+        }
+
+        .dt-card {
+          background: var(--surface);
+          border: 1px solid var(--border);
+          border-radius: 14px;
+          box-shadow: var(--shadow-sm);
+          overflow: visible;
+          position: relative;
+        }
+
+        .dt-top-scroll-wrap {
+          overflow-x: auto;
+          overflow-y: hidden;
+          position: sticky;
+          top: var(--app-sticky-offset, 56px);
+          z-index: 8;
+          height: 24px;
+          min-height: 24px;
+          max-height: 24px;
+          border-top-left-radius: 14px;
+          border-top-right-radius: 14px;
+          border-bottom: 1px solid var(--border);
+          background: var(--surface-muted);
+          scrollbar-width: auto;
+          scrollbar-color: var(--border-table-strong) var(--surface-subtle);
+        }
+
+        .dt-top-scroll-wrap::-webkit-scrollbar {
+          height: 16px;
+        }
+
+        .dt-top-scroll-wrap::-webkit-scrollbar-track {
+          background: var(--surface-subtle);
+          border-radius: 999px;
+        }
+
+        .dt-top-scroll-wrap::-webkit-scrollbar-thumb {
+          background: var(--border-table-strong);
+          border-radius: 999px;
+          border: 2px solid var(--surface-subtle);
+        }
+
+        .dt-top-scroll-wrap::-webkit-scrollbar-thumb:hover {
+          background: var(--brand-blue);
+        }
+
+        .dt-top-scroll-spacer {
+          height: 1px;
+        }
+
+        .dt-frame {
+          overflow: hidden;
+          border-radius: 14px;
         }
 
         .dt-table-wrap {
@@ -477,108 +628,117 @@ export default function DataTable<T>({
         </div>
       </div>
 
-      <div className="table-card">
-        <div className="dt-table-wrap">
-          <table className="dt-table table-clean">
-            <thead>
-              <tr>
-                {columns.map((c) => {
-                  const isClickable = !!c.sortable && c.serverSortable !== false;
+      <div className="dt-card">
+        <div ref={topScrollRef} className="dt-top-scroll-wrap">
+          <div
+            className="dt-top-scroll-spacer"
+            style={{ width: topSpacerWidth }}
+          />
+        </div>
 
-                  return (
-                    <th
-                      key={c.key}
-                      className={isClickable ? "dt-th-btn" : "dt-th"}
-                      style={{
-                        width: c.width,
-                        opacity: c.sortable && c.serverSortable === false ? 0.65 : 1,
-                      }}
-                      onClick={isClickable ? () => handleHeaderClick(c) : undefined}
-                      role={isClickable ? "button" : undefined}
-                      title={
-                        c.sortable
-                          ? c.serverSortable === false
-                            ? "Sorting disabled for this column"
-                            : "Sort"
-                          : undefined
-                      }
-                    >
-                      {c.header}
-                      {c.sortable ? sortIndicator(c.key) : null}
+        <div className="dt-frame">
+          <div className="dt-table-wrap" ref={bottomScrollRef}>
+            <table className="dt-table table-clean">
+              <thead>
+                <tr>
+                  {columns.map((c) => {
+                    const isClickable = !!c.sortable && c.serverSortable !== false;
+
+                    return (
+                      <th
+                        key={c.key}
+                        className={isClickable ? "dt-th-btn" : "dt-th"}
+                        style={{
+                          width: c.width,
+                          opacity: c.sortable && c.serverSortable === false ? 0.65 : 1,
+                        }}
+                        onClick={isClickable ? () => handleHeaderClick(c) : undefined}
+                        role={isClickable ? "button" : undefined}
+                        title={
+                          c.sortable
+                            ? c.serverSortable === false
+                              ? "Sorting disabled for this column"
+                              : "Sort"
+                            : undefined
+                        }
+                      >
+                        {c.header}
+                        {c.sortable ? sortIndicator(c.key) : null}
+                      </th>
+                    );
+                  })}
+                </tr>
+
+                <tr>
+                  {columns.map((c) => (
+                    <th key={c.key} className="dt-th-filter">
+                      {c.filterRender ? (
+                        c.filterRender
+                      ) : c.filterable ? (
+                        <input
+                          className="input dt-filter-input"
+                          placeholder={c.placeholder ?? c.header}
+                          value={filters[c.key] ?? ""}
+                          onChange={(e) => onFilterChange(c.key, e.target.value)}
+                        />
+                      ) : (
+                        <span className="dt-filter-muted">—</span>
+                      )}
                     </th>
-                  );
-                })}
-              </tr>
-
-              <tr>
-                {columns.map((c) => (
-                  <th key={c.key} className="dt-th-filter">
-                    {c.filterRender ? (
-                      c.filterRender
-                    ) : c.filterable ? (
-                      <input
-                        className="input dt-filter-input"
-                        placeholder={c.placeholder ?? c.header}
-                        value={filters[c.key] ?? ""}
-                        onChange={(e) => onFilterChange(c.key, e.target.value)}
-                      />
-                    ) : (
-                      <span className="dt-filter-muted">—</span>
-                    )}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-
-            <tbody>
-              {error ? (
-                <tr className="dt-row">
-                  <td className="dt-td" colSpan={columns.length}>
-                    <span className="dt-error">{error}</span>
-                  </td>
+                  ))}
                 </tr>
-              ) : loading ? (
-                <tr className="dt-row">
-                  <td className="dt-td" colSpan={columns.length}>
-                    Loading…
-                  </td>
-                </tr>
-              ) : filteredRows.length === 0 ? (
-                <tr className="dt-row">
-                  <td className="dt-td" colSpan={columns.length}>
-                    {emptyText}
-                  </td>
-                </tr>
-              ) : (
-                filteredRows.map((r) => {
-                  const extraRowClass = rowClassName?.(r)?.trim();
-                  const combinedRowClass = extraRowClass
-                    ? `dt-row ${extraRowClass}`
-                    : "dt-row";
+              </thead>
 
-                  return (
-                    <React.Fragment key={rowKey(r)}>
-                      <tr className={combinedRowClass}>
-                        {columns.map((c) => (
-                          <td key={c.key} className="dt-td">
-                            {c.render(r)}
-                          </td>
-                        ))}
-                      </tr>
+              <tbody>
+                {error ? (
+                  <tr className="dt-row">
+                    <td className="dt-td" colSpan={columns.length}>
+                      <span className="dt-error">{error}</span>
+                    </td>
+                  </tr>
+                ) : loading ? (
+                  <tr className="dt-row">
+                    <td className="dt-td" colSpan={columns.length}>
+                      Loading…
+                    </td>
+                  </tr>
+                ) : filteredRows.length === 0 ? (
+                  <tr className="dt-row">
+                    <td className="dt-td" colSpan={columns.length}>
+                      {emptyText}
+                    </td>
+                  </tr>
+                ) : (
+                  filteredRows.map((r) => {
+                    const extraRowClass = rowClassName?.(r)?.trim();
+                    const combinedRowClass = extraRowClass
+                      ? `dt-row ${extraRowClass}`
+                      : "dt-row";
 
-                      {renderExpandedRow ? (
-                        <tr>
-                          <td colSpan={columns.length} className="dt-expanded-cell">
-                            {renderExpandedRow(r)}
-                          </td>
+                    return (
+                      <React.Fragment key={rowKey(r)}>
+                        <tr className={combinedRowClass}>
+                          {columns.map((c) => (
+                            <td key={c.key} className="dt-td">
+                              {c.render(r)}
+                            </td>
+                          ))}
                         </tr>
-                      ) : null}
-                    </React.Fragment>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
+
+                        {renderExpandedRow ? (
+                          <tr>
+                            <td colSpan={columns.length} className="dt-expanded-cell">
+                              {renderExpandedRow(r)}
+                            </td>
+                          </tr>
+                        ) : null}
+                      </React.Fragment>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
         </div>
       </div>
     </div>
