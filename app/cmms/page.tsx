@@ -171,12 +171,48 @@ export default function CMMSPage() {
         getSearchText: (r) => String(r.workOrderId ?? ""),
       },
       {
+        key: "edit",
+        header: "",
+        filterable: false,
+        sortable: false,
+        serverSortable: false,
+        render: (r) => (
+          <Link href={`/cmms/${r.workOrderId}/edit`} className="btn btn-primary btn-sm">
+            Open
+          </Link>
+        ),
+      },
+      {
+        key: "view",
+        header: "",
+        filterable: false,
+        sortable: false,
+        serverSortable: false,
+        render: (r) => (
+          <Link href={`/cmms/${r.workOrderId}`} className="btn btn-secondary btn-sm">
+            View
+          </Link>
+        ),
+      },
+      {
         key: "requestedAt",
         header: "Requested",
         sortable: true,
         filterable: false,
         render: (r) => dt(r.requestedAt),
         getSearchText: (r) => dt(r.requestedAt),
+      },
+      {
+        key: "status",
+        header: "Status",
+        sortable: true,
+        filterable: true,
+        placeholder: "Status…",
+        render: (r) => {
+          const label = r.status == null ? "" : String(r.status);
+          return <span style={statusPillStyle(label)}>{label}</span>;
+        },
+        getSearchText: (r) => String(r.status ?? ""),
       },
       {
         key: "requestedByName",
@@ -253,18 +289,6 @@ export default function CMMSPage() {
         render: cell("tech"),
       },
       {
-        key: "status",
-        header: "Status",
-        sortable: true,
-        filterable: true,
-        placeholder: "Status…",
-        render: (r) => {
-          const label = r.status == null ? "" : String(r.status);
-          return <span style={statusPillStyle(label)}>{label}</span>;
-        },
-        getSearchText: (r) => String(r.status ?? ""),
-      },
-      {
         key: "downTimeRecorded",
         header: "Down Time",
         sortable: false,
@@ -281,30 +305,6 @@ export default function CMMSPage() {
         filterable: true,
         placeholder: "Resolution…",
         render: cell("resolution"),
-      },
-      {
-        key: "view",
-        header: "",
-        filterable: false,
-        sortable: false,
-        serverSortable: false,
-        render: (r) => (
-          <Link href={`/cmms/${r.workOrderId}`} className="btn btn-secondary btn-sm">
-            View
-          </Link>
-        ),
-      },
-      {
-        key: "edit",
-        header: "",
-        filterable: false,
-        sortable: false,
-        serverSortable: false,
-        render: (r) => (
-          <Link href={`/cmms/${r.workOrderId}/edit`} className="btn btn-primary btn-sm">
-            Open
-          </Link>
-        ),
       },
     ];
   }, []);
