@@ -130,6 +130,17 @@ export default function ManagerPage() {
         },
       ],
     },
+    {
+      title: "Recuts",
+      subtitle: "Manager visibility across all recut requests and workflow status.",
+      items: [
+        {
+          href: "/admin/recuts-all",
+          title: "Recuts (All)",
+          description: "Review all recut requests across users with workflow and warehouse status.",
+        },
+      ],
+    },
   ];
 
   if (!loaded) {
@@ -185,7 +196,7 @@ export default function ManagerPage() {
               Warehouse Recuts
             </Link>
 
-             <Link href="/platform/work-sessions" className="btn btn-secondary">
+            <Link href="/platform/work-sessions" className="btn btn-secondary">
               Work Sessions
             </Link>
           </div>
@@ -250,24 +261,22 @@ export default function ManagerPage() {
           font-weight: 800;
           color: var(--text-soft);
           text-transform: uppercase;
-          letter-spacing: 0.06em;
+          letter-spacing: 0.08em;
         }
 
         .manager-title {
           margin: 0;
-          color: var(--text);
         }
 
         .manager-subtitle {
           margin: 0;
-          color: var(--text-muted);
-          max-width: 900px;
-          font-size: 14px;
+          color: var(--text-soft);
+          max-width: 780px;
         }
 
         .manager-toolbar {
           display: grid;
-          gap: 14px;
+          gap: 12px;
         }
 
         .manager-toolbar-actions {
@@ -283,92 +292,85 @@ export default function ManagerPage() {
 
         .manager-group {
           display: grid;
-          gap: 16px;
+          gap: 14px;
         }
 
         .manager-group-head {
           display: flex;
           justify-content: space-between;
           align-items: flex-start;
-          gap: 16px;
+          gap: 12px;
           flex-wrap: wrap;
         }
 
         .manager-group-title {
           margin: 0 0 4px 0;
-          color: var(--text);
         }
 
         .manager-group-subtitle {
           margin: 0;
           color: var(--text-soft);
-          font-size: 13px;
-          max-width: 900px;
         }
 
         .manager-group-count {
           display: inline-flex;
           align-items: center;
-          justify-content: center;
-          min-height: 32px;
-          padding: 6px 12px;
+          min-height: 30px;
+          padding: 0 10px;
           border-radius: 999px;
           background: var(--surface-muted);
           border: 1px solid var(--border);
-          color: var(--text);
+          color: var(--text-muted);
           font-size: 12px;
-          font-weight: 800;
+          font-weight: 700;
           white-space: nowrap;
         }
 
         .manager-link-grid {
           display: grid;
-          grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-          gap: 14px;
+          grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+          gap: 12px;
         }
 
         .manager-link-card {
           display: grid;
           gap: 10px;
-          text-decoration: none;
-          background: var(--surface);
+          padding: 14px;
           border: 1px solid var(--border);
           border-radius: 14px;
-          padding: 16px;
+          background: var(--surface);
+          text-decoration: none;
           box-shadow: var(--shadow-sm);
           transition:
-            background 120ms ease,
-            border-color 120ms ease,
+            transform 120ms ease,
             box-shadow 120ms ease,
-            transform 120ms ease;
+            border-color 120ms ease,
+            background 120ms ease;
         }
 
         .manager-link-card:hover {
-          background: var(--surface-subtle);
-          border-color: var(--border-strong);
-          box-shadow: var(--shadow-md);
           transform: translateY(-1px);
+          box-shadow: var(--shadow-md);
+          border-color: var(--border-strong);
+          background: var(--surface-subtle);
         }
 
         .manager-link-top {
           display: flex;
           justify-content: space-between;
           align-items: flex-start;
-          gap: 12px;
+          gap: 10px;
         }
 
         .manager-link-title {
-          font-size: 16px;
+          font-size: 15px;
           font-weight: 800;
           color: var(--text);
-          line-height: 1.2;
         }
 
         .manager-link-arrow {
           color: var(--brand-blue);
-          font-size: 18px;
           font-weight: 800;
-          flex-shrink: 0;
         }
 
         .manager-link-description {
@@ -380,19 +382,12 @@ export default function ManagerPage() {
         .manager-link-footer {
           color: var(--brand-blue);
           font-size: 12px;
-          font-weight: 800;
-          text-transform: uppercase;
-          letter-spacing: 0.04em;
+          font-weight: 700;
         }
 
-        @media (max-width: 760px) {
-          .manager-toolbar-actions {
-            flex-direction: column;
-            align-items: stretch;
-          }
-
-          .manager-toolbar-actions .btn {
-            width: 100%;
+        @media (max-width: 768px) {
+          .manager-link-grid {
+            grid-template-columns: 1fr;
           }
         }
       `}</style>
