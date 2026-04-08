@@ -28,41 +28,41 @@ export async function GET(req: Request) {
 
   const { searchParams } = new URL(req.url);
 
-  // Date filtering
-  const start = searchParams.get("start"); // YYYY-MM-DD
-  const end = searchParams.get("end"); // YYYY-MM-DD
+  const start = searchParams.get("start");
+  const end = searchParams.get("end");
   const showAll = searchParams.get("all") === "1";
 
-  // ✅ NEW: Global search
   const q = (searchParams.get("q") || "").trim();
 
-  // Filters
   const name = searchParams.get("name");
   const employeeNumber = searchParams.get("employee_number");
+  const department = searchParams.get("department");
+  const departmentModeRaw = (searchParams.get("department_mode") || "only").trim().toLowerCase();
+  const departmentMode = departmentModeRaw === "except" ? "except" : "only";
+
   const salesOrder = searchParams.get("sales_order");
   const detailNumber = searchParams.get("detail_number");
-  const flatOr3d = searchParams.get("flat_or_3d"); // contains (or exact-ish)
+  const flatOr3d = searchParams.get("flat_or_3d");
   const orderQty = searchParams.get("order_quantity");
   const inspectedQty = searchParams.get("inspected_quantity");
   const rejectedQty = searchParams.get("rejected_quantity");
   const shippedQty = searchParams.get("quantity_shipped");
-  const notes = searchParams.get("notes"); // contains
+  const notes = searchParams.get("notes");
 
-  const format = searchParams.get("format"); // "csv" | null
+  const format = searchParams.get("format");
 
-  // Paging / sorting
   const page = clamp(toInt(searchParams.get("page"), 1), 1, 1_000_000);
   const pageSize = clamp(toInt(searchParams.get("pageSize"), 100), 10, 500);
 
   const sortFieldRaw = (searchParams.get("sort") || "entry_ts").toLowerCase();
   const sortDirRaw = (searchParams.get("dir") || "desc").toLowerCase();
 
-  // Allowlist sort fields
   const sortFieldMap: Record<string, string> = {
     entry_ts: "q.entry_ts",
     entry_date: "q.entry_date",
     name: "q.name",
     employee_number: "q.employee_number",
+    department: `COALESCE(u.department, '')`,
     sales_order: "q.sales_order",
     detail_number: "q.detail_number",
     flat_or_3d: "q.flat_or_3d",
@@ -70,8 +70,6 @@ export async function GET(req: Request) {
     inspected_quantity: "q.inspected_quantity",
     rejected_quantity: "q.rejected_quantity",
     quantity_shipped: "q.quantity_shipped",
-
-    // derived (window)
     total_qty_inspected_by_date: "total_qty_inspected_by_date",
     flat_totals: "flat_totals",
     three_d_totals: "three_d_totals",
@@ -91,7 +89,6 @@ export async function GET(req: Request) {
     params.push(value);
   };
 
-  // ✅ Default to last 30 days (by entry_date) unless showAll
   if (!showAll) {
     if (start) add(`q.entry_date >= ?::date`, start);
     if (end) add(`q.entry_date <= ?::date`, end);
@@ -100,7 +97,6 @@ export async function GET(req: Request) {
     }
   }
 
-  // ✅ NEW: Global search across common fields (incl qty fields)
   if (q) {
     const like = `%${q}%`;
 
@@ -113,37 +109,53 @@ export async function GET(req: Request) {
     const p7 = `$${params.length + 7}`;
     const p8 = `$${params.length + 8}`;
     const p9 = `$${params.length + 9}`;
+    const p10 = `$${params.length + 10}`;
+    const p11 = `$${params.length + 11}`;
 
     where.push(`(
       q.name ILIKE ${p1}
-      OR COALESCE(q.flat_or_3d, '') ILIKE ${p2}
-      OR COALESCE(q.notes, '') ILIKE ${p3}
-      OR CAST(q.employee_number AS text) ILIKE ${p4}
-      OR CAST(q.sales_order AS text) ILIKE ${p5}
-      OR CAST(q.detail_number AS text) ILIKE ${p6}
-      OR CAST(q.order_quantity AS text) ILIKE ${p7}
-      OR CAST(q.inspected_quantity AS text) ILIKE ${p8}
-      OR CAST(q.rejected_quantity AS text) ILIKE ${p9}
-      OR CAST(q.quantity_shipped AS text) ILIKE $${params.length + 10}
+      OR COALESCE(u.department, '') ILIKE ${p2}
+      OR COALESCE(q.flat_or_3d, '') ILIKE ${p3}
+      OR COALESCE(q.notes, '') ILIKE ${p4}
+      OR CAST(q.employee_number AS text) ILIKE ${p5}
+      OR CAST(q.sales_order AS text) ILIKE ${p6}
+      OR CAST(q.detail_number AS text) ILIKE ${p7}
+      OR CAST(q.order_quantity AS text) ILIKE ${p8}
+      OR CAST(q.inspected_quantity AS text) ILIKE ${p9}
+      OR CAST(q.rejected_quantity AS text) ILIKE ${p10}
+      OR CAST(q.quantity_shipped AS text) ILIKE ${p11}
     )`);
 
-    params.push(like, like, like, like, like, like, like, like, like, like);
+    params.push(like, like, like, like, like, like, like, like, like, like, like);
   }
 
   if (name) add(`q.name ILIKE ?`, `%${name}%`);
   if (employeeNumber) add(`CAST(q.employee_number AS text) ILIKE ?`, `%${employeeNumber}%`);
+
+  if (department) {
+    if (departmentMode === "except") {
+      add(`COALESCE(TRIM(u.department), '') <> ?`, department.trim());
+    } else {
+      add(`COALESCE(TRIM(u.department), '') = ?`, department.trim());
+    }
+  }
+
   if (salesOrder) add(`CAST(q.sales_order AS text) ILIKE ?`, `%${salesOrder}%`);
   if (detailNumber) add(`CAST(q.detail_number AS text) ILIKE ?`, `%${detailNumber}%`);
   if (flatOr3d) add(`COALESCE(q.flat_or_3d, '') ILIKE ?`, `%${flatOr3d}%`);
-
   if (orderQty) add(`CAST(q.order_quantity AS text) ILIKE ?`, `%${orderQty}%`);
   if (inspectedQty) add(`CAST(q.inspected_quantity AS text) ILIKE ?`, `%${inspectedQty}%`);
   if (rejectedQty) add(`CAST(q.rejected_quantity AS text) ILIKE ?`, `%${rejectedQty}%`);
   if (shippedQty) add(`CAST(q.quantity_shipped AS text) ILIKE ?`, `%${shippedQty}%`);
-
   if (notes) add(`COALESCE(q.notes, '') ILIKE ?`, `%${notes}%`);
 
   const whereSql = where.length ? `WHERE ${where.join(" AND ")}` : "";
+
+  const fromSql = `
+    FROM qc_daily_entries q
+    LEFT JOIN users u
+      ON u.employee_number = q.employee_number
+  `;
 
   const baseSelect = `
     SELECT
@@ -152,6 +164,7 @@ export async function GET(req: Request) {
       q.entry_date,
       q.name,
       q.employee_number,
+      u.department,
       q.sales_order,
       q.detail_number,
       q.flat_or_3d,
@@ -173,19 +186,20 @@ export async function GET(req: Request) {
         OVER (PARTITION BY q.entry_date, q.name), 0)::bigint AS three_d_totals_by_person,
 
       COALESCE(SUM(q.inspected_quantity) OVER (PARTITION BY q.entry_date, q.name), 0)::bigint AS total_qty_inspected_by_person
-
-    FROM qc_daily_entries q
+    ${fromSql}
     ${whereSql}
-    ORDER BY ${sortField} ${sortDir}
+    ORDER BY ${sortField} ${sortDir}, q.id DESC
   `;
 
-  // CSV export (no paging)
   if (format === "csv") {
     const { rows } = await db.query(baseSelect, params);
 
     const headers = [
       "entry_ts",
+      "entry_date",
       "name",
+      "department",
+      "employee_number",
       "sales_order",
       "detail_number",
       "flat_or_3d",
@@ -194,14 +208,12 @@ export async function GET(req: Request) {
       "rejected_quantity",
       "quantity_shipped",
       "notes",
-      "entry_date",
       "total_qty_inspected_by_date",
       "flat_totals",
       "three_d_totals",
       "flat_totals_by_person",
       "three_d_totals_by_person",
       "total_qty_inspected_by_person",
-      "employee_number",
     ];
 
     const lines = [headers.join(","), ...rows.map((r: any) => headers.map((h) => escCsv(r[h])).join(","))];
@@ -216,8 +228,12 @@ export async function GET(req: Request) {
     });
   }
 
-  // Count + paged rows + totals
-  const countSql = `SELECT COUNT(*)::int AS count FROM qc_daily_entries q ${whereSql}`;
+  const countSql = `
+    SELECT COUNT(*)::int AS count
+    ${fromSql}
+    ${whereSql}
+  `;
+
   const offset = (page - 1) * pageSize;
   const pagedSql = `${baseSelect} LIMIT $${params.length + 1} OFFSET $${params.length + 2}`;
   const pagedParams = [...params, pageSize, offset];
@@ -227,7 +243,7 @@ export async function GET(req: Request) {
       COALESCE(SUM(q.inspected_quantity), 0)::bigint AS total_inspected_quantity,
       COALESCE(SUM(q.rejected_quantity), 0)::bigint AS total_rejected_quantity,
       COALESCE(SUM(q.quantity_shipped), 0)::bigint AS total_quantity_shipped
-    FROM qc_daily_entries q
+    ${fromSql}
     ${whereSql}
   `;
 

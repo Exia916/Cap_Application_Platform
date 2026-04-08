@@ -37,7 +37,7 @@ export type AuthUserWithLegacy = AuthUser & {
 /* -------------------------------------------------------------------------- */
 
 function signJwt(payload: AuthUser) {
-  return jwt.sign(payload, JWT_SECRET, { expiresIn: "8h" });
+  return jwt.sign(payload, JWT_SECRET, { expiresIn: "12h" });
 }
 
 export function verifyJwt(token: string): AuthUser | null {
