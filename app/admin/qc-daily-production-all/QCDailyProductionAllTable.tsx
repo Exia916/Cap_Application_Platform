@@ -8,12 +8,23 @@ type Totals = {
   total_quantity_shipped: number | string;
 };
 
+type DepartmentOption = {
+  id: string;
+  code: string;
+  name: string;
+  is_active: boolean;
+  sort_order: number;
+};
+
+type DepartmentMode = "only" | "except";
+
 type Row = {
   id: string;
   entry_ts: string;
   entry_date: string;
   name: string;
   employee_number: number;
+  department: string | null;
   sales_order: number;
   detail_number: number;
   flat_or_3d: string;
@@ -48,18 +59,16 @@ function fmtInt(v: any) {
   return nf0.format(n);
 }
 
-// ✅ Sales Order with NO commas
 function fmtSalesOrderNoCommas(v: any) {
   const s = v === null || v === undefined ? "" : String(v);
   return s.replace(/,/g, "");
 }
-// ✅ Employee Number with NO commas
+
 function fmtEmployeeNumberNoCommas(v: any) {
   const s = v === null || v === undefined ? "" : String(v);
   return s.replace(/,/g, "");
 }
 
-// Dates
 const dateFmt = new Intl.DateTimeFormat("en-US", {
   year: "numeric",
   month: "2-digit",
@@ -98,6 +107,8 @@ type SortKey =
   | "entry_ts"
   | "entry_date"
   | "name"
+  | "employee_number"
+  | "department"
   | "sales_order"
   | "detail_number"
   | "flat_or_3d"
@@ -110,8 +121,7 @@ type SortKey =
   | "three_d_totals"
   | "flat_totals_by_person"
   | "three_d_totals_by_person"
-  | "total_qty_inspected_by_person"
-  | "employee_number";
+  | "total_qty_inspected_by_person";
 
 function SortHeader({
   label,
@@ -155,20 +165,16 @@ export default function QCDailyProductionAllTable({
   defaultStart: string;
   defaultEnd: string;
 }) {
-  // top horizontal scrollbar refs
   const topScrollRef = useRef<HTMLDivElement | null>(null);
   const topScrollInnerRef = useRef<HTMLDivElement | null>(null);
   const tableScrollRef = useRef<HTMLDivElement | null>(null);
 
-  // controls
   const [showAll, setShowAll] = useState(false);
   const [start, setStart] = useState(defaultStart);
   const [end, setEnd] = useState(defaultEnd);
 
-  // ✅ NEW: global search
   const [q, setQ] = useState("");
 
-  // filters
   const [name, setName] = useState("");
   const [salesOrder, setSalesOrder] = useState("");
   const [detailNumber, setDetailNumber] = useState("");
@@ -178,18 +184,51 @@ export default function QCDailyProductionAllTable({
   const [rejectedQty, setRejectedQty] = useState("");
   const [shippedQty, setShippedQty] = useState("");
   const [employeeNumber, setEmployeeNumber] = useState("");
+  const [department, setDepartment] = useState("");
+  const [departmentMode, setDepartmentMode] = useState<DepartmentMode>("only");
   const [notes, setNotes] = useState("");
 
-  // paging + sort
+  const [departments, setDepartments] = useState<DepartmentOption[]>([]);
+  const [deptLoading, setDeptLoading] = useState(false);
+
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(50);
   const [sort, setSort] = useState<SortKey>("entry_ts");
   const [dir, setDir] = useState<SortDir>("desc");
 
-  // data
   const [loading, setLoading] = useState(false);
   const [data, setData] = useState<ApiResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+
+    async function loadDepartments() {
+      setDeptLoading(true);
+      try {
+        const res = await fetch("/api/lookups/departments", {
+          cache: "no-store",
+          credentials: "include",
+        });
+        const j = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(j?.error || "Failed to load departments");
+
+        if (!alive) return;
+        setDepartments(Array.isArray(j?.departments) ? j.departments : []);
+      } catch {
+        if (!alive) return;
+        setDepartments([]);
+      } finally {
+        if (alive) setDeptLoading(false);
+      }
+    }
+
+    loadDepartments();
+
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   const query = useMemo(() => {
     const p = new URLSearchParams();
@@ -201,7 +240,6 @@ export default function QCDailyProductionAllTable({
       if (end) p.set("end", end);
     }
 
-    // ✅ NEW: global search param
     if (q) p.set("q", q);
 
     if (name) p.set("name", name);
@@ -213,6 +251,10 @@ export default function QCDailyProductionAllTable({
     if (rejectedQty) p.set("rejected_quantity", rejectedQty);
     if (shippedQty) p.set("quantity_shipped", shippedQty);
     if (employeeNumber) p.set("employee_number", employeeNumber);
+    if (department) {
+      p.set("department", department);
+      p.set("department_mode", departmentMode);
+    }
     if (notes) p.set("notes", notes);
 
     p.set("page", String(page));
@@ -235,6 +277,8 @@ export default function QCDailyProductionAllTable({
     rejectedQty,
     shippedQty,
     employeeNumber,
+    department,
+    departmentMode,
     notes,
     page,
     pageSize,
@@ -246,7 +290,10 @@ export default function QCDailyProductionAllTable({
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`/api/admin/qc-daily-production-all?${qs}`, { cache: "no-store" });
+      const res = await fetch(`/api/admin/qc-daily-production-all?${qs}`, {
+        cache: "no-store",
+        credentials: "include",
+      });
       const j = await res.json();
       if (!res.ok) throw new Error(j?.error || "Failed to load");
       setData(j);
@@ -258,17 +305,13 @@ export default function QCDailyProductionAllTable({
     }
   }
 
-  // 400ms debounce
   useEffect(() => {
     const t = setTimeout(() => load(query), 400);
     return () => clearTimeout(t);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [query]);
 
-  // reset page when filters change
   useEffect(() => {
     setPage(1);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     showAll,
     start,
@@ -283,6 +326,8 @@ export default function QCDailyProductionAllTable({
     rejectedQty,
     shippedQty,
     employeeNumber,
+    department,
+    departmentMode,
     notes,
     pageSize,
   ]);
@@ -294,8 +339,9 @@ export default function QCDailyProductionAllTable({
   }
 
   function toggleSort(next: SortKey) {
-    if (sort === next) setDir((d) => (d === "asc" ? "desc" : "asc"));
-    else {
+    if (sort === next) {
+      setDir((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
       setSort(next);
       setDir("asc");
     }
@@ -305,7 +351,6 @@ export default function QCDailyProductionAllTable({
   const rows = data?.rows || [];
   const totalPages = data?.totalPages || 1;
 
-  // top scrollbar sync
   useEffect(() => {
     const top = topScrollRef.current;
     const inner = topScrollInnerRef.current;
@@ -355,7 +400,6 @@ export default function QCDailyProductionAllTable({
     };
   }, [rows.length, pageSize]);
 
-  // UI styles
   const btn = (variant: "primary" | "ghost" = "primary"): React.CSSProperties => ({
     height: 36,
     padding: "0 14px",
@@ -379,7 +423,12 @@ export default function QCDailyProductionAllTable({
     background: "#f9fafb",
   };
 
-  const label: React.CSSProperties = { fontSize: 12, color: "#374151", fontWeight: 700 };
+  const label: React.CSSProperties = {
+    fontSize: 12,
+    color: "#374151",
+    fontWeight: 700,
+  };
+
   const input: React.CSSProperties = {
     height: 34,
     borderRadius: 10,
@@ -389,11 +438,15 @@ export default function QCDailyProductionAllTable({
     fontSize: 13,
     outline: "none",
   };
-  const select: React.CSSProperties = { ...input, paddingRight: 8, cursor: "pointer" };
+
+  const select: React.CSSProperties = {
+    ...input,
+    paddingRight: 8,
+    cursor: "pointer",
+  };
 
   return (
     <div style={{ border: "1px solid #ddd", borderRadius: 14, padding: 12, width: "100%" }}>
-      {/* top controls */}
       <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap", marginBottom: 10 }}>
         <div style={controlBox}>
           <button onClick={exportCsv} style={btn("primary")}>
@@ -419,15 +472,14 @@ export default function QCDailyProductionAllTable({
           </div>
         ) : null}
 
-        {/* ✅ NEW: Global Search */}
         <div style={controlBox}>
           <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
             <span style={label}>Search</span>
             <input
               value={q}
               onChange={(e) => setQ(e.target.value)}
-              placeholder="Search: name, SO, detail, emp#, flat/3D, qty, notes…"
-              style={{ ...input, width: 340 }}
+              placeholder="Search: name, department, SO, detail, emp#, flat/3D, qty, notes…"
+              style={{ ...input, width: 360 }}
             />
           </div>
 
@@ -470,7 +522,6 @@ export default function QCDailyProductionAllTable({
         </div>
       </div>
 
-      {/* totals */}
       <div style={{ display: "flex", gap: 18, marginBottom: 10, color: "#111827", flexWrap: "wrap" }}>
         <div style={{ fontWeight: 800 }}>Total Inspected: {fmtInt(totals?.total_inspected_quantity ?? 0)}</div>
         <div style={{ fontWeight: 800 }}>Total Rejected: {fmtInt(totals?.total_rejected_quantity ?? 0)}</div>
@@ -481,7 +532,6 @@ export default function QCDailyProductionAllTable({
       {error && <div style={{ color: "crimson", marginBottom: 10 }}>{error}</div>}
       {loading && <div style={{ marginBottom: 10, fontWeight: 700 }}>Loading…</div>}
 
-      {/* top horizontal scrollbar */}
       <div
         ref={topScrollRef}
         style={{
@@ -499,7 +549,6 @@ export default function QCDailyProductionAllTable({
         <div ref={topScrollInnerRef} style={{ height: 1 }} />
       </div>
 
-      {/* table */}
       <div
         ref={tableScrollRef}
         style={{
@@ -510,14 +559,13 @@ export default function QCDailyProductionAllTable({
           background: "#fff",
         }}
       >
-        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, minWidth: 1900 }}>
+        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, minWidth: 2240 }}>
           <thead>
             <tr>
               <SortHeader label="Timestamp" sortKey="entry_ts" activeSort={sort} activeDir={dir} onChange={toggleSort} />
-              {/* ✅ Date moved next to Timestamp */}
               <SortHeader label="Date" sortKey="entry_date" activeSort={sort} activeDir={dir} onChange={toggleSort} />
-
               <SortHeader label="Name" sortKey="name" activeSort={sort} activeDir={dir} onChange={toggleSort} />
+              <SortHeader label="Department" sortKey="department" activeSort={sort} activeDir={dir} onChange={toggleSort} />
               <SortHeader label="Sales Order #" sortKey="sales_order" activeSort={sort} activeDir={dir} onChange={toggleSort} />
               <SortHeader label="Detail #" sortKey="detail_number" activeSort={sort} activeDir={dir} onChange={toggleSort} />
               <SortHeader label="Flat Or 3D" sortKey="flat_or_3d" activeSort={sort} activeDir={dir} onChange={toggleSort} />
@@ -528,7 +576,6 @@ export default function QCDailyProductionAllTable({
               <th style={{ textAlign: "left", padding: 10, borderBottom: "1px solid #ddd", background: "#fafafa", whiteSpace: "nowrap" }}>
                 Notes
               </th>
-
               <SortHeader
                 label="Total Qty Inspected By Date"
                 sortKey="total_qty_inspected_by_date"
@@ -562,13 +609,11 @@ export default function QCDailyProductionAllTable({
               <SortHeader label="Employee #" sortKey="employee_number" activeSort={sort} activeDir={dir} onChange={toggleSort} />
             </tr>
 
-            {/* filters row */}
             <tr>
               <th style={{ padding: 6, borderBottom: "1px solid #ddd", background: "#fff" }}>
                 <input disabled placeholder="(ts)" style={{ ...input, width: 130, opacity: 0.55 }} />
               </th>
 
-              {/* ✅ Date moved next to Timestamp */}
               <th style={{ padding: 6, borderBottom: "1px solid #ddd", background: "#fff", whiteSpace: "nowrap" }}>
                 <span style={{ fontSize: 11, color: "#6b7280" }}>{showAll ? "All" : "Range"}</span>
               </th>
@@ -576,6 +621,36 @@ export default function QCDailyProductionAllTable({
               <th style={{ padding: 6, borderBottom: "1px solid #ddd", background: "#fff" }}>
                 <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Name" style={{ ...input, width: 160 }} />
               </th>
+
+              <th style={{ padding: 6, borderBottom: "1px solid #ddd", background: "#fff" }}>
+                <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                  <select
+                    value={departmentMode}
+                    onChange={(e) => setDepartmentMode(e.target.value as DepartmentMode)}
+                    style={{ ...select, width: 88 }}
+                    disabled={deptLoading || !department}
+                    title="Department filter mode"
+                  >
+                    <option value="only">Only</option>
+                    <option value="except">Except</option>
+                  </select>
+
+                  <select
+                    value={department}
+                    onChange={(e) => setDepartment(e.target.value)}
+                    style={{ ...select, width: 180 }}
+                    disabled={deptLoading}
+                  >
+                    <option value="">All Departments</option>
+                    {departments.map((d) => (
+                      <option key={d.id} value={d.code}>
+                        {d.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </th>
+
               <th style={{ padding: 6, borderBottom: "1px solid #ddd", background: "#fff" }}>
                 <input value={salesOrder} onChange={(e) => setSalesOrder(e.target.value)} placeholder="SO" style={{ ...input, width: 120 }} />
               </th>
@@ -601,7 +676,6 @@ export default function QCDailyProductionAllTable({
                 <input value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Notes contains" style={{ ...input, width: 190 }} />
               </th>
 
-              {/* display-only */}
               {Array.from({ length: 6 }).map((_, idx) => (
                 <th key={idx} style={{ padding: 6, borderBottom: "1px solid #ddd", background: "#fff" }}>
                   <input disabled style={{ ...input, width: 160, opacity: 0.55 }} />
@@ -609,7 +683,12 @@ export default function QCDailyProductionAllTable({
               ))}
 
               <th style={{ padding: 6, borderBottom: "1px solid #ddd", background: "#fff" }}>
-                <input value={employeeNumber} onChange={(e) => setEmployeeNumber(e.target.value)} placeholder="Emp#" style={{ ...input, width: 110 }} />
+                <input
+                  value={employeeNumber}
+                  onChange={(e) => setEmployeeNumber(e.target.value)}
+                  placeholder="Emp#"
+                  style={{ ...input, width: 110 }}
+                />
               </th>
             </tr>
           </thead>
@@ -618,13 +697,10 @@ export default function QCDailyProductionAllTable({
             {rows.map((r) => (
               <tr key={r.id}>
                 <td style={{ padding: 10, borderBottom: "1px solid #eee", whiteSpace: "nowrap" }}>{fmtTimestamp(r.entry_ts)}</td>
-                {/* ✅ Date moved next to Timestamp */}
                 <td style={{ padding: 10, borderBottom: "1px solid #eee", whiteSpace: "nowrap" }}>{fmtDateOnly(r.entry_date)}</td>
-
                 <td style={{ padding: 10, borderBottom: "1px solid #eee" }}>{r.name}</td>
-                {/* ✅ SO displayed with no commas */}
+                <td style={{ padding: 10, borderBottom: "1px solid #eee" }}>{r.department || ""}</td>
                 <td style={{ padding: 10, borderBottom: "1px solid #eee" }}>{fmtSalesOrderNoCommas(r.sales_order)}</td>
-
                 <td style={{ padding: 10, borderBottom: "1px solid #eee" }}>{fmtInt(r.detail_number)}</td>
                 <td style={{ padding: 10, borderBottom: "1px solid #eee" }}>{r.flat_or_3d}</td>
                 <td style={{ padding: 10, borderBottom: "1px solid #eee" }}>{fmtInt(r.order_quantity)}</td>
@@ -632,7 +708,6 @@ export default function QCDailyProductionAllTable({
                 <td style={{ padding: 10, borderBottom: "1px solid #eee" }}>{fmtInt(r.rejected_quantity)}</td>
                 <td style={{ padding: 10, borderBottom: "1px solid #eee" }}>{fmtInt(r.quantity_shipped)}</td>
                 <td style={{ padding: 10, borderBottom: "1px solid #eee", maxWidth: 520 }}>{r.notes || ""}</td>
-
                 <td style={{ padding: 10, borderBottom: "1px solid #eee" }}>{fmtInt(r.total_qty_inspected_by_date)}</td>
                 <td style={{ padding: 10, borderBottom: "1px solid #eee" }}>{fmtInt(r.flat_totals)}</td>
                 <td style={{ padding: 10, borderBottom: "1px solid #eee" }}>{fmtInt(r.three_d_totals)}</td>
@@ -645,7 +720,7 @@ export default function QCDailyProductionAllTable({
 
             {!loading && rows.length === 0 && (
               <tr>
-                <td colSpan={18} style={{ padding: 16, color: "#666" }}>
+                <td colSpan={19} style={{ padding: 16, color: "#666" }}>
                   No results for the current filters.
                 </td>
               </tr>
@@ -656,7 +731,7 @@ export default function QCDailyProductionAllTable({
 
       {error ? null : (
         <div style={{ marginTop: 10, fontSize: 12, color: "#6b7280" }}>
-          Tip: Filters auto-refresh after you stop typing (400ms). Click column headers to sort. Use the top scrollbar to scroll columns.
+          Tip: Select a department, then choose <strong>Only</strong> to see just that department or <strong>Except</strong> to hide it from the results.
         </div>
       )}
     </div>
