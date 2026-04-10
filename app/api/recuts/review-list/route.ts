@@ -74,6 +74,7 @@ export async function GET(req: NextRequest) {
     const doNotPull = parseBoolParam(req.nextUrl.searchParams.get("doNotPull"));
     const supervisorApproved = parseBoolParam(req.nextUrl.searchParams.get("supervisorApproved"));
     const warehousePrinted = parseBoolParam(req.nextUrl.searchParams.get("warehousePrinted"));
+    const isCompleted = parseBoolParam(req.nextUrl.searchParams.get("isCompleted"));
 
     const sortBy = req.nextUrl.searchParams.get("sortBy") || "requestedDate";
     const sortDir = (req.nextUrl.searchParams.get("sortDir") || "desc") as SortDir;
@@ -100,6 +101,7 @@ export async function GET(req: NextRequest) {
       doNotPull,
       supervisorApproved,
       warehousePrinted,
+      isCompleted,
       sortBy,
       sortDir,
     });

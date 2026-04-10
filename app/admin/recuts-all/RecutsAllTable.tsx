@@ -40,6 +40,8 @@ type Row = {
   warehousePrintedAt: string | null;
   warehousePrintedBy: string | null;
 
+  isCompleted: boolean;
+
   doNotPull: boolean;
   doNotPullAt: string | null;
   doNotPullBy: string | null;
@@ -81,6 +83,7 @@ type SortKey =
   | "event"
   | "supervisorApproved"
   | "warehousePrinted"
+  | "isCompleted"
   | "doNotPull";
 
 const nf0 = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
@@ -100,18 +103,17 @@ function fmtDateOnly(value: any) {
   return d.toISOString().slice(0, 10);
 }
 
-function fmtDateTime(value: any) {
-  if (!value) return "";
-  const d = new Date(String(value));
-  if (Number.isNaN(d.getTime())) return String(value);
-  return d.toLocaleString();
-}
-
 function fmtBool(v: boolean) {
   return v ? "Yes" : "No";
 }
 
-function BoolBadge({ value, trueTone = "success" }: { value: boolean; trueTone?: "success" | "warning" | "danger" | "brand-blue" }) {
+function BoolBadge({
+  value,
+  trueTone = "success",
+}: {
+  value: boolean;
+  trueTone?: "success" | "warning" | "danger" | "brand-blue";
+}) {
   const cls = value
     ? trueTone === "warning"
       ? "badge badge-warning"
@@ -200,6 +202,7 @@ export default function RecutsAllTable({
   const [event, setEvent] = useState<"" | "true" | "false">("");
   const [supervisorApproved, setSupervisorApproved] = useState<"" | "true" | "false">("");
   const [warehousePrinted, setWarehousePrinted] = useState<"" | "true" | "false">("");
+  const [isCompleted, setIsCompleted] = useState<"" | "true" | "false">("");
   const [doNotPull, setDoNotPull] = useState<"" | "true" | "false">("");
 
   const [page, setPage] = useState(1);
@@ -241,6 +244,7 @@ export default function RecutsAllTable({
     if (event) p.set("event", event);
     if (supervisorApproved) p.set("supervisorApproved", supervisorApproved);
     if (warehousePrinted) p.set("warehousePrinted", warehousePrinted);
+    if (isCompleted) p.set("isCompleted", isCompleted);
     if (doNotPull) p.set("doNotPull", doNotPull);
 
     p.set("page", String(page));
@@ -270,6 +274,7 @@ export default function RecutsAllTable({
     event,
     supervisorApproved,
     warehousePrinted,
+    isCompleted,
     doNotPull,
     page,
     pageSize,
@@ -324,6 +329,7 @@ export default function RecutsAllTable({
     event,
     supervisorApproved,
     warehousePrinted,
+    isCompleted,
     doNotPull,
     pageSize,
   ]);
@@ -557,7 +563,7 @@ export default function RecutsAllTable({
           background: "var(--surface)",
         }}
       >
-        <table style={{ borderCollapse: "separate", borderSpacing: 0, width: "100%", minWidth: 2400 }}>
+        <table style={{ borderCollapse: "separate", borderSpacing: 0, width: "100%", minWidth: 2550 }}>
           <thead>
             <tr>
               <SortHeader label="Date Requested" sortKey="requestedDate" activeSort={sort} activeDir={dir} onChange={toggleSort} />
@@ -576,6 +582,7 @@ export default function RecutsAllTable({
               <SortHeader label="Event" sortKey="event" activeSort={sort} activeDir={dir} onChange={toggleSort} />
               <SortHeader label="Supervisor Approved" sortKey="supervisorApproved" activeSort={sort} activeDir={dir} onChange={toggleSort} />
               <SortHeader label="Warehouse Printed" sortKey="warehousePrinted" activeSort={sort} activeDir={dir} onChange={toggleSort} />
+              <SortHeader label="Completed" sortKey="isCompleted" activeSort={sort} activeDir={dir} onChange={toggleSort} />
               <SortHeader label="Do Not Pull" sortKey="doNotPull" activeSort={sort} activeDir={dir} onChange={toggleSort} />
               <SortHeader label="View" sortKey="recutId" activeSort={sort} activeDir={dir} onChange={toggleSort} />
               <SortHeader label="Recut ID" sortKey="recutId" activeSort={sort} activeDir={dir} onChange={toggleSort} />
@@ -641,6 +648,13 @@ export default function RecutsAllTable({
                 </select>
               </th>
               <th style={{ padding: 8, background: "var(--surface-muted)", borderBottom: "1px solid var(--border)" }}>
+                <select value={isCompleted} onChange={(e) => setIsCompleted(e.target.value as any)} style={headInput}>
+                  <option value="">All</option>
+                  <option value="true">Yes</option>
+                  <option value="false">No</option>
+                </select>
+              </th>
+              <th style={{ padding: 8, background: "var(--surface-muted)", borderBottom: "1px solid var(--border)" }}>
                 <select value={doNotPull} onChange={(e) => setDoNotPull(e.target.value as any)} style={headInput}>
                   <option value="">All</option>
                   <option value="true">Yes</option>
@@ -673,6 +687,7 @@ export default function RecutsAllTable({
                 <td style={td}><BoolBadge value={r.event} trueTone="brand-blue" /></td>
                 <td style={td}><BoolBadge value={r.supervisorApproved} /></td>
                 <td style={td}><BoolBadge value={r.warehousePrinted} trueTone="warning" /></td>
+                <td style={td}><BoolBadge value={r.isCompleted} /></td>
                 <td style={td}><BoolBadge value={r.doNotPull} trueTone="danger" /></td>
                 <td style={td}>
                   <Link href={`/recuts/${r.id}`} className="btn btn-secondary btn-sm">
@@ -685,7 +700,7 @@ export default function RecutsAllTable({
 
             {!loading && rows.length === 0 ? (
               <tr>
-                <td colSpan={19} style={{ ...td, textAlign: "center", fontWeight: 700 }}>
+                <td colSpan={20} style={{ ...td, textAlign: "center", fontWeight: 700 }}>
                   No recut entries found.
                 </td>
               </tr>

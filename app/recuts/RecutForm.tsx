@@ -88,7 +88,7 @@ function isEmbDept(value: string | null | undefined) {
 }
 
 function isValidSalesOrder(v: string) {
-  return /^\d{7}.*$/.test(String(v || "").trim());
+  return /^\d{7}\.\d{3}$/.test(String(v || "").trim());
 }
 
 function isWholeNumberString(v: string) {
@@ -464,7 +464,7 @@ export default function RecutForm({
     if (!salesOrder.trim()) {
       next.salesOrder = "Sales Order # is required.";
     } else if (!isValidSalesOrder(salesOrder)) {
-      next.salesOrder = "Sales Order must begin with 7 digits.";
+      next.salesOrder = "A valid sales order is required. The number needs to include the base order number plus the detail number suffix (e.g. 1234567.001).";
     }
 
     if (!designName.trim()) next.designName = "Design Name is required.";

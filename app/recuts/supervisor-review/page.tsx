@@ -24,6 +24,7 @@ type Row = {
   doNotPull: boolean;
   supervisorApproved: boolean;
   warehousePrinted: boolean;
+  isCompleted: boolean;
 };
 
 type ApiResp =
@@ -84,6 +85,7 @@ export default function RecutSupervisorReviewPage() {
   const [pageSize, setPageSize] = useState(25);
 
   const [approvingId, setApprovingId] = useState<string | null>(null);
+  const [completingId, setCompletingId] = useState<string | null>(null);
 
   const [filters, setFilters] = useState<Record<string, string>>({
     recutId: "",
@@ -104,6 +106,7 @@ export default function RecutSupervisorReviewPage() {
     doNotPull: "",
     supervisorApproved: "false",
     warehousePrinted: "",
+    isCompleted: "false",
   });
 
   async function loadRows() {
@@ -135,6 +138,7 @@ export default function RecutSupervisorReviewPage() {
         doNotPull: filters.doNotPull || "",
         supervisorApproved: filters.supervisorApproved || "",
         warehousePrinted: filters.warehousePrinted || "",
+        isCompleted: filters.isCompleted || "",
       });
 
       const res = await fetch(`/api/recuts/review-list?${qs.toString()}`, {
@@ -190,6 +194,31 @@ export default function RecutSupervisorReviewPage() {
       setError("Failed to approve recut request.");
     } finally {
       setApprovingId(null);
+    }
+  }
+
+  async function completeRow(id: string) {
+    setCompletingId(id);
+    setError(null);
+
+    try {
+      const res = await fetch(`/api/recuts/${encodeURIComponent(id)}/complete`, {
+        method: "POST",
+        credentials: "include",
+      });
+
+      const data = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        setError((data as any).error || "Failed to complete recut request.");
+        return;
+      }
+
+      await loadRows();
+    } catch {
+      setError("Failed to complete recut request.");
+    } finally {
+      setCompletingId(null);
     }
   }
 
@@ -260,6 +289,18 @@ export default function RecutSupervisorReviewPage() {
         render: (r) => (r.warehousePrinted ? <span className="badge badge-warning">Printed</span> : "No"),
       },
       {
+        key: "isCompleted",
+        header: "Completed",
+        sortable: true,
+        filterable: false,
+        filterRender: boolFilter(
+          filters.isCompleted,
+          (v) => onFilterChange("isCompleted", v),
+          "Completed"
+        ),
+        render: (r) => (r.isCompleted ? <span className="badge badge-success">Completed</span> : "No"),
+      },
+      {
         key: "view",
         header: "View",
         sortable: false,
@@ -305,8 +346,30 @@ export default function RecutSupervisorReviewPage() {
             </button>
           ),
       },
+      {
+        key: "complete",
+        header: "Complete",
+        sortable: false,
+        filterable: false,
+        serverSortable: false,
+        render: (r) =>
+          r.isCompleted ? (
+            <span className="text-success" style={{ fontWeight: 700 }}>
+              Completed
+            </span>
+          ) : (
+            <button
+              type="button"
+              onClick={() => completeRow(r.id)}
+              disabled={completingId === r.id}
+              className="btn btn-secondary btn-sm"
+            >
+              {completingId === r.id ? "Completing..." : "Complete"}
+            </button>
+          ),
+      },
     ];
-  }, [filters, approvingId]);
+  }, [filters, approvingId, completingId]);
 
   function onToggleSort(key: string) {
     if (sortBy === key) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
@@ -378,6 +441,7 @@ export default function RecutSupervisorReviewPage() {
           "Do Not Pull": boolText(r.doNotPull),
           "Supervisor Approved": boolText(r.supervisorApproved),
           "Warehouse Printed": boolText(r.warehousePrinted),
+          Completed: boolText(r.isCompleted),
         })}
       />
     </div>

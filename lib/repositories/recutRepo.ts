@@ -32,7 +32,7 @@ export type RecutRequestRow = {
 
   requestedDepartment: string;
 
-  salesOrder: string; // UI/display compatibility
+  salesOrder: string;
   salesOrderBase: string | null;
   salesOrderDisplay: string | null;
 
@@ -53,6 +53,10 @@ export type RecutRequestRow = {
   warehousePrinted: boolean;
   warehousePrintedAt: string | null;
   warehousePrintedBy: string | null;
+
+  isCompleted: boolean;
+  completedAt: string | null;
+  completedBy: string | null;
 
   doNotPull: boolean;
   doNotPullAt: string | null;
@@ -97,6 +101,10 @@ export type CreateRecutRequestInput = {
   warehousePrintedAt?: Date | null;
   warehousePrintedBy?: string | null;
 
+  isCompleted?: boolean;
+  completedAt?: Date | null;
+  completedBy?: string | null;
+
   doNotPull?: boolean;
   doNotPullAt?: Date | null;
   doNotPullBy?: string | null;
@@ -129,6 +137,10 @@ export type UpdateRecutRequestInput = {
   warehousePrintedAt?: Date | null;
   warehousePrintedBy?: string | null;
 
+  isCompleted?: boolean | null;
+  completedAt?: Date | null;
+  completedBy?: string | null;
+
   doNotPull: boolean;
   doNotPullAt?: Date | null;
   doNotPullBy?: string | null;
@@ -158,6 +170,7 @@ export type RecutListFilters = RecutRepoOptions & {
 
   supervisorApproved?: boolean | null;
   warehousePrinted?: boolean | null;
+  isCompleted?: boolean | null;
 
   page?: number;
   pageSize?: number;
@@ -246,6 +259,10 @@ function baseSelectSql() {
       warehouse_printed_at AS "warehousePrintedAt",
       warehouse_printed_by AS "warehousePrintedBy",
 
+      is_completed AS "isCompleted",
+      completed_at AS "completedAt",
+      completed_by AS "completedBy",
+
       do_not_pull AS "doNotPull",
       do_not_pull_at AS "doNotPullAt",
       do_not_pull_by AS "doNotPullBy",
@@ -284,6 +301,7 @@ function buildWhere(filters: {
 
   supervisorApproved?: boolean | null;
   warehousePrinted?: boolean | null;
+  isCompleted?: boolean | null;
 
   includeVoided?: boolean;
   onlyVoided?: boolean;
@@ -372,6 +390,11 @@ function buildWhere(filters: {
     where.push(`warehouse_printed = $${params.length}`);
   }
 
+  if (typeof filters.isCompleted === "boolean") {
+    params.push(filters.isCompleted);
+    where.push(`is_completed = $${params.length}`);
+  }
+
   return {
     whereSql: where.length ? `WHERE ${where.join(" AND ")}` : "",
     params,
@@ -400,6 +423,7 @@ function getOrderBy(sortBy?: string, sortDir?: SortDir) {
     doNotPull: `do_not_pull ${dir}, requested_at DESC`,
     supervisorApproved: `supervisor_approved ${dir}, requested_at DESC`,
     warehousePrinted: `warehouse_printed ${dir}, requested_at DESC`,
+    isCompleted: `is_completed ${dir}, requested_at DESC`,
     isVoided: `is_voided ${dir}, requested_at DESC`,
   };
 
@@ -503,6 +527,10 @@ export async function createRecutRequest(
       warehouse_printed_at,
       warehouse_printed_by,
 
+      is_completed,
+      completed_at,
+      completed_by,
+
       do_not_pull,
       do_not_pull_at,
       do_not_pull_by
@@ -514,7 +542,8 @@ export async function createRecutRequest(
       $9, $10, $11, $12, $13, $14, $15, $16, $17,
       $18, $19, $20,
       $21, $22, $23,
-      $24, $25, $26
+      $24, $25, $26,
+      $27, $28, $29
     )
     RETURNING
       id,
@@ -549,6 +578,10 @@ export async function createRecutRequest(
       input.warehousePrinted ?? false,
       input.warehousePrintedAt ?? null,
       input.warehousePrintedBy ?? null,
+
+      input.isCompleted ?? false,
+      input.completedAt ?? null,
+      input.completedBy ?? null,
 
       input.doNotPull ?? false,
       input.doNotPullAt ?? null,
@@ -639,9 +672,15 @@ export async function updateRecutRequest(input: UpdateRecutRequestInput): Promis
       warehouse_printed_at = $19,
       warehouse_printed_by = $20,
 
-      do_not_pull = $21,
-      do_not_pull_at = $22,
-      do_not_pull_by = $23
+      is_completed = COALESCE($21, is_completed),
+      completed_at = CASE WHEN $21 IS NOT NULL THEN $22 ELSE completed_at END,
+      completed_by = CASE WHEN $21 IS NOT NULL THEN $23 ELSE completed_by END,
+
+      do_not_pull = $24,
+      do_not_pull_at = $25,
+      do_not_pull_by = $26,
+
+      updated_at = NOW()
     WHERE id = $1
       AND COALESCE(is_voided, false) = false
     `,
@@ -669,6 +708,10 @@ export async function updateRecutRequest(input: UpdateRecutRequestInput): Promis
       input.warehousePrintedAt ?? null,
       input.warehousePrintedBy ?? null,
 
+      input.isCompleted ?? null,
+      input.completedAt ?? null,
+      input.completedBy ?? null,
+
       input.doNotPull,
       input.doNotPullAt ?? null,
       input.doNotPullBy ?? null,
@@ -687,7 +730,8 @@ export async function setRecutDoNotPull(input: {
     SET
       do_not_pull = $2,
       do_not_pull_at = CASE WHEN $2 = true THEN now() ELSE NULL END,
-      do_not_pull_by = CASE WHEN $2 = true THEN $3 ELSE NULL END
+      do_not_pull_by = CASE WHEN $2 = true THEN $3 ELSE NULL END,
+      updated_at = NOW()
     WHERE id = $1
       AND COALESCE(is_voided, false) = false
     `,
@@ -708,6 +752,7 @@ export async function canUserEditOwnRecutRequest(input: {
         AND requested_by_employee_number = $2
         AND supervisor_approved = false
         AND warehouse_printed = false
+        AND is_completed = false
         AND COALESCE(is_voided, false) = false
     ) AS ok
     `,
@@ -729,7 +774,8 @@ export async function voidRecutRequest(input: {
       is_voided = true,
       voided_at = now(),
       voided_by = $2,
-      void_reason = $3
+      void_reason = $3,
+      updated_at = NOW()
     WHERE id = $1
       AND COALESCE(is_voided, false) = false
     `,
@@ -749,7 +795,8 @@ export async function unvoidRecutRequest(input: {
       is_voided = false,
       voided_at = NULL,
       voided_by = NULL,
-      void_reason = NULL
+      void_reason = NULL,
+      updated_at = NOW()
     WHERE id = $1
       AND COALESCE(is_voided, false) = true
     `,
@@ -786,6 +833,7 @@ async function listPagedInternal(input: {
 
   supervisorApproved?: boolean | null;
   warehousePrinted?: boolean | null;
+  isCompleted?: boolean | null;
 
   includeVoided?: boolean;
   onlyVoided?: boolean;
@@ -822,6 +870,7 @@ async function listPagedInternal(input: {
 
     supervisorApproved: input.supervisorApproved ?? null,
     warehousePrinted: input.warehousePrinted ?? null,
+    isCompleted: input.isCompleted ?? null,
 
     includeVoided: input.includeVoided,
     onlyVoided: input.onlyVoided,
@@ -880,6 +929,7 @@ export async function listRecutRequestsForUserPaged(input: {
 
   supervisorApproved?: boolean | null;
   warehousePrinted?: boolean | null;
+  isCompleted?: boolean | null;
 
   page?: number;
   pageSize?: number;
@@ -909,6 +959,7 @@ export async function listRecutRequestsForUserPaged(input: {
 
     supervisorApproved: input.supervisorApproved ?? null,
     warehousePrinted: input.warehousePrinted ?? null,
+    isCompleted: input.isCompleted ?? null,
 
     page: input.page,
     pageSize: input.pageSize,
@@ -927,46 +978,4 @@ export async function listRecutRequestsForWarehousePaged(
   input: RecutListFilters
 ): Promise<PagedRecutResult> {
   return listPagedInternal(input);
-}
-
-/* -------------------------------------------------------------------------- */
-/* WORKFLOW HELPERS                                                            */
-/* -------------------------------------------------------------------------- */
-
-export async function approveRecutRequest(input: {
-  id: string;
-  approvedBy: string;
-}): Promise<void> {
-  await db.query(
-    `
-    UPDATE public.recut_requests
-    SET
-      supervisor_approved = true,
-      supervisor_approved_at = now(),
-      supervisor_approved_by = $2
-    WHERE id = $1
-      AND COALESCE(is_voided, false) = false
-    `,
-    [input.id, input.approvedBy]
-  );
-}
-
-export async function markRecutRequestsPrinted(input: {
-  ids: string[];
-  printedBy: string;
-}): Promise<void> {
-  if (!input.ids.length) return;
-
-  await db.query(
-    `
-    UPDATE public.recut_requests
-    SET
-      warehouse_printed = true,
-      warehouse_printed_at = now(),
-      warehouse_printed_by = $2
-    WHERE id = ANY($1::uuid[])
-      AND COALESCE(is_voided, false) = false
-    `,
-    [input.ids, input.printedBy]
-  );
 }
