@@ -73,6 +73,7 @@ function buildChanges(
     supervisorApproved: boolean;
     warehousePrinted: boolean;
     doNotPull: boolean;
+    isCompleted: boolean;
   }
 ) {
   const candidates: ChangeRow[] = [
@@ -159,6 +160,12 @@ function buildChanges(
       label: "Do Not Pull",
       previousValue: !!current.doNotPull,
       newValue: !!next.doNotPull,
+    },
+    {
+      fieldName: "isCompleted",
+      label: "Completed",
+      previousValue: !!current.isCompleted,
+      newValue: !!next.isCompleted,
     },
   ];
 
@@ -267,38 +274,25 @@ export async function PUT(
     const current = await getRecutRequestById(id);
 
     if (!current) {
+      await logWarn({
+        req,
+        auth,
+        category: "API",
+        module: "RECUT",
+        eventType: "RECUT_NOT_FOUND",
+        message: "Recut request not found during update",
+        recordType: "recut_requests",
+        recordId: id,
+      });
+
       return NextResponse.json<PutResp>({ error: "Not found" }, { status: 404 });
     }
 
-    const isPowerEditor = POWER_EDIT_ROLES.has(role);
-
-    if (!isPowerEditor) {
-      const employeeNumber =
-        (auth as any).employeeNumber != null
-          ? Number((auth as any).employeeNumber)
-          : null;
-
-      if (!employeeNumber || !Number.isFinite(employeeNumber)) {
-        return NextResponse.json<PutResp>(
-          { error: "Missing employee number in auth payload." },
-          { status: 400 }
-        );
-      }
-
-      const canEditOwn = await canUserEditOwnRecutRequest({
-        id,
-        employeeNumber,
-      });
-
-      if (!canEditOwn) {
-        return NextResponse.json<PutResp>(
-          {
-            error:
-              "You can only edit your own active recut requests before they are approved or printed.",
-          },
-          { status: 403 }
-        );
-      }
+    if (current.isVoided) {
+      return NextResponse.json<PutResp>(
+        { error: "Voided recut requests cannot be edited." },
+        { status: 409 }
+      );
     }
 
     const body = await req.json().catch(() => null);
@@ -315,63 +309,125 @@ export async function PUT(
     const pieces = Number((body as any).pieces);
     let operator = String((body as any).operator ?? "").trim();
     const deliverTo = String((body as any).deliverTo ?? "").trim();
-    const notesRaw = String((body as any).notes ?? "").trim();
-    const notes = notesRaw || null;
+    const notesRaw = String((body as any).notes ?? "");
+    const notes = notesRaw.trim() ? notesRaw.trim() : null;
     const event = !!(body as any).event;
+
+    const normalizedSO = normalizeSalesOrder(rawSalesOrder);
 
     if (!requestedDepartment) {
       return NextResponse.json<PutResp>(
-        { error: "Requested Department is required." },
+        { error: "Requested department is required." },
         { status: 400 }
       );
     }
 
-    const normalizedSO = normalizeSalesOrder(rawSalesOrder);
-    if (!normalizedSO.isValid || !normalizedSO.salesOrderDisplay || !normalizedSO.salesOrderBase) {
+    if (!normalizedSO.salesOrderDisplay) {
       return NextResponse.json<PutResp>(
-        { error: normalizedSO.error ?? "Sales Order must begin with 7 digits." },
+        { error: "A valid sales order is required." },
         { status: 400 }
       );
     }
 
     if (!designName) {
-      return NextResponse.json<PutResp>({ error: "Design Name is required." }, { status: 400 });
+      return NextResponse.json<PutResp>(
+        { error: "Design name is required." },
+        { status: 400 }
+      );
     }
 
     if (!recutReason) {
-      return NextResponse.json<PutResp>({ error: "Recut Reason is required." }, { status: 400 });
+      return NextResponse.json<PutResp>(
+        { error: "Recut reason is required." },
+        { status: 400 }
+      );
     }
 
     if (!Number.isInteger(detailNumber) || detailNumber < 0) {
       return NextResponse.json<PutResp>(
-        { error: "Detail # must be a whole number." },
+        { error: "Detail number must be a whole number." },
         { status: 400 }
       );
     }
 
     if (!capStyle) {
-      return NextResponse.json<PutResp>({ error: "Cap Style is required." }, { status: 400 });
+      return NextResponse.json<PutResp>(
+        { error: "Cap style is required." },
+        { status: 400 }
+      );
     }
 
-    if (!Number.isInteger(pieces) || pieces <= 0) {
+    if (!Number.isInteger(pieces) || pieces < 0) {
       return NextResponse.json<PutResp>(
-        { error: "Pieces must be greater than 0." },
+        { error: "Pieces must be a whole number greater than or equal to 0." },
         { status: 400 }
       );
     }
 
     if (!deliverTo) {
-      return NextResponse.json<PutResp>({ error: "Deliver To is required." }, { status: 400 });
+      return NextResponse.json<PutResp>(
+        { error: "Deliver To is required." },
+        { status: 400 }
+      );
     }
 
     const authDept = normalizeDept((auth as any).department ?? null);
+    const authName = String((auth as any).displayName ?? (auth as any).username ?? "").trim();
+
     if (isEmbDept(authDept)) {
-      operator = String((auth as any).displayName ?? (auth as any).username ?? "").trim();
+      operator = authName;
     }
 
-    if (!operator) {
-      return NextResponse.json<PutResp>({ error: "Operator is required." }, { status: 400 });
+    const employeeNumber =
+      (auth as any).employeeNumber != null
+        ? Number((auth as any).employeeNumber)
+        : (auth as any).userId != null
+          ? Number((auth as any).userId)
+          : null;
+
+    if (!POWER_EDIT_ROLES.has(role)) {
+      if (!employeeNumber || !Number.isFinite(employeeNumber)) {
+        return NextResponse.json<PutResp>(
+          { error: "Missing employee number in auth payload." },
+          { status: 400 }
+        );
+      }
+
+      const canEditOwn = await canUserEditOwnRecutRequest({
+        id,
+        employeeNumber,
+      });
+
+      if (!canEditOwn) {
+        await logWarn({
+          req,
+          auth,
+          category: "API",
+          module: "RECUT",
+          eventType: "RECUT_UPDATE_FORBIDDEN",
+          message: "User attempted to edit a recut request they no longer control",
+          recordType: "recut_requests",
+          recordId: id,
+        });
+
+        return NextResponse.json<PutResp>(
+          { error: "This recut request can no longer be edited." },
+          { status: 403 }
+        );
+      }
     }
+
+    const nextSupervisorApproved = POWER_EDIT_ROLES.has(role)
+      ? !!(body as any).supervisorApproved
+      : !!current.supervisorApproved;
+
+    const nextWarehousePrinted = POWER_EDIT_ROLES.has(role)
+      ? !!(body as any).warehousePrinted
+      : !!current.warehousePrinted;
+
+    const nextDoNotPull = POWER_EDIT_ROLES.has(role)
+      ? !!(body as any).doNotPull
+      : !!current.doNotPull;
 
     const nextValues = {
       requestedDepartment,
@@ -385,56 +441,64 @@ export async function PUT(
       deliverTo,
       notes,
       event,
-      supervisorApproved: !!current.supervisorApproved,
-      warehousePrinted: !!current.warehousePrinted,
-      doNotPull: !!current.doNotPull,
+      supervisorApproved: nextSupervisorApproved,
+      warehousePrinted: nextWarehousePrinted,
+      doNotPull: nextDoNotPull,
+      isCompleted: !!current.isCompleted,
     };
 
     const changes = buildChanges(current, nextValues);
-    const authName = String(
-      (auth as any).displayName ?? (auth as any).username ?? "Unknown"
-    ).trim();
-    const userId = (auth as any).userId != null ? String((auth as any).userId) : null;
-    const employeeNumber =
-      (auth as any).employeeNumber != null ? Number((auth as any).employeeNumber) : null;
-    const salesOrderNum = parseSalesOrderNumber(normalizedSO.salesOrderDisplay);
 
     await updateRecutRequest({
       id,
-      requestedDepartment,
-      salesOrder: normalizedSO.salesOrderDisplay,
+      requestedDepartment: nextValues.requestedDepartment,
+      salesOrder: nextValues.salesOrder,
       salesOrderBase: normalizedSO.salesOrderBase,
       salesOrderDisplay: normalizedSO.salesOrderDisplay,
-      designName,
-      recutReason,
-      detailNumber,
-      capStyle,
-      pieces,
-      operator,
-      deliverTo,
-      notes,
-      event,
+      designName: nextValues.designName,
+      recutReason: nextValues.recutReason,
+      detailNumber: nextValues.detailNumber,
+      capStyle: nextValues.capStyle,
+      pieces: nextValues.pieces,
+      operator: nextValues.operator,
+      deliverTo: nextValues.deliverTo,
+      notes: nextValues.notes,
+      event: nextValues.event,
 
-      supervisorApproved: !!current.supervisorApproved,
-      supervisorApprovedAt: current.supervisorApprovedAt ? new Date(current.supervisorApprovedAt) : null,
-      supervisorApprovedBy: current.supervisorApprovedBy,
+      supervisorApproved: nextValues.supervisorApproved,
+      supervisorApprovedAt: nextValues.supervisorApproved
+        ? current.supervisorApprovedAt
+          ? new Date(current.supervisorApprovedAt)
+          : new Date()
+        : null,
+      supervisorApprovedBy: nextValues.supervisorApproved
+        ? current.supervisorApprovedBy || authName
+        : null,
 
-      warehousePrinted: !!current.warehousePrinted,
-      warehousePrintedAt: current.warehousePrintedAt ? new Date(current.warehousePrintedAt) : null,
-      warehousePrintedBy: current.warehousePrintedBy,
+      warehousePrinted: nextValues.warehousePrinted,
+      warehousePrintedAt: nextValues.warehousePrinted
+        ? current.warehousePrintedAt
+          ? new Date(current.warehousePrintedAt)
+          : new Date()
+        : null,
+      warehousePrintedBy: nextValues.warehousePrinted
+        ? current.warehousePrintedBy || authName
+        : null,
 
-      doNotPull: !!current.doNotPull,
-      doNotPullAt: current.doNotPullAt ? new Date(current.doNotPullAt) : null,
-      doNotPullBy: current.doNotPullBy,
+      isCompleted: !!current.isCompleted,
+      completedAt: current.completedAt ? new Date(current.completedAt) : null,
+      completedBy: current.completedBy,
+
+      doNotPull: nextValues.doNotPull,
+      doNotPullAt: nextValues.doNotPull
+        ? current.doNotPullAt
+          ? new Date(current.doNotPullAt)
+          : new Date()
+        : null,
+      doNotPullBy: nextValues.doNotPull
+        ? current.doNotPullBy || authName
+        : null,
     });
-
-    const reloaded = await getRecutRequestById(id);
-    if (!reloaded) {
-      return NextResponse.json<PutResp>(
-        { error: "Recut request is no longer available." },
-        { status: 409 }
-      );
-    }
 
     await logAuditEvent({
       req,
@@ -445,44 +509,31 @@ export async function PUT(
       recordType: "recut_requests",
       recordId: id,
       details: {
-        recutId: current.recutId,
-        changedFields: changes.map((x) => x.fieldName),
-        changeCount: changes.length,
         salesOrder: normalizedSO.salesOrderDisplay,
         salesOrderBase: normalizedSO.salesOrderBase,
-        detailNumber,
+        designName,
+        requestedDepartment,
+        fieldCount: changes.length,
       },
-    });
-
-    await createActivityHistory({
-      entityType: "recut_requests",
-      entityId: id,
-      eventType: "UPDATED",
-      message: changes.length
-        ? `Recut request updated (${changes.length} field${changes.length === 1 ? "" : "s"} changed)`
-        : "Recut request updated",
-      module: "RECUT",
-      userId,
-      userName: authName,
-      employeeNumber,
-      salesOrder: salesOrderNum,
-      detailNumber,
     });
 
     for (const change of changes) {
       await createActivityHistory({
         entityType: "recut_requests",
         entityId: id,
-        eventType: "FIELD_CHANGED",
+        eventType: "UPDATED",
         fieldName: change.fieldName,
         previousValue: change.previousValue,
         newValue: change.newValue,
         message: `${change.label} updated`,
         module: "RECUT",
-        userId,
-        userName: authName,
-        employeeNumber,
-        salesOrder: salesOrderNum,
+        userId: (auth as any).userId != null ? String((auth as any).userId) : null,
+        userName: authName || null,
+        employeeNumber:
+          (auth as any).employeeNumber != null
+            ? Number((auth as any).employeeNumber)
+            : null,
+        salesOrder: parseSalesOrderNumber(normalizedSO.salesOrderDisplay),
         detailNumber,
       });
     }

@@ -101,7 +101,7 @@ export async function POST(req: NextRequest) {
       });
 
       return NextResponse.json<Resp>(
-        { error: "A valid sales order is required." },
+        { error: "A valid sales order is required. The number needs to include the base order number plus the detail number suffix (e.g. .001)." },
         { status: 400 }
       );
     }

@@ -65,6 +65,7 @@ export async function GET(req: Request) {
   const supervisorApproved = parseBoolFilter(searchParams.get("supervisorApproved"));
   const warehousePrinted = parseBoolFilter(searchParams.get("warehousePrinted"));
   const doNotPull = parseBoolFilter(searchParams.get("doNotPull"));
+  const isCompleted = parseBoolFilter(searchParams.get("isCompleted"));
 
   const format = searchParams.get("format");
 
@@ -102,6 +103,7 @@ export async function GET(req: Request) {
     warehousePrinted: `r.warehouse_printed`,
     warehousePrintedAt: `r.warehouse_printed_at`,
     warehousePrintedBy: `r.warehouse_printed_by`,
+    isCompleted: `r.is_completed`,
     doNotPull: `r.do_not_pull`,
     doNotPullAt: `r.do_not_pull_at`,
     doNotPullBy: `r.do_not_pull_by`,
@@ -212,6 +214,7 @@ export async function GET(req: Request) {
   if (typeof event === "boolean") add(`r.event = ?`, event);
   if (typeof supervisorApproved === "boolean") add(`r.supervisor_approved = ?`, supervisorApproved);
   if (typeof warehousePrinted === "boolean") add(`r.warehouse_printed = ?`, warehousePrinted);
+  if (typeof isCompleted === "boolean") add(`r.is_completed = ?`, isCompleted);
   if (typeof doNotPull === "boolean") add(`r.do_not_pull = ?`, doNotPull);
 
   const whereSql = where.length ? `WHERE ${where.join(" AND ")}` : "";
@@ -252,6 +255,8 @@ export async function GET(req: Request) {
       r.warehouse_printed AS "warehousePrinted",
       r.warehouse_printed_at AS "warehousePrintedAt",
       r.warehouse_printed_by AS "warehousePrintedBy",
+
+      r.is_completed AS "isCompleted",
 
       r.do_not_pull AS "doNotPull",
       r.do_not_pull_at AS "doNotPullAt",
@@ -295,6 +300,7 @@ export async function GET(req: Request) {
       "warehousePrinted",
       "warehousePrintedAt",
       "warehousePrintedBy",
+      "isCompleted",
       "doNotPull",
       "doNotPullAt",
       "doNotPullBy",
