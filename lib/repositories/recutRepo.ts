@@ -979,3 +979,24 @@ export async function listRecutRequestsForWarehousePaged(
 ): Promise<PagedRecutResult> {
   return listPagedInternal(input);
 }
+
+export async function markRecutRequestsPrinted(input: {
+  ids: string[];
+  printedBy: string;
+}): Promise<void> {
+  if (!input.ids.length) return;
+
+  await db.query(
+    `
+    UPDATE public.recut_requests
+    SET
+      warehouse_printed = true,
+      warehouse_printed_at = now(),
+      warehouse_printed_by = $2,
+      updated_at = NOW()
+    WHERE id = ANY($1::uuid[])
+      AND COALESCE(is_voided, false) = false
+    `,
+    [input.ids, input.printedBy]
+  );
+}
