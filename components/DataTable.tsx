@@ -67,6 +67,14 @@ type Props<T> = {
    * Optional row class hook for conditional highlighting/styling.
    */
   rowClassName?: (row: T) => string | undefined;
+
+  /**
+   * Optional row click support.
+   * This is opt-in so existing pages do not change behavior.
+   */
+  onRowClick?: (row: T) => void;
+  onRowDoubleClick?: (row: T) => void;
+  rowClickable?: boolean;
 };
 
 function defaultFilename() {
@@ -174,6 +182,10 @@ export default function DataTable<T>({
 
   renderExpandedRow,
   rowClassName,
+
+  onRowClick,
+  onRowDoubleClick,
+  rowClickable = false,
 }: Props<T>) {
   const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
   const offset = pageIndex * pageSize;
@@ -510,6 +522,10 @@ export default function DataTable<T>({
           background: rgba(34, 68, 139, 0.035);
         }
 
+        .dt-row-clickable > td {
+          cursor: pointer;
+        }
+
         .dt-error {
           color: var(--brand-red);
           font-weight: 700;
@@ -630,10 +646,7 @@ export default function DataTable<T>({
 
       <div className="dt-card">
         <div ref={topScrollRef} className="dt-top-scroll-wrap">
-          <div
-            className="dt-top-scroll-spacer"
-            style={{ width: topSpacerWidth }}
-          />
+          <div className="dt-top-scroll-spacer" style={{ width: topSpacerWidth }} />
         </div>
 
         <div className="dt-frame">
@@ -711,13 +724,21 @@ export default function DataTable<T>({
                 ) : (
                   filteredRows.map((r) => {
                     const extraRowClass = rowClassName?.(r)?.trim();
-                    const combinedRowClass = extraRowClass
-                      ? `dt-row ${extraRowClass}`
-                      : "dt-row";
+                    const combinedRowClass = [
+                      "dt-row",
+                      rowClickable && (onRowClick || onRowDoubleClick) ? "dt-row-clickable" : "",
+                      extraRowClass ?? "",
+                    ]
+                      .filter(Boolean)
+                      .join(" ");
 
                     return (
                       <React.Fragment key={rowKey(r)}>
-                        <tr className={combinedRowClass}>
+                        <tr
+                          className={combinedRowClass}
+                          onClick={onRowClick ? () => onRowClick(r) : undefined}
+                          onDoubleClick={onRowDoubleClick ? () => onRowDoubleClick(r) : undefined}
+                        >
                           {columns.map((c) => (
                             <td key={c.key} className="dt-td">
                               {c.render(r)}
