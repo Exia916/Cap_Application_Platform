@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
+import { db } from "@/lib/db";
 import { getAuthFromRequest } from "@/lib/auth";
 import { unvoidRequest } from "@/lib/repositories/designWorkflowRepo";
+
+const dbQuery = db.query.bind(db);
 
 const UNVOID_ROLES = [
   "ADMIN",
@@ -12,7 +15,7 @@ const UNVOID_ROLES = [
 
 export async function POST(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  context: { params: Promise<{ id: string }> }
 ) {
   const user = getAuthFromRequest(req);
 
@@ -24,12 +27,11 @@ export async function POST(
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
+  const { id } = await context.params;
+
   try {
-    const result = await unvoidRequest({
-      requestId: params.id,
-      userName: user.name ?? null,
-      userId: user.id ?? null,
-      employeeNumber: user.employeeNumber ?? null,
+    const result = await unvoidRequest(dbQuery, {
+      requestId: id,
     });
 
     return NextResponse.json(result);

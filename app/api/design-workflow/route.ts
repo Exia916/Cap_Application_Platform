@@ -1,10 +1,14 @@
+import { randomUUID } from "crypto";
 import { NextRequest, NextResponse } from "next/server";
+import { db } from "@/lib/db";
 import { getAuthFromRequest } from "@/lib/auth";
 import {
   listRequests,
   createRequest,
   type ListRequestOptions,
 } from "@/lib/repositories/designWorkflowRepo";
+
+const dbQuery = db.query.bind(db);
 
 const CREATE_ROLES = [
   "ADMIN",
@@ -46,7 +50,7 @@ export async function GET(req: NextRequest) {
   };
 
   try {
-    const result = await listRequests(opts);
+    const result = await listRequests(dbQuery, opts);
     return NextResponse.json(result);
   } catch (err: any) {
     return NextResponse.json(
@@ -83,39 +87,40 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const created = await createRequest({
-      requestNumber: String(body.requestNumber ?? body.request_number).trim(),
-      salesOrderNumber: body.salesOrderNumber ?? body.sales_order_number ?? null,
-      poNumber: body.poNumber ?? body.po_number ?? null,
-      tapeName: body.tapeName ?? body.tape_name ?? null,
-      dateRequestCreated: body.dateRequestCreated ?? body.date_request_created ?? null,
-      dueDate: body.dueDate ?? body.due_date ?? null,
-      customerName: body.customerName ?? body.customer_name ?? null,
-      customerCode: body.customerCode ?? body.customer_code ?? null,
-      binCode: body.binCode ?? body.bin_code ?? null,
-      createdByUserId: user.id ?? null,
-      createdByName: user.name ?? null,
-      digitizerUserId: body.digitizerUserId ?? body.digitizer_user_id ?? null,
-      digitizerName: body.digitizerName ?? body.digitizer_name ?? null,
-      designerUserId: body.designerUserId ?? body.designer_user_id ?? null,
-      designerName: body.designerName ?? body.designer_name ?? null,
-      statusId: Number(body.statusId ?? body.status_id),
+    const created = await createRequest(dbQuery, {
+      id: randomUUID(),
+      request_number: String(body.requestNumber ?? body.request_number).trim(),
+      sales_order_number: body.salesOrderNumber ?? body.sales_order_number ?? null,
+      po_number: body.poNumber ?? body.po_number ?? null,
+      tape_name: body.tapeName ?? body.tape_name ?? null,
+      date_request_created: body.dateRequestCreated ?? body.date_request_created ?? null,
+      due_date: body.dueDate ?? body.due_date ?? null,
+      customer_name: body.customerName ?? body.customer_name ?? null,
+      customer_code: body.customerCode ?? body.customer_code ?? null,
+      bin_code: body.binCode ?? body.bin_code ?? null,
+      created_by_user_id: user.id ?? null,
+      created_by_name: user.name ?? null,
+      digitizer_user_id: body.digitizerUserId ?? body.digitizer_user_id ?? null,
+      digitizer_name: body.digitizerName ?? body.digitizer_name ?? null,
+      designer_user_id: body.designerUserId ?? body.designer_user_id ?? null,
+      designer_name: body.designerName ?? body.designer_name ?? null,
+      status_id: Number(body.statusId ?? body.status_id),
       instructions: body.instructions ?? null,
-      additionalInstructions: body.additionalInstructions ?? body.additional_instructions ?? null,
-      colorwaysText: body.colorwaysText ?? body.colorways_text ?? null,
-      tapeNumber: body.tapeNumber ?? body.tape_number ?? null,
-      rush: body.rush ?? false,
-      styleCode: body.styleCode ?? body.style_code ?? null,
-      sampleSoNumber: body.sampleSoNumber ?? body.sample_so_number ?? null,
-      stitchCount:
-        body.stitchCount != null
-          ? Number(body.stitchCount)
-          : body.stitch_count != null
-            ? Number(body.stitch_count)
-            : null,
-      artProof: body.artProof ?? body.art_proof ?? false,
-      createdBy: user.name ?? null,
-      employeeNumber: user.employeeNumber ?? null,
+      additional_instructions:
+        body.additionalInstructions ?? body.additional_instructions ?? null,
+      colorways_text: body.colorwaysText ?? body.colorways_text ?? null,
+      tape_number: body.tapeNumber ?? body.tape_number ?? null,
+      rush: !!body.rush,
+      style_code: body.styleCode ?? body.style_code ?? null,
+      sample_so_number: body.sampleSoNumber ?? body.sample_so_number ?? null,
+      stitch_count:
+        body.stitchCount === "" || body.stitchCount == null
+          ? body.stitch_count === "" || body.stitch_count == null
+            ? null
+            : Number(body.stitch_count)
+          : Number(body.stitchCount),
+      art_proof: !!(body.artProof ?? body.art_proof),
+      created_by: user.name ?? null,
     });
 
     return NextResponse.json(created, { status: 201 });

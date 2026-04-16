@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
+import { db } from "@/lib/db";
 import { getAuthFromRequest } from "@/lib/auth";
 import { voidRequest } from "@/lib/repositories/designWorkflowRepo";
+
+const dbQuery = db.query.bind(db);
 
 const VOID_ROLES = [
   "ADMIN",
@@ -26,19 +29,18 @@ export async function POST(
 
   const { id } = await context.params;
 
-  let body: any = {};
+  let body: { reason?: string | null } = {};
+
   try {
     body = await req.json();
   } catch {
-    // allow empty body
+    body = {};
   }
 
   try {
-    const result = await voidRequest({
+    const result = await voidRequest(dbQuery, {
       requestId: id,
-      userName: user.name ?? null,
-      userId: user.id ?? null,
-      employeeNumber: user.employeeNumber ?? null,
+      userName: user.name ?? "",
       reason: body.reason ?? null,
     });
 
