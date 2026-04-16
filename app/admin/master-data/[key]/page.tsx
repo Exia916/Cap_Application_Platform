@@ -36,6 +36,68 @@ function buildDefaults(columns: MasterColumn[]) {
   return defaults;
 }
 
+function coercePayload(values: Record<string, any>) {
+  const out: Record<string, any> = {};
+
+  for (const [key, value] of Object.entries(values || {})) {
+    if (typeof value === "string") {
+      const trimmed = value.trim();
+
+      if (trimmed === "") {
+        out[key] = "";
+      } else if (/^-?\d+$/.test(trimmed)) {
+        out[key] = Number(trimmed);
+      } else {
+        out[key] = trimmed;
+      }
+    } else {
+      out[key] = value;
+    }
+  }
+
+  return out;
+}
+
+function validate(values: Record<string, any>, columns: MasterColumn[]) {
+  for (const col of columns) {
+    if (!col.required) continue;
+
+    const value = values?.[col.key];
+
+    if (col.type === "boolean") {
+      if (typeof value !== "boolean") return `${col.label} is required.`;
+      continue;
+    }
+
+    if (value == null || String(value).trim() === "") {
+      return `${col.label} is required.`;
+    }
+  }
+
+  return "";
+}
+
+function toSelectOptions(sourceKey: string, rows: Row[]): SelectOption[] {
+  if (sourceKey === "cmms_departments") {
+    return rows
+      .filter((row) => normalizeBool(row.is_active))
+      .map((row) => ({
+        value: String(row.id),
+        label: String(row.name ?? ""),
+      }))
+      .filter((opt) => opt.value && opt.label)
+      .sort((a, b) => a.label.localeCompare(b.label));
+  }
+
+  return rows
+    .filter((row) => normalizeBool(row.is_active))
+    .map((row) => ({
+      value: String(row.id ?? row.code ?? ""),
+      label: String(row.name ?? row.label ?? row.code ?? row.id ?? ""),
+    }))
+    .filter((opt) => opt.value && opt.label);
+}
+
 export default function AdminMasterDataKeyPage({
   params,
 }: {
@@ -75,52 +137,10 @@ export default function AdminMasterDataKeyPage({
   useEffect(() => {
     if (!cfg) return;
     setNewForm(buildDefaults(cfg.columns));
-  }, [cfg?.key]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  useEffect(() => {
-    let cancelled = false;
-
-    (async () => {
-      if (!cfg) return;
-
-      const selectCols = cfg.columns.filter((c) => c.type === "select" && c.optionsSource);
-      if (!selectCols.length) {
-        setSelectOptions({});
-        return;
-      }
-
-      const next: Record<string, SelectOption[]> = {};
-
-      for (const col of selectCols) {
-        try {
-          const res = await fetch(
-            `/api/admin/master-data/options/${encodeURIComponent(String(col.optionsSource))}`,
-            {
-              cache: "no-store",
-              credentials: "include",
-            }
-          );
-
-          const json = await res.json().catch(() => ({}));
-          if (res.ok && !cancelled) {
-            next[col.key] = Array.isArray((json as any).options) ? (json as any).options : [];
-          }
-        } catch {
-          if (!cancelled) next[col.key] = [];
-        }
-      }
-
-      if (!cancelled) setSelectOptions(next);
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [cfg]);
+  }, [cfg?.key]);
 
   async function loadRows() {
     if (!key) return;
-    setError("");
 
     const res = await fetch(`/api/admin/master-data/${encodeURIComponent(key)}`, {
       cache: "no-store",
@@ -128,11 +148,49 @@ export default function AdminMasterDataKeyPage({
     });
 
     const json = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error((json as any)?.error || "Failed to load rows");
+    if (!res.ok) {
+      throw new Error((json as any)?.error || "Failed to load rows");
+    }
 
     setRows(((json as any).rows || []) as Row[]);
     setSupportsInactive(!!(json as any).supportsInactive);
     setAllowDelete(!!(json as any).allowDelete);
+  }
+
+  async function loadSelectOptions(currentCfg: typeof cfg) {
+    if (!currentCfg) {
+      setSelectOptions({});
+      return;
+    }
+
+    const selectCols = currentCfg.columns.filter((c) => c.type === "select" && c.optionsSource);
+    if (!selectCols.length) {
+      setSelectOptions({});
+      return;
+    }
+
+    const next: Record<string, SelectOption[]> = {};
+
+    for (const col of selectCols) {
+      const sourceKey = String(col.optionsSource);
+
+      const res = await fetch(`/api/admin/master-data/${encodeURIComponent(sourceKey)}`, {
+        cache: "no-store",
+        credentials: "include",
+      });
+
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(
+          (json as any)?.error || `Failed to load options for ${col.label}`
+        );
+      }
+
+      const sourceRows = Array.isArray((json as any)?.rows) ? (json as any).rows : [];
+      next[col.key] = toSelectOptions(sourceKey, sourceRows);
+    }
+
+    setSelectOptions(next);
   }
 
   useEffect(() => {
@@ -140,12 +198,16 @@ export default function AdminMasterDataKeyPage({
 
     (async () => {
       if (!cfg || !key) return;
+
       setLoading(true);
+      setError("");
 
       try {
-        await loadRows();
+        await Promise.all([loadRows(), loadSelectOptions(cfg)]);
       } catch (e: any) {
-        if (!cancelled) setError(e?.message || "Failed to load master data");
+        if (!cancelled) {
+          setError(e?.message || "Failed to load master data");
+        }
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -154,7 +216,7 @@ export default function AdminMasterDataKeyPage({
     return () => {
       cancelled = true;
     };
-  }, [cfg?.key, key]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [cfg, key]);
 
   const normalizedSearch = search.trim().toLowerCase();
 
@@ -189,52 +251,13 @@ export default function AdminMasterDataKeyPage({
     setEditForm((p) => ({ ...p, [col.key]: value }));
   };
 
-  const validate = (form: Record<string, any>) => {
-    if (!cfg) return "Invalid config";
-
-    for (const c of cfg.columns) {
-      if (c.required) {
-        const v = form[c.key];
-        if (v === null || v === undefined || String(v).trim() === "") {
-          return `${c.label} is required.`;
-        }
-      }
-    }
-
-    return "";
-  };
-
-  const coercePayload = (form: Record<string, any>) => {
-    if (!cfg) return {};
-    const payload: Record<string, any> = {};
-
-    for (const c of cfg.columns) {
-      const v = form[c.key];
-
-      if (c.type === "boolean") payload[c.key] = normalizeBool(v);
-      else if (c.type === "number") payload[c.key] = v === "" ? 0 : Number(v);
-      else if (c.type === "time") payload[c.key] = v === "" ? null : String(v);
-      else if (c.type === "select") payload[c.key] = v === "" ? null : Number(v);
-      else payload[c.key] = v === "" ? null : String(v);
-    }
-
-    if (typeof payload.code === "string") payload.code = payload.code.trim().toUpperCase();
-    if (typeof payload.name === "string") payload.name = payload.name.trim();
-    if (typeof payload.label === "string") payload.label = payload.label.trim();
-    if (typeof payload.item_code === "string") payload.item_code = payload.item_code.trim().toUpperCase();
-    if (typeof payload.description === "string") payload.description = payload.description.trim();
-    if (typeof payload.department === "string") payload.department = payload.department.trim();
-
-    return payload;
-  };
-
   const createRow = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
 
     if (!key || !cfg) return;
 
-    const msg = validate(newForm);
+    const msg = validate(newForm, cfg.columns);
     if (msg) {
       setError(msg);
       return;
@@ -259,23 +282,15 @@ export default function AdminMasterDataKeyPage({
     await loadRows();
   };
 
-  const startEditing = (r: Row) => {
-    if (!cfg) return;
+  const startEditing = (row: Row) => {
+    setEditingId(getRowId(row));
 
-    const rid = getRowId(r);
-    setEditingId(rid);
-
-    const f: Record<string, any> = {};
-    for (const c of cfg.columns) {
-      const v = r[c.key];
-      if (c.type === "boolean") f[c.key] = normalizeBool(v);
-      else if (c.type === "number") f[c.key] = v ?? 0;
-      else if (c.type === "time") f[c.key] = typeof v === "string" ? v.slice(0, 5) : "";
-      else if (c.type === "select") f[c.key] = v ?? "";
-      else f[c.key] = v ?? "";
+    const next: Record<string, any> = {};
+    for (const col of cfg?.columns || []) {
+      next[col.key] = row[col.key] ?? "";
     }
 
-    setEditForm(f);
+    setEditForm(next);
   };
 
   const cancelEditing = () => {
@@ -289,7 +304,7 @@ export default function AdminMasterDataKeyPage({
 
     if (!key || !cfg || !editingId) return;
 
-    const msg = validate(editForm);
+    const msg = validate(editForm, cfg.columns);
     if (msg) {
       setError(msg);
       return;
@@ -341,6 +356,9 @@ export default function AdminMasterDataKeyPage({
 
     if (editingId === id) cancelEditing();
     await loadRows();
+    if (cfg) {
+      await loadSelectOptions(cfg);
+    }
   };
 
   if (!key) return <div className="page-shell">Loading…</div>;
