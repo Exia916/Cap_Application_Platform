@@ -115,7 +115,7 @@ export default function RecutWarehousePage() {
     deliverTo: "",
     notes: "",
     event: "",
-    doNotPull: "",
+    doNotPull: "false",
     supervisorApproved: "",
     warehousePrinted: "false",
   });
@@ -360,7 +360,7 @@ export default function RecutWarehousePage() {
         sortable: true,
         filterable: false,
         filterRender: boolFilter(filters.doNotPull, (v) => onFilterChange("doNotPull", v), "Do Not Pull"),
-        render: (r) => boolText(r.doNotPull),
+        render: (r) => (r.doNotPull ? <span className="badge badge-warning">Do Not Pull</span> : "No"),
       },
       {
         key: "warehousePrinted",

@@ -348,7 +348,12 @@ function buildWhere(filters: {
   addIlikeFilter(where, params, `CAST(requested_date AS text)`, filters.requestedDate);
   addIlikeFilter(where, params, `CAST(requested_time AS text)`, filters.requestedTime);
   addIlikeFilter(where, params, `requested_by_name`, filters.requestedByName);
-  addIlikeFilter(where, params, `requested_department`, filters.requestedDepartment);
+  
+  if (String(filters.requestedDepartment ?? "").trim()) {
+  const v = String(filters.requestedDepartment ?? "").trim();
+  params.push(`${v}%`);
+  where.push(`requested_department ILIKE $${params.length}`);
+}
 
   if (String(filters.salesOrder ?? "").trim()) {
     const v = String(filters.salesOrder ?? "").trim();
