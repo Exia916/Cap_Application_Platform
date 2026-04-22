@@ -115,22 +115,34 @@ function sanitizeReturnTo(
   return fallback;
 }
 
+function normalizeCode(value: string | null | undefined): string {
+  return String(value ?? "").trim().toUpperCase();
+}
+
 function CapStyleCombobox({
   items,
   value,
-  onChange,
+  onSelect,
   error,
   disabled = false,
 }: {
   items: LookupOption[];
   value: string;
-  onChange: (next: string) => void;
+  onSelect: (next: string) => void;
   error?: string;
   disabled?: boolean;
 }) {
   const [query, setQuery] = useState(value);
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement | null>(null);
+
+  const validCodes = useMemo(
+    () =>
+      items
+        .map((x) => String(x.itemCode ?? "").trim())
+        .filter(Boolean),
+    [items]
+  );
 
   useEffect(() => {
     setQuery(value);
@@ -150,22 +162,21 @@ function CapStyleCombobox({
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    const allCodes = items.map((x) => String(x.itemCode ?? "").trim()).filter(Boolean);
 
-    if (!q) return allCodes.slice(0, 25);
+    if (!q) return validCodes.slice(0, 25);
 
-    const startsWith = allCodes.filter((code) => code.toLowerCase().startsWith(q));
-    const contains = allCodes.filter(
+    const startsWith = validCodes.filter((code) => code.toLowerCase().startsWith(q));
+    const contains = validCodes.filter(
       (code) => !code.toLowerCase().startsWith(q) && code.toLowerCase().includes(q)
     );
 
     return [...startsWith, ...contains].slice(0, 25);
-  }, [items, query]);
+  }, [validCodes, query]);
 
   function choose(code: string) {
     if (disabled) return;
     setQuery(code);
-    onChange(code);
+    onSelect(code);
     setOpen(false);
   }
 
@@ -175,19 +186,28 @@ function CapStyleCombobox({
         value={query}
         disabled={disabled}
         onChange={(e) => {
-          const next = e.target.value;
-          setQuery(next);
-          onChange(next);
+          setQuery(e.target.value);
           setOpen(true);
         }}
         onFocus={() => {
           if (!disabled) setOpen(true);
+        }}
+        onBlur={() => {
+          const exact = validCodes.find(
+            (x) => x.toLowerCase() === String(query || "").trim().toLowerCase()
+          );
+
+          if (exact) {
+            setQuery(exact);
+            onSelect(exact);
+          }
         }}
         onKeyDown={(e) => {
           if (disabled) return;
 
           if (e.key === "Enter") {
             e.preventDefault();
+
             const exact = filtered.find(
               (x) => x.toLowerCase() === String(query || "").trim().toLowerCase()
             );
@@ -246,6 +266,14 @@ export default function RecutForm({
   const [reasons, setReasons] = useState<LookupOption[]>([]);
   const [requestedDepartments, setRequestedDepartments] = useState<LookupOption[]>([]);
   const [items, setItems] = useState<LookupOption[]>([]);
+
+  const validCapStyleCodes = useMemo(
+    () =>
+      items
+        .map((x) => String(x.itemCode ?? "").trim())
+        .filter(Boolean),
+    [items]
+  );
 
   const [loading, setLoading] = useState(mode === "edit");
   const [saving, setSaving] = useState(false);
@@ -423,7 +451,7 @@ export default function RecutForm({
     if (value.trim()) clearFieldError("detailNumber");
   }
 
-  function handleCapStyleChange(value: string) {
+  function handleCapStyleSelect(value: string) {
     setCapStyle(value);
     if (value.trim()) clearFieldError("capStyle");
   }
@@ -464,7 +492,8 @@ export default function RecutForm({
     if (!salesOrder.trim()) {
       next.salesOrder = "Sales Order # is required.";
     } else if (!isValidSalesOrder(salesOrder)) {
-      next.salesOrder = "A valid sales order is required. The number needs to include the base order number plus the detail number suffix (e.g. 1234567.001).";
+      next.salesOrder =
+        "A valid sales order is required. The number needs to include the base order number plus the detail number suffix (e.g. 1234567.001).";
     }
 
     if (!designName.trim()) next.designName = "Design Name is required.";
@@ -476,7 +505,11 @@ export default function RecutForm({
       next.detailNumber = "Detail # must be a whole number.";
     }
 
-    if (!capStyle.trim()) next.capStyle = "Cap Style is required.";
+    if (!capStyle.trim()) {
+      next.capStyle = "Cap Style is required.";
+    } else if (!validCapStyleCodes.some((code) => normalizeCode(code) === normalizeCode(capStyle))) {
+      next.capStyle = "Select a valid Cap Style from the list.";
+    }
 
     if (!pieces.trim()) {
       next.pieces = "Pieces is required.";
@@ -696,7 +729,7 @@ export default function RecutForm({
             <CapStyleCombobox
               items={items}
               value={capStyle}
-              onChange={handleCapStyleChange}
+              onSelect={handleCapStyleSelect}
               error={errors.capStyle}
               disabled={isReadOnly}
             />
