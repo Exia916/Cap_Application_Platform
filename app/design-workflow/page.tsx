@@ -341,7 +341,7 @@ function normalizeLayout(input: any): ListLayoutPrefs {
         DEFAULT_COLUMN_ORDER.includes(String(key) as ColumnKey),
       ),
     ),
-  );
+  ) as ColumnKey[];
   return {
     columnOrder: [...validOrder, ...missing],
     hiddenColumns: validHidden,
