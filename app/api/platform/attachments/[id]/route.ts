@@ -1,43 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
-import { readFile } from "fs/promises";
 import { getAuthFromRequest } from "@/lib/auth";
 import {
   getAttachmentById,
   softDeleteAttachment,
+  updateAttachmentComment,
 } from "@/lib/repositories/attachmentsRepo";
 import {
-  deleteStoredFile,
-  getStoredAbsolutePath,
   canInlineMimeType,
+  getPresignedReadUrl,
+  getPresignedUrlTtlSeconds,
 } from "@/lib/platform/fileStorage";
 import { createActivityHistory } from "@/lib/repositories/activityHistoryRepo";
 
 export const runtime = "nodejs";
-
-const VIEW_ROLES = new Set([
-  "ADMIN",
-  "MANAGER",
-  "SUPERVISOR",
-  "TECH",
-  "WAREHOUSE",
-  "USER",
-  "OPERATOR",
-]);
-
-const DELETE_ROLES = new Set([
-  "ADMIN",
-//   "MANAGER",
-//   "SUPERVISOR",
-]);
-
-function toInt(v: unknown): number | null {
-  if (typeof v === "number" && Number.isFinite(v)) return Math.trunc(v);
-  if (typeof v === "string" && v.trim()) {
-    const n = Number(v);
-    if (Number.isFinite(n)) return Math.trunc(n);
-  }
-  return null;
-}
 
 function buildActor(auth: ReturnType<typeof getAuthFromRequest>) {
   const rawEmp =
@@ -48,68 +23,156 @@ function buildActor(auth: ReturnType<typeof getAuthFromRequest>) {
   const empNum = Number(rawEmp);
 
   return {
-    userId:
-      String(
-        (auth as any)?.userId ??
-          (auth as any)?.id ??
-          (auth as any)?.username ??
-          ""
-      ).trim() || null,
-    userName:
-      String(
-        (auth as any)?.displayName ??
-          (auth as any)?.name ??
-          (auth as any)?.username ??
-          ""
-      ).trim() || null,
+    userId: String(
+      (auth as any)?.userId ??
+        (auth as any)?.id ??
+        (auth as any)?.username ??
+        ""
+    ).trim() || null,
+
+    userName: String(
+      (auth as any)?.displayName ??
+        (auth as any)?.name ??
+        (auth as any)?.username ??
+        ""
+    ).trim() || null,
+
     employeeNumber: Number.isFinite(empNum) ? Math.trunc(empNum) : null,
   };
 }
 
+function parseId(raw: string): number | null {
+  const id = Number.parseInt(String(raw || "").trim(), 10);
+  return Number.isFinite(id) && id > 0 ? id : null;
+}
+
 export async function GET(
   req: NextRequest,
-  ctx: { params: Promise<{ id: string }> }
+  ctx: { params: Promise<{ id: string }> | { id: string } }
 ) {
   try {
     const auth = getAuthFromRequest(req);
     if (!auth) {
       return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
     }
-    if (!VIEW_ROLES.has(String((auth as any)?.role || "").trim().toUpperCase())) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
 
-    const { id: idStr } = await ctx.params;
-    const id = toInt(idStr);
+    const params = await Promise.resolve(ctx.params);
+    const id = parseId(params.id);
     if (!id) {
-      return NextResponse.json({ error: "Invalid id" }, { status: 400 });
+      return NextResponse.json({ error: "Invalid attachment id" }, { status: 400 });
     }
 
     const row = await getAttachmentById(id);
     if (!row) {
-      return NextResponse.json({ error: "Not found" }, { status: 404 });
+      return NextResponse.json({ error: "Attachment not found" }, { status: 404 });
     }
 
-    const absolutePath = await getStoredAbsolutePath(row.storedRelativePath);
-    const fileBytes = await readFile(absolutePath);
+    if (!row.bucketName || !row.objectKey) {
+      return NextResponse.json(
+        { error: "Attachment storage metadata is incomplete." },
+        { status: 500 }
+      );
+    }
 
-    const mode = String(new URL(req.url).searchParams.get("mode") || "").trim().toLowerCase();
-    const inlineAllowed = canInlineMimeType(row.mimeType);
-    const dispositionType = mode === "download" || !inlineAllowed ? "attachment" : "inline";
+    const { searchParams } = new URL(req.url);
+    const action = String(searchParams.get("action") || "open").trim().toLowerCase();
+    const wantsDownload = action === "download" || searchParams.get("download") === "1";
+    const wantsShare = action === "share";
+    const wantsMeta = action === "meta";
 
-    return new NextResponse(fileBytes, {
-      status: 200,
-      headers: {
-        "Content-Type": row.mimeType || "application/octet-stream",
-        "Content-Length": String(fileBytes.length),
-        "Content-Disposition": `${dispositionType}; filename="${encodeURIComponent(row.originalFileName)}"`,
-        "X-Content-Type-Options": "nosniff",
-        "Cache-Control": "private, no-store",
-      },
+    const ttlSeconds = getPresignedUrlTtlSeconds();
+    const inline = canInlineMimeType(row.mimeType);
+    const disposition: "inline" | "attachment" =
+      wantsDownload ? "attachment" : inline ? "inline" : "attachment";
+
+    const url = await getPresignedReadUrl({
+      bucketName: row.bucketName,
+      objectKey: row.objectKey,
+      originalFileName: row.originalFileName,
+      mimeType: row.mimeType,
+      disposition,
+      expiresInSeconds: ttlSeconds,
     });
+
+    if (wantsShare || wantsMeta) {
+      return NextResponse.json(
+        {
+          row: { ...row, canPreviewInline: inline },
+          action: wantsShare ? "share" : "meta",
+          url,
+          expiresInSeconds: ttlSeconds,
+          canPreviewInline: inline,
+        },
+        { status: 200 }
+      );
+    }
+
+    return NextResponse.redirect(url, { status: 302 });
   } catch (err: any) {
     return NextResponse.json(
-      { error: err?.message || "Failed to download attachment" },
+      { error: err?.message || "Failed to open attachment" },
+      { status: 500 }
+    );
+  }
+}
+
+export async function PATCH(
+  req: NextRequest,
+  ctx: { params: Promise<{ id: string }> | { id: string } }
+) {
+  try {
+    const auth = getAuthFromRequest(req);
+    if (!auth) {
+      return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
+    }
+
+    const params = await Promise.resolve(ctx.params);
+    const id = parseId(params.id);
+    if (!id) {
+      return NextResponse.json({ error: "Invalid attachment id" }, { status: 400 });
+    }
+
+    const before = await getAttachmentById(id);
+    if (!before) {
+      return NextResponse.json({ error: "Attachment not found" }, { status: 404 });
+    }
+
+    const body = await req.json().catch(() => ({}));
+    const attachmentComment =
+      String((body as any)?.attachmentComment ?? "").trim() || null;
+
+    const row = await updateAttachmentComment(id, attachmentComment);
+    if (!row) {
+      return NextResponse.json({ error: "Attachment not found" }, { status: 404 });
+    }
+
+    const actor = buildActor(auth);
+
+    try {
+      await createActivityHistory({
+        entityType: row.entityType,
+        entityId: row.entityId,
+        eventType: "attachment_updated",
+        fieldName: "attachment_comment",
+        message: `Attachment comment updated: "${row.originalFileName}".`,
+        module: row.entityType.startsWith("cmms") ? "cmms" : null,
+        userId: actor.userId,
+        userName: actor.userName,
+        employeeNumber: actor.employeeNumber,
+        previousValue: before.attachmentComment,
+        newValue: row.attachmentComment,
+      });
+    } catch {
+      // do not fail update if history logging fails
+    }
+
+    return NextResponse.json(
+      { ok: true, row: { ...row, canPreviewInline: canInlineMimeType(row.mimeType) } },
+      { status: 200 }
+    );
+  } catch (err: any) {
+    return NextResponse.json(
+      { error: err?.message || "Failed to update attachment" },
       { status: 500 }
     );
   }
@@ -117,29 +180,27 @@ export async function GET(
 
 export async function DELETE(
   req: NextRequest,
-  ctx: { params: Promise<{ id: string }> }
+  ctx: { params: Promise<{ id: string }> | { id: string } }
 ) {
   try {
     const auth = getAuthFromRequest(req);
     if (!auth) {
       return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
     }
-    if (!DELETE_ROLES.has(String((auth as any)?.role || "").trim().toUpperCase())) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
 
-    const { id: idStr } = await ctx.params;
-    const id = toInt(idStr);
+    const params = await Promise.resolve(ctx.params);
+    const id = parseId(params.id);
     if (!id) {
-      return NextResponse.json({ error: "Invalid id" }, { status: 400 });
+      return NextResponse.json({ error: "Invalid attachment id" }, { status: 400 });
     }
 
     const row = await getAttachmentById(id);
     if (!row) {
-      return NextResponse.json({ error: "Not found" }, { status: 404 });
+      return NextResponse.json({ error: "Attachment not found" }, { status: 404 });
     }
 
     const actor = buildActor(auth);
+
     const ok = await softDeleteAttachment({
       id,
       deletedByUserId: actor.userId,
@@ -147,18 +208,19 @@ export async function DELETE(
     });
 
     if (!ok) {
-      return NextResponse.json({ error: "Not found" }, { status: 404 });
+      return NextResponse.json(
+        { error: "Attachment was already deleted" },
+        { status: 409 }
+      );
     }
-
-    await deleteStoredFile(row.storedRelativePath);
 
     try {
       await createActivityHistory({
         entityType: row.entityType,
         entityId: row.entityId,
-        eventType: "attachment_deleted",
+        eventType: "attachment_removed",
         fieldName: "attachment",
-        message: `Attachment deleted: "${row.originalFileName}".`,
+        message: `Attachment removed: "${row.originalFileName}".`,
         module: row.entityType.startsWith("cmms") ? "cmms" : null,
         userId: actor.userId,
         userName: actor.userName,
@@ -166,8 +228,8 @@ export async function DELETE(
         previousValue: {
           attachmentId: row.id,
           originalFileName: row.originalFileName,
-          mimeType: row.mimeType,
-          fileSizeBytes: row.fileSizeBytes,
+          attachmentComment: row.attachmentComment,
+          objectKey: row.objectKey,
         },
       });
     } catch {
@@ -177,7 +239,7 @@ export async function DELETE(
     return NextResponse.json({ ok: true }, { status: 200 });
   } catch (err: any) {
     return NextResponse.json(
-      { error: err?.message || "Failed to delete attachment" },
+      { error: err?.message || "Failed to remove attachment" },
       { status: 500 }
     );
   }
