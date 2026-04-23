@@ -4,24 +4,10 @@ import {
   createAttachment,
   listAttachmentsByEntity,
 } from "@/lib/repositories/attachmentsRepo";
-import { saveUploadedFile } from "@/lib/platform/fileStorage";
+import { saveUploadedFile, canInlineMimeType } from "@/lib/platform/fileStorage";
 import { createActivityHistory } from "@/lib/repositories/activityHistoryRepo";
 
 export const runtime = "nodejs";
-
-const ALLOWED_ROLES = new Set([
-  "ADMIN",
-//   "MANAGER",
-//   "SUPERVISOR",
-//   "TECH",
-//   "WAREHOUSE",
-//   "USER",
-//   "OPERATOR",
-]);
-
-function roleOk(role: string | null | undefined) {
-  return ALLOWED_ROLES.has(String(role || "").trim().toUpperCase());
-}
 
 function buildActor(auth: ReturnType<typeof getAuthFromRequest>) {
   const rawEmp =
@@ -56,9 +42,6 @@ export async function GET(req: NextRequest) {
     if (!auth) {
       return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
     }
-    if (!roleOk((auth as any)?.role)) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
 
     const { searchParams } = new URL(req.url);
     const entityType = String(searchParams.get("entityType") || "").trim();
@@ -74,7 +57,13 @@ export async function GET(req: NextRequest) {
     }
 
     const rows = await listAttachmentsByEntity(entityType, entityId, limit);
-    return NextResponse.json({ rows }, { status: 200 });
+
+    const responseRows = rows.map((row) => ({
+      ...row,
+      canPreviewInline: canInlineMimeType(row.mimeType),
+    }));
+
+    return NextResponse.json({ rows: responseRows }, { status: 200 });
   } catch (err: any) {
     return NextResponse.json(
       { error: err?.message || "Failed to load attachments" },
@@ -89,13 +78,11 @@ export async function POST(req: NextRequest) {
     if (!auth) {
       return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
     }
-    if (!roleOk((auth as any)?.role)) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
 
     const form = await req.formData();
     const entityType = String(form.get("entityType") || "").trim();
     const entityId = String(form.get("entityId") || "").trim();
+    const attachmentComment = String(form.get("attachmentComment") || "").trim() || null;
     const file = form.get("file");
 
     if (!entityType || !entityId) {
@@ -128,6 +115,11 @@ export async function POST(req: NextRequest) {
       originalFileName: stored.originalFileName,
       storedFileName: stored.storedFileName,
       storedRelativePath: stored.storedRelativePath,
+      storageProvider: "s3",
+      bucketName: stored.bucketName,
+      objectKey: stored.objectKey,
+      objectVersionId: stored.objectVersionId,
+      attachmentComment,
       mimeType: file.type || null,
       fileSizeBytes: stored.fileSizeBytes,
       uploadedByUserId: actor.userId,
@@ -151,13 +143,19 @@ export async function POST(req: NextRequest) {
           originalFileName: row.originalFileName,
           mimeType: row.mimeType,
           fileSizeBytes: row.fileSizeBytes,
+          attachmentComment: row.attachmentComment,
+          storageProvider: row.storageProvider,
+          objectKey: row.objectKey,
         },
       });
     } catch {
       // do not fail upload if history logging fails
     }
 
-    return NextResponse.json({ ok: true, row }, { status: 201 });
+    return NextResponse.json(
+      { ok: true, row: { ...row, canPreviewInline: canInlineMimeType(row.mimeType) } },
+      { status: 201 }
+    );
   } catch (err: any) {
     return NextResponse.json(
       { error: err?.message || "Failed to upload attachment" },

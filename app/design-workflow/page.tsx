@@ -1,4 +1,4 @@
-"use client";
+ "use client";
 
 import { useEffect, useMemo, useState } from "react";
 import DataTable, { type Column, type SortDir } from "@/components/DataTable";
@@ -407,47 +407,154 @@ function getStatusStyle(
   const labelContains = (...tokens: string[]) =>
     tokens.some((token) => label.includes(token));
 
-  if (codeIs("unspecified") || labelIs("unspecified")) return byKey("unspecified");
-  if (codeIs("a") || labelIs("a po to art dept", "po to art dept")) return byKey("a");
-  if (codeIs("b") || labelIs("b customer approval of art", "customer approval of art")) return byKey("b");
-  if (codeIs("c") || labelIs("c complete so and digitize", "complete so and digitize", "complete so digitize")) return byKey("c");
-  if (codeIs("d") || labelIs("d tape complete", "tape complete")) return byKey("d");
-  if (codeIs("e") || labelIs("e order to factory", "order to factory")) return byKey("e");
-  if (codeIs("f") || labelIs("f run sample", "run sample")) return byKey("f");
-  if (codeIs("g") || labelIs("g sample to sewing line", "sample to sewing line")) return byKey("g");
-  if (codeIs("h") || labelIs("h sample ran", "sample ran")) return byKey("h");
-  if (codeIs("i") || labelIs("i et staging", "iet staging", "et staging")) return byKey("i");
-  if (codeIs("l assigned in production") || labelIs("l assigned in production", "assigned in production")) return byKey("l-assigned");
-  if (codeIs("mmc") || labelIs("mmc pending art", "pending art")) return byKey("mmc");
+  if (codeIs("unspecified") || labelIs("unspecified"))
+    return byKey("unspecified");
+  if (codeIs("a") || labelIs("a po to art dept", "po to art dept"))
+    return byKey("a");
+  if (
+    codeIs("b") ||
+    labelIs("b customer approval of art", "customer approval of art")
+  )
+    return byKey("b");
+  if (
+    codeIs("c") ||
+    labelIs(
+      "c complete so and digitize",
+      "complete so and digitize",
+      "complete so digitize",
+    )
+  )
+    return byKey("c");
+  if (codeIs("d") || labelIs("d tape complete", "tape complete"))
+    return byKey("d");
+  if (codeIs("e") || labelIs("e order to factory", "order to factory"))
+    return byKey("e");
+  if (codeIs("f") || labelIs("f run sample", "run sample"))
+    return byKey("f");
+  if (
+    codeIs("g") ||
+    labelIs("g sample to sewing line", "sample to sewing line")
+  )
+    return byKey("g");
+  if (codeIs("h") || labelIs("h sample ran", "sample ran"))
+    return byKey("h");
+  if (codeIs("i") || labelIs("i et staging", "iet staging", "et staging"))
+    return byKey("i");
+  if (
+    codeIs("l assigned in production") ||
+    labelIs("l assigned in production", "assigned in production")
+  )
+    return byKey("l-assigned");
+  if (codeIs("mmc") || labelIs("mmc pending art", "pending art"))
+    return byKey("mmc");
   if (codeIs("n") || labelIs("n proofing", "proofing")) return byKey("n");
   if (codeIs("o") || labelIs("o edit", "edit")) return byKey("o");
   if (codeIs("q") || labelIs("q stop ship", "stop ship")) return byKey("q");
-  if (codeIs("r") || labelIs("r po to concept art", "po to concept art")) return byKey("r");
-  if (codeIs("s") || labelIs("s concept complete", "concept complete")) return byKey("s");
-  if (codeIs("t") || labelIs("t customer approval of concept", "customer approval of concept")) return byKey("t");
+  if (codeIs("r") || labelIs("r po to concept art", "po to concept art"))
+    return byKey("r");
+  if (codeIs("s") || labelIs("s concept complete", "concept complete"))
+    return byKey("s");
+  if (
+    codeIs("t") ||
+    labelIs("t customer approval of concept", "customer approval of concept")
+  )
+    return byKey("t");
   if (codeIs("u") || labelIs("u quote", "quote")) return byKey("u");
-  if (codeIs("w") || labelIs("w quote complete", "quote complete")) return byKey("w");
-  if (codeIs("x") || labelIs("x customer approval of sketch", "customer approval of sketch")) return byKey("x");
-  if (codeIs("y") || labelIs("y run sample overseas", "run sample overseas")) return byKey("y");
-  if (codeIs("z") || labelIs("z customer approval of overseas sample", "customer approval of overseas sample")) return byKey("z");
-  if (codeIs("za") || labelIs("za order to overseas factory", "order to overseas factory")) return byKey("za");
-  if (codeIs("ra") || labelIs("ra revisions", "revisions")) return byKey("ra");
-  if (codeIs("zb") || labelIs("zb overseas sample in progress", "overseas sample in progress")) return byKey("zb");
-  if (codeIs("zc") || labelIs("zc overseas order in production", "overseas order in production")) return byKey("zc");
-  if (codeIs("zd") || labelIs("zd overseas customer approval of art", "overseas customer approval of art")) return byKey("zd");
-  if (codeIs("ze") || labelIs("ze po to overseas art", "po to overseas art")) return byKey("ze");
-  if (codeIs("zf") || labelIs("zf overseas sample pending answers", "overseas sample pending answers")) return byKey("zf");
-  if (codeIs("ca") || labelIs("ca overseas tape", "overseas tape")) return byKey("ca");
-  if (codeIs("aa") || labelIs("aa ek approved", "ek approved")) return byKey("aa");
-  if (codeIs("ta") || labelIs("ta customer approval of quote", "customer approval of quote")) return byKey("ta");
+  if (codeIs("w") || labelIs("w quote complete", "quote complete"))
+    return byKey("w");
+  if (
+    codeIs("x") ||
+    labelIs("x customer approval of sketch", "customer approval of sketch")
+  )
+    return byKey("x");
+  if (
+    codeIs("y") ||
+    labelIs("y run sample overseas", "run sample overseas")
+  )
+    return byKey("y");
+  if (
+    codeIs("z") ||
+    labelIs(
+      "z customer approval of overseas sample",
+      "customer approval of overseas sample",
+    )
+  )
+    return byKey("z");
+  if (
+    codeIs("za") ||
+    labelIs("za order to overseas factory", "order to overseas factory")
+  )
+    return byKey("za");
+  if (codeIs("ra") || labelIs("ra revisions", "revisions"))
+    return byKey("ra");
+  if (
+    codeIs("zb") ||
+    labelIs("zb overseas sample in progress", "overseas sample in progress")
+  )
+    return byKey("zb");
+  if (
+    codeIs("zc") ||
+    labelIs("zc overseas order in production", "overseas order in production")
+  )
+    return byKey("zc");
+  if (
+    codeIs("zd") ||
+    labelIs(
+      "zd overseas customer approval of art",
+      "overseas customer approval of art",
+    )
+  )
+    return byKey("zd");
+  if (
+    codeIs("ze") ||
+    labelIs("ze po to overseas art", "po to overseas art")
+  )
+    return byKey("ze");
+  if (
+    codeIs("zf") ||
+    labelIs(
+      "zf overseas sample pending answers",
+      "overseas sample pending answers",
+    )
+  )
+    return byKey("zf");
+  if (codeIs("ca") || labelIs("ca overseas tape", "overseas tape"))
+    return byKey("ca");
+  if (codeIs("aa") || labelIs("aa ek approved", "ek approved"))
+    return byKey("aa");
+  if (
+    codeIs("ta") ||
+    labelIs("ta customer approval of quote", "customer approval of quote")
+  )
+    return byKey("ta");
   if (
     codeIs("l ready for digitizing", "l ready for production") ||
-    labelIs("l ready for digitizing", "ready for digitizing", "l ready for production", "ready for production")
-  ) return byKey("l-ready");
-  if (codeIs("cb") || labelIs("cb embroidery for knit", "embroidery for knit")) return byKey("cb");
-  if (codeIs("z art fix", "z-art-fix") || labelIs("z art fix") || labelContains("art fix")) return byKey("z-art-fix");
-  if (codeIs("db") || labelIs("db leather complete", "leather complete")) return byKey("db");
-  if (codeIs("ba") || labelIs("ba pending patch approval from factory", "pending patch approval from factory")) return byKey("ba");
+    labelIs(
+      "l ready for digitizing",
+      "ready for digitizing",
+      "l ready for production",
+      "ready for production",
+    )
+  )
+    return byKey("l-ready");
+  if (codeIs("cb") || labelIs("cb embroidery for knit", "embroidery for knit"))
+    return byKey("cb");
+  if (
+    codeIs("z art fix", "z-art-fix") ||
+    labelIs("z art fix") ||
+    labelContains("art fix")
+  )
+    return byKey("z-art-fix");
+  if (codeIs("db") || labelIs("db leather complete", "leather complete"))
+    return byKey("db");
+  if (
+    codeIs("ba") ||
+    labelIs(
+      "ba pending patch approval from factory",
+      "pending patch approval from factory",
+    )
+  )
+    return byKey("ba");
 
   return byKey("unspecified");
 }
@@ -479,13 +586,14 @@ function mixHex(hex: string, targetHex: string, weight: number) {
   const r = mix(a.r, b.r);
   const g = mix(a.g, b.g);
   const bVal = mix(a.b, b.b);
-  return `#${[r, g, bVal].map((n) => n.toString(16).padStart(2, "0")).join("")}`;
+  return `#${[r, g, bVal]
+    .map((n) => n.toString(16).padStart(2, "0"))
+    .join("")}`;
 }
 
 function statusBadge(row: Pick<WorkflowRow, "statusCode" | "statusLabel">) {
   const style = getStatusStyle(row);
   const dark = isDarkHex(style.hex);
-  const textColor = dark ? "#ffffff" : "#111111";
   const borderColor = dark
     ? mixHex(style.hex, "#ffffff", 0.28)
     : mixHex(style.hex, "#000000", 0.18);
@@ -498,8 +606,8 @@ function statusBadge(row: Pick<WorkflowRow, "statusCode" | "statusLabel">) {
         padding: "4px 10px",
         borderRadius: 999,
         border: `1px solid ${borderColor}`,
-        background: '#ffffff',
-        color: '#111111',
+        background: "#ffffff",
+        color: "#111111",
         fontSize: 12,
         fontWeight: 800,
         lineHeight: 1.1,
@@ -738,6 +846,9 @@ export default function DesignWorkflowPage() {
   const [layout, setLayout] = useState<ListLayoutPrefs>(() =>
     normalizeLayout(null),
   );
+  const [duplicateBusy, setDuplicateBusy] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [actionSuccess, setActionSuccess] = useState<string | null>(null);
 
   const selectedRow = useMemo(
     () => rows.find((r) => r.id === selectedRequestId) ?? null,
@@ -982,8 +1093,9 @@ export default function DesignWorkflowPage() {
       if (
         selectedRequestId &&
         !nextRows.some((r) => r.id === selectedRequestId)
-      )
+      ) {
         setSelectedRequestId(null);
+      }
     } catch (err: any) {
       setRows([]);
       setTotalCount(0);
@@ -1066,6 +1178,8 @@ export default function DesignWorkflowPage() {
     setSortDir("desc");
     setPageIndex(0);
     setSelectedRequestId(null);
+    setActionError(null);
+    setActionSuccess(null);
   }
 
   async function voidSelected() {
@@ -1090,6 +1204,54 @@ export default function DesignWorkflowPage() {
       alert(err?.message || "Failed to void selected request.");
     }
   }
+
+async function duplicateSelected() {
+  if (!selectedRow || duplicateBusy) return;
+
+  try {
+    setDuplicateBusy(true);
+    setActionError(null);
+    setActionSuccess(null);
+
+    const res = await fetch(
+      `/api/design-workflow/${encodeURIComponent(selectedRow.id)}/duplicate`,
+      {
+        method: "POST",
+        credentials: "include",
+      },
+    );
+
+    const data = await res.json().catch(() => ({}));
+
+    if (!res.ok) {
+      throw new Error(data?.error || "Failed to duplicate selected request.");
+    }
+
+    const newId = String(
+      data?.request?.id ??
+        data?.id ??
+        data?.newRequest?.id ??
+        data?.duplicatedRequest?.id ??
+        data?.record?.id ??
+        "",
+    ).trim();
+
+    await loadList();
+
+    if (!newId) {
+      setActionSuccess("Request duplicated.");
+      return;
+    }
+
+    setSelectedRequestId(newId);
+    setActionSuccess("Request duplicated.");
+    setModalState({ open: true, mode: "edit", requestId: newId });
+  } catch (err: any) {
+    setActionError(err?.message || "Failed to duplicate selected request.");
+  } finally {
+    setDuplicateBusy(false);
+  }
+}
 
   function openPreview(print = false) {
     if (!selectedRow) return;
@@ -1352,13 +1514,7 @@ export default function DesignWorkflowPage() {
           </select>
         ),
         render: (r) => (
-          <span
-            className={
-              r.rush ? "badge badge-neutral" : "badge badge-neutral"
-            }
-          >
-            {boolText(!!r.rush)}
-          </span>
+          <span className="badge badge-neutral">{boolText(!!r.rush)}</span>
         ),
         getSearchText: (r) => boolText(!!r.rush),
       },
@@ -1489,6 +1645,14 @@ export default function DesignWorkflowPage() {
       <button
         type="button"
         className="btn btn-secondary"
+        onClick={duplicateSelected}
+        disabled={!selectedRow || !!selectedRow.isVoided || duplicateBusy}
+      >
+        {duplicateBusy ? "Duplicating..." : "Duplicate"}
+      </button>
+      <button
+        type="button"
+        className="btn btn-secondary"
         onClick={voidSelected}
         disabled={!selectedRow || !!selectedRow.isVoided}
       >
@@ -1550,6 +1714,8 @@ export default function DesignWorkflowPage() {
             setSearchMethod(match.search_method ?? "match_all");
             setPageIndex(0);
             setSelectedRequestId(null);
+            setActionError(null);
+            setActionSuccess(null);
           }}
           disabled={loading}
           title="Saved Search"
@@ -1628,11 +1794,7 @@ export default function DesignWorkflowPage() {
 
       <div className="page-header">
         <div className="page-header-title-wrap">
-          <h1 className="page-title">Design Workflow</h1>
-          <p className="page-subtitle">
-            Wilcom-style request queue foundation using the shared CAP list
-            pattern.
-          </p>
+          <h1 className="page-title">CAP Workflow</h1>
         </div>
       </div>
 
@@ -1647,7 +1809,7 @@ export default function DesignWorkflowPage() {
             marginBottom: 12,
           }}
         >
-          <div style={{ fontWeight: 700 }}>Design Request List</div>
+          <div style={{ fontWeight: 700 }}>Request List</div>
           <div className="text-soft">
             {loading
               ? "Loading..."
@@ -1656,6 +1818,16 @@ export default function DesignWorkflowPage() {
         </div>
 
         {error ? <div className="alert alert-danger">{error}</div> : null}
+        {actionError ? (
+          <div className="alert alert-danger" style={{ marginBottom: 12 }}>
+            {actionError}
+          </div>
+        ) : null}
+        {actionSuccess ? (
+          <div className="alert alert-success" style={{ marginBottom: 12 }}>
+            {actionSuccess}
+          </div>
+        ) : null}
 
         <DataTable<WorkflowRow>
           columns={columns}
@@ -1747,6 +1919,8 @@ export default function DesignWorkflowPage() {
           setSelectedSavedSearchId(savedSearchId);
           setPageIndex(0);
           setSelectedRequestId(null);
+          setActionError(null);
+          setActionSuccess(null);
           setSearchOpen(false);
         }}
       />

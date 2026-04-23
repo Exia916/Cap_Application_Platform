@@ -1,3 +1,4 @@
+import { randomUUID } from "crypto";
 import { buildVoidedWhereClause, joinWhere, pushWhere } from "./_shared/repoFilters";
 import { resolveVoidMode, StandardRepoOptions } from "./_shared/repoTypes";
 import { voidRecord, unvoidRecord } from "./_shared/voiding";
@@ -641,11 +642,25 @@ export async function createRequest(query: QueryFn, input: CreateRequestInput) {
     let idx = 1;
 
     for (const [key, value] of Object.entries(input)) {
-      if (value !== undefined) {
+      if (value === undefined) continue;
+
+      if (key === "date_request_created") {
+        const normalized =
+          value == null || String(value).trim() === "" ? undefined : String(value).trim();
+
+        if (normalized === undefined) {
+          continue;
+        }
+
         cols.push(key);
         placeholders.push(`$${idx++}`);
-        values.push(value);
+        values.push(normalized);
+        continue;
       }
+
+      cols.push(key);
+      placeholders.push(`$${idx++}`);
+      values.push(value);
     }
 
     if (!("rush" in input)) {
@@ -688,6 +703,72 @@ export async function createRequest(query: QueryFn, input: CreateRequestInput) {
     await query("ROLLBACK");
     throw err;
   }
+}
+
+
+
+export interface DuplicateRequestInput {
+  sourceRequestId: string;
+  requestNumber?: string | null;
+  createdByUserId?: string | null;
+  createdByName?: string | null;
+  createdBy?: string | null;
+  nowIso?: string | null;
+}
+
+export async function duplicateRequest(
+  query: QueryFn,
+  input: DuplicateRequestInput
+): Promise<DesignWorkflowRequest> {
+  const source = await getRequestById(query, input.sourceRequestId, { includeVoided: true });
+
+  if (!source) {
+    throw new Error("Source request not found.");
+  }
+
+  if (source.is_voided) {
+    throw new Error("Voided requests cannot be duplicated.");
+  }
+
+  const requestNumber = String(input.requestNumber ?? `DW-${Date.now()}`)
+    .trim();
+
+  if (!requestNumber) {
+    throw new Error("Request number is required for duplicate.");
+  }
+
+  const nowIso = String(input.nowIso ?? new Date().toISOString());
+
+  return createRequest(query, {
+    id: randomUUID(),
+    request_number: requestNumber,
+    sales_order_number: null,
+    sales_order_base: null,
+    po_number: source.po_number ?? null,
+    tape_name: source.tape_name ?? null,
+    date_request_created: nowIso,
+    due_date: source.due_date ?? null,
+    customer_name: source.customer_name ?? null,
+    customer_code: source.customer_code ?? null,
+    bin_code: source.bin_code ?? null,
+    created_by_user_id: input.createdByUserId ?? null,
+    created_by_name: input.createdByName ?? null,
+    digitizer_user_id: source.digitizer_user_id ?? null,
+    digitizer_name: source.digitizer_name ?? null,
+    designer_user_id: source.designer_user_id ?? null,
+    designer_name: source.designer_name ?? null,
+    status_id: source.status_id,
+    instructions: source.instructions ?? null,
+    additional_instructions: source.additional_instructions ?? null,
+    colorways_text: source.colorways_text ?? null,
+    tape_number: source.tape_number ?? null,
+    rush: !!source.rush,
+    style_code: source.style_code ?? null,
+    sample_so_number: source.sample_so_number ?? null,
+    stitch_count: source.stitch_count ?? null,
+    art_proof: !!source.art_proof,
+    created_by: input.createdBy ?? input.createdByName ?? null,
+  });
 }
 
 export interface UpdateRequestInput {

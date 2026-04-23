@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import AttachmentsPanel from "@/components/platform/AttachmentsPanel";
 import CommentsPanel from "@/components/platform/CommentsPanel";
@@ -195,6 +195,76 @@ export default function DesignRequestWindow({
   const [loadFailed, setLoadFailed] = useState(false);
 
   const [form, setForm] = useState(emptyForm());
+  const [modalSize, setModalSize] = useState({ width: 895, height: 760 });
+  const resizeStateRef = useRef<null | {
+    startX: number;
+    startY: number;
+    startWidth: number;
+    startHeight: number;
+    edge: "right" | "bottom" | "corner";
+  }>(null);
+
+  useEffect(() => {
+    function onMove(e: MouseEvent) {
+      const state = resizeStateRef.current;
+      if (!state) return;
+
+      const dx = e.clientX - state.startX;
+      const dy = e.clientY - state.startY;
+
+      setModalSize((current) => {
+        const nextWidth =
+          state.edge === "right" || state.edge === "corner"
+            ? Math.max(760, Math.min(window.innerWidth - 40, state.startWidth + dx))
+            : current.width;
+
+        const nextHeight =
+          state.edge === "bottom" || state.edge === "corner"
+            ? Math.max(560, Math.min(window.innerHeight - 64, state.startHeight + dy))
+            : current.height;
+
+        return { width: nextWidth, height: nextHeight };
+      });
+    }
+
+    function onUp() {
+      resizeStateRef.current = null;
+    }
+
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+    return () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+  }, []);
+
+  function startResize(edge: "right" | "bottom" | "corner") {
+    return (e: React.MouseEvent<HTMLDivElement>) => {
+      e.preventDefault();
+      e.stopPropagation();
+      resizeStateRef.current = {
+        startX: e.clientX,
+        startY: e.clientY,
+        startWidth: modalSize.width,
+        startHeight: modalSize.height,
+        edge,
+      };
+    };
+  }
+
+  function renderModalWindow(content: React.ReactNode) {
+    return (
+      <div style={modalOverlay} onMouseDown={onClose}>
+        <div style={getModalWindowStyle(modalSize)} onMouseDown={(e) => e.stopPropagation()}>
+          {content}
+          <div style={modalResizeRight} onMouseDown={startResize("right")} />
+          <div style={modalResizeBottom} onMouseDown={startResize("bottom")} />
+          <div style={modalResizeCorner} onMouseDown={startResize("corner")} />
+        </div>
+      </div>
+    );
+  }
 
   const createdDisplay = useMemo(() => {
     if (record?.dateRequestCreated) return fmtDateTime(record.dateRequestCreated);
@@ -1088,26 +1158,14 @@ export default function DesignRequestWindow({
     );
 
     if (isModal) {
-      return (
-        <div style={modalOverlay} onMouseDown={onClose}>
-          <div style={modalWindow} onMouseDown={(e) => e.stopPropagation()}>
-            {loadingShell}
-          </div>
-        </div>
-      );
+      return renderModalWindow(loadingShell);
     }
 
     return <div className="page-shell-wide">{loadingShell}</div>;
   }
 
   if (isModal) {
-    return (
-      <div style={modalOverlay} onMouseDown={onClose}>
-        <div style={modalWindow} onMouseDown={(e) => e.stopPropagation()}>
-          {shell}
-        </div>
-      </div>
-    );
+    return renderModalWindow(shell);
   }
 
   return <div className="page-shell-wide">{shell}</div>;
@@ -1175,12 +1233,50 @@ const modalOverlay: React.CSSProperties = {
   justifyContent: "center",
   padding: "42px 20px 20px",
   zIndex: 1000,
+  overflow: "hidden",
 };
 
-const modalWindow: React.CSSProperties = {
-  width: "min(895px, calc(100vw - 40px))",
-  maxHeight: "calc(100vh - 64px)",
-  overflow: "auto",
+function getModalWindowStyle(size: { width: number; height: number }): React.CSSProperties {
+  return {
+    width: Math.min(size.width, window.innerWidth - 40),
+    height: Math.min(size.height, window.innerHeight - 64),
+    maxWidth: "calc(100vw - 40px)",
+    maxHeight: "calc(100vh - 64px)",
+    overflow: "hidden",
+    position: "relative",
+    display: "flex",
+    flexDirection: "column",
+  };
+}
+
+const modalResizeRight: React.CSSProperties = {
+  position: "absolute",
+  top: 0,
+  right: -2,
+  width: 12,
+  height: "100%",
+  cursor: "ew-resize",
+  zIndex: 5,
+};
+
+const modalResizeBottom: React.CSSProperties = {
+  position: "absolute",
+  left: 0,
+  bottom: -2,
+  width: "100%",
+  height: 12,
+  cursor: "ns-resize",
+  zIndex: 5,
+};
+
+const modalResizeCorner: React.CSSProperties = {
+  position: "absolute",
+  right: 0,
+  bottom: 0,
+  width: 18,
+  height: 18,
+  cursor: "nwse-resize",
+  zIndex: 6,
 };
 
 const notFoundWrap: React.CSSProperties = {
@@ -1197,6 +1293,10 @@ const windowWrap: React.CSSProperties = {
   borderRadius: 10,
   boxShadow: "var(--shadow-md)",
   overflow: "hidden",
+  height: "100%",
+  display: "flex",
+  flexDirection: "column",
+  minHeight: 0,
 };
 
 const toolStrip: React.CSSProperties = {
@@ -1243,6 +1343,9 @@ const tabBtnInactive: React.CSSProperties = {
 const windowBody: React.CSSProperties = {
   display: "grid",
   gap: 0,
+  flex: 1,
+  minHeight: 0,
+  overflow: "auto",
 };
 
 const generalGrid: React.CSSProperties = {
