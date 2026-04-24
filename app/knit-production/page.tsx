@@ -143,7 +143,7 @@ function stockOrderBadge(v: boolean) {
 }
 
 export default function KnitProductionPage() {
-  const def = useMemo(() => getRangeLastNDays(30), []);
+  const def = useMemo(() => getRangeLastNDays(1), []);
   const [entryDateFrom, setEntryDateFrom] = useState(def.from);
   const [entryDateTo, setEntryDateTo] = useState(def.to);
 
