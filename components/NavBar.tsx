@@ -441,7 +441,7 @@ export default function NavBar() {
 
               <NavLink href="/design-workflow" label="Workflow" pathname={pathname} onClick={handleNavigate} />
 
-              {canSeeProduction ? (
+              {canSeeProduction && productionItems.length > 0 ? (
                 <Dropdown
                   label="Production"
                   active={productionActive}
@@ -450,7 +450,6 @@ export default function NavBar() {
                   items={productionItems}
                   pathname={pathname}
                   onNavigate={() => setOpenMenu(null)}
-                  disabled={productionItems.length === 0}
                 />
               ) : null}
 
