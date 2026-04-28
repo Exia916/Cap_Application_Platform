@@ -15,6 +15,13 @@ const ALLOWED_ROLES = new Set([
   "WAREHOUSE",
   "USER",
   "OPERATOR",
+  "CUSTOMER SERVICE",
+  "OVERSEAS CUSTOMER SERVICE",
+  "ORDER PROCESSING",
+  "ART",
+  "DIGITIZING",
+  "PURCHASING",
+  "SALES",
 ]);
 
 function roleOk(role: string | null | undefined) {

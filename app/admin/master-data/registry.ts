@@ -31,6 +31,12 @@ export const MASTER_KEYS = [
   "cmms_departments",
   "cmms_assets",
 
+  // Design Workflow lookups
+  "design_workflow_bins",
+  "design_workflow_customers",
+  "design_workflow_statuses",
+  "design_workflow_styles",
+
   // legacy
   "emb_type_locations",
 ] as const;
@@ -327,6 +333,54 @@ export const MASTER_UI: Record<MasterKey, MasterUiConfig> = {
         optionsSource: "cmms_departments",
         displayKey: "department",
       },
+      { key: "is_active", label: "Active", type: "boolean", widthClass: "w-24" },
+    ],
+  },
+
+  design_workflow_bins: {
+    key: "design_workflow_bins",
+    title: "Design Workflow Bins",
+    description: "Bin values used in Design Workflow requests.",
+    columns: [
+      { key: "code", label: "Code", type: "text", required: true, widthClass: "w-32" },
+      { key: "description", label: "Description", type: "text", required: true },
+      { key: "sort_order", label: "Sort", type: "number", widthClass: "w-24" },
+      { key: "is_active", label: "Active", type: "boolean", widthClass: "w-24" },
+    ],
+  },
+
+  design_workflow_customers: {
+    key: "design_workflow_customers",
+    title: "Design Workflow Customers",
+    description: "Customer values used in Design Workflow requests.",
+    columns: [
+      { key: "code", label: "Code", type: "text", required: true, widthClass: "w-32" },
+      { key: "name", label: "Name", type: "text", required: true },
+      { key: "sort_order", label: "Sort", type: "number", widthClass: "w-24" },
+      { key: "is_active", label: "Active", type: "boolean", widthClass: "w-24" },
+    ],
+  },
+
+  design_workflow_statuses: {
+    key: "design_workflow_statuses",
+    title: "Design Workflow Statuses",
+    description: "Status values used in Design Workflow requests.",
+    columns: [
+      { key: "code", label: "Code", type: "text", required: true, widthClass: "w-32" },
+      { key: "label", label: "Label", type: "text", required: true },
+      { key: "sort_order", label: "Sort", type: "number", widthClass: "w-24" },
+      { key: "is_active", label: "Active", type: "boolean", widthClass: "w-24" },
+    ],
+  },
+
+  design_workflow_styles: {
+    key: "design_workflow_styles",
+    title: "Design Workflow Styles",
+    description: "Style values used in Design Workflow requests.",
+    columns: [
+      { key: "code", label: "Code", type: "text", required: true, widthClass: "w-32" },
+      { key: "description", label: "Description", type: "text", required: true },
+      { key: "sort_order", label: "Sort", type: "number", widthClass: "w-24" },
       { key: "is_active", label: "Active", type: "boolean", widthClass: "w-24" },
     ],
   },
