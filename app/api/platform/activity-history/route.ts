@@ -15,6 +15,13 @@ const ALLOWED_ROLES = new Set([
   "WAREHOUSE",
   "USER",
   "OPERATOR",
+  "CUSTOMER SERVICE",
+  "OVERSEAS CUSTOMER SERVICE",
+  "ORDER PROCESSING",
+  "ART",
+  "DIGITIZING",
+  "PURCHASING",
+  "SALES",
 ]);
 
 export async function GET(req: NextRequest) {

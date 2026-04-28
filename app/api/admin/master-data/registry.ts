@@ -22,7 +22,11 @@ export type MasterKey =
   | "techs"
   | "wo_types"
   | "cmms_departments"
-  | "cmms_assets";
+  | "cmms_assets"
+  | "design_workflow_bins"
+  | "design_workflow_customers"
+  | "design_workflow_statuses"
+  | "design_workflow_styles";
 
 export type EditableField =
   | "code"
@@ -312,6 +316,50 @@ export const MASTER_DATA: Record<MasterKey, MasterRegistryItem> = {
       "a.is_active",
     ],
     orderBy: "a.name ASC",
+    supportsInactive: true,
+    allowDelete: false,
+  },
+
+  design_workflow_bins: {
+    key: "design_workflow_bins",
+    table: "public.design_workflow_bins",
+    idCol: "id",
+    editable: ["code", "description", "sort_order", "is_active"],
+    selectCols: ["id", "code", "description", "sort_order", "is_active", "created_at", "updated_at"],
+    orderBy: "sort_order ASC, code ASC",
+    supportsInactive: true,
+    allowDelete: false,
+  },
+
+  design_workflow_customers: {
+    key: "design_workflow_customers",
+    table: "public.design_workflow_customers",
+    idCol: "id",
+    editable: ["code", "name", "sort_order", "is_active"],
+    selectCols: ["id", "code", "name", "sort_order", "is_active", "created_at", "updated_at"],
+    orderBy: "sort_order ASC, name ASC",
+    supportsInactive: true,
+    allowDelete: false,
+  },
+
+  design_workflow_statuses: {
+    key: "design_workflow_statuses",
+    table: "public.design_workflow_statuses",
+    idCol: "id",
+    editable: ["code", "label", "sort_order", "is_active"],
+    selectCols: ["id", "code", "label", "sort_order", "is_active", "created_at", "updated_at"],
+    orderBy: "sort_order ASC, code ASC",
+    supportsInactive: true,
+    allowDelete: false,
+  },
+
+  design_workflow_styles: {
+    key: "design_workflow_styles",
+    table: "public.design_workflow_styles",
+    idCol: "id",
+    editable: ["code", "description", "sort_order", "is_active"],
+    selectCols: ["id", "code", "description", "sort_order", "is_active", "created_at", "updated_at"],
+    orderBy: "sort_order ASC, code ASC",
     supportsInactive: true,
     allowDelete: false,
   },

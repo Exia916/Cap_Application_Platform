@@ -38,17 +38,23 @@ export default function NavBar() {
   const pathname = usePathname() || "";
   const router = useRouter();
 
+  const isLoginPage = pathname === "/login";
+
   const [me, setMe] = useState<Me | null>(null);
   const [meLoaded, setMeLoaded] = useState(false);
+  
 
   const [globalQ, setGlobalQ] = useState("");
   const [searchFocused, setSearchFocused] = useState(false);
   const [openMenu, setOpenMenu] = useState<OpenMenu>(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
+  const [isNavigating, setIsNavigating] = useState(false); // Added for interaction feedback
   const menusWrapRef = useRef<HTMLDivElement | null>(null);
 
   const [navMode, setNavMode] = useState<"wide" | "medium" | "small">("wide");
+
+  
 
   useEffect(() => {
     function compute() {
@@ -175,10 +181,11 @@ export default function NavBar() {
     };
   }, []);
 
-  // Close mobile menu on navigation
+  // Close mobile menu and reset loading on navigation
   useEffect(() => {
     setMobileMenuOpen(false);
     setMobileSearchOpen(false);
+    setIsNavigating(false); // Reset feedback when page changes
   }, [pathname]);
 
   const display = useMemo(
@@ -196,7 +203,6 @@ export default function NavBar() {
     "ADMIN",
     "SUPERVISOR",
     "MANAGER",
-    "CUSTOMER SERVICE",
     "PURCHASING",
     "SALES",
   ] as const;
@@ -205,6 +211,14 @@ export default function NavBar() {
   const isManager = isAdmin || role === "MANAGER" || role === "SUPERVISOR";
 
   const canGlobalSearch = GLOBAL_SEARCH_ROLES.includes(role as any);
+
+  const canSeeProduction =
+  meLoaded &&
+  (isAdmin ||
+    role === "SUPERVISOR" ||
+    role === "MANAGER" ||
+    role === "USER" ||
+    role === "SALES");
 
   const canSeeRepairRequests =
     meLoaded && (isAdmin || role === "MANAGER" || role === "SUPERVISOR");
@@ -231,6 +245,7 @@ export default function NavBar() {
     const q = globalQ.trim();
     if (!q || !canGlobalSearch) return;
     setOpenMenu(null);
+    setIsNavigating(true);
     router.push(`/admin/global-search?q=${encodeURIComponent(q)}`);
   }
 
@@ -241,13 +256,13 @@ export default function NavBar() {
 
   const productionItems: MenuItem[] = [
     { href: "/daily-production", label: "Embroidery" },
-    { href: "/qc-daily-production", label: "QC" },
-    { href: "/emblem-production", label: "Emblem" },
-    { href: "/laser-production", label: "Laser" },
-    { href: "/knit-production", label: "Knit Production" },
-    { href: "/knit-qc", label: "Knit QC" },
-    { href: "/production/sample-embroidery", label: "Sample Embroidery" },
-    { href: "/platform/work-sessions", label: "Work Sessions" },
+  { href: "/qc-daily-production", label: "QC" },
+  { href: "/emblem-production", label: "Emblem" },
+  { href: "/laser-production", label: "Laser" },
+  { href: "/knit-production", label: "Knit Production" },
+  { href: "/knit-qc", label: "Knit QC" },
+  { href: "/production/sample-embroidery", label: "Sample Embroidery" },
+  { href: "/platform/work-sessions", label: "Work Sessions" },
   ];
 
   const recutItems: MenuItem[] = [
@@ -289,45 +304,13 @@ export default function NavBar() {
   const managerActive = managerItems.some((i) => i.href && isActive(pathname, i.href));
   const adminActive = adminItems.some((i) => i.href && isActive(pathname, i.href));
 
-  const quickAction = useMemo(() => {
-    if (pathname.startsWith("/daily-production")) {
-      return { href: "/daily-production/add", label: "New Embroidery Entry" };
-    }
-    if (pathname.startsWith("/qc-daily-production")) {
-      return { href: "/qc-daily-production/add", label: "New QC Entry" };
-    }
-    if (pathname.startsWith("/emblem-production")) {
-      return { href: "/emblem-production/add", label: "New Emblem Entry" };
-    }
-    if (pathname.startsWith("/laser-production")) {
-      return { href: "/laser-production/add", label: "New Laser Entry" };
-    }
-    if (pathname.startsWith("/knit-production")) {
-      return { href: "/knit-production/add", label: "New Knit Production Entry" };
-    }
-    if (pathname.startsWith("/production/sample-embroidery")) {
-      return {
-        href: "/production/sample-embroidery/add",
-        label: "New Sample Embroidery Entry",
-      };
-    }
-    if (pathname.startsWith("/recuts")) {
-      if (!canSeeRecuts) return null;
-      return { href: "/recuts/add", label: "New Recut Request" };
-    }
-    if (pathname.startsWith("/cmms/repair-requests")) {
-      if (!canSeeRepairRequests) return null;
-      return { href: "/cmms/repair-requests/add", label: "New Repair Request" };
-    }
-    if (pathname.startsWith("/cmms")) {
-      if (!canSeeCMMS) return null;
-      return { href: "/cmms/add", label: "New CMMS Work Order" };
-    }
-    return null;
-  }, [pathname, canSeeRecuts, canSeeRepairRequests, canSeeCMMS]);
-
   function toggle(menu: OpenMenu) {
     setOpenMenu((cur) => (cur === menu ? null : menu));
+  }
+
+  function handleNavigate() {
+    setOpenMenu(null);
+    setIsNavigating(true); // Trigger feedback
   }
 
   const showHomeAsPrimary = navMode !== "small";
@@ -349,11 +332,16 @@ export default function NavBar() {
     if (!showHomeAsPrimary) {
       sections.push({
         title: "Quick Links",
-        items: [{ href: "/dashboard", label: "Home", show: true }],
+        items: [
+          { href: "/dashboard", label: "Home", show: true },
+          { href: "/design-workflow", label: "Workflow", show: true },
+        ],
       });
     }
 
-    sections.push({ title: "Production", items: productionItems });
+    if (canSeeProduction && productionItems.length > 0) {
+  sections.push({ title: "Production", items: productionItems });
+}
 
     if (!showRecutAsPrimary && recutItems.length > 0) {
       sections.push({ title: "Recut", items: recutItems });
@@ -385,8 +373,34 @@ export default function NavBar() {
     adminItems,
   ]);
 
+  if (isLoginPage) {
+    return (
+      <nav style={loginNav}>
+        <Link
+          href="/login"
+          style={loginBrandWrap}
+          title="Cap America - Cap Application Platform"
+        >
+          <Image
+            src="/brand/ca-mark.jpg"
+            alt="Cap America"
+            width={32}
+            height={32}
+            priority
+            style={{ objectFit: "contain" }}
+          />
+
+          <span style={brandTitle}>CAP | Cap Application Platform</span>
+        </Link>
+      </nav>
+    );
+  }
+
   return (
     <nav style={navMode === "small" ? { ...nav, flexDirection: "column", padding: 0 } : nav}>
+
+      {/* Loading Progress Bar Indicator */}
+      {isNavigating && <div style={loadingBar} />}
 
       {/* ── Top bar ───────────────────────────────────────────────── */}
       <div
@@ -399,7 +413,12 @@ export default function NavBar() {
       >
         {/* Left: brand + desktop nav */}
         <div style={left}>
-          <Link href="/dashboard" style={brandWrap} title="Cap America - Cap Application Platform">
+          <Link 
+            href="/dashboard" 
+            style={brandWrap} 
+            title="Cap America - Cap Application Platform"
+            onClick={handleNavigate}
+          >
             <Image
               src="/brand/ca-mark.jpg"
               alt="Cap America"
@@ -417,20 +436,24 @@ export default function NavBar() {
           {navMode !== "small" ? (
             <>
               {showHomeAsPrimary ? (
-                <NavLink href="/dashboard" label="Home" pathname={pathname} />
+                <NavLink href="/dashboard" label="Home" pathname={pathname} onClick={handleNavigate} />
               ) : null}
 
-              <Dropdown
-                label="Production"
-                active={productionActive}
-                open={openMenu === "production"}
-                onToggle={() => toggle("production")}
-                items={productionItems}
-                pathname={pathname}
-                onNavigate={() => setOpenMenu(null)}
-              />
+              <NavLink href="/design-workflow" label="Workflow" pathname={pathname} onClick={handleNavigate} />
 
-              {showRecutAsPrimary ? (
+              {canSeeProduction && productionItems.length > 0 ? (
+                <Dropdown
+                  label="Production"
+                  active={productionActive}
+                  open={openMenu === "production"}
+                  onToggle={() => toggle("production")}
+                  items={productionItems}
+                  pathname={pathname}
+                  onNavigate={() => setOpenMenu(null)}
+                />
+              ) : null}
+
+              {showRecutAsPrimary && recutItems.length > 0 ? (
                 <Dropdown
                   label="Recut"
                   active={recutActive}
@@ -438,12 +461,11 @@ export default function NavBar() {
                   onToggle={() => toggle("recut")}
                   items={recutItems}
                   pathname={pathname}
-                  onNavigate={() => setOpenMenu(null)}
-                  disabled={recutItems.length === 0}
+                  onNavigate={handleNavigate}
                 />
               ) : null}
 
-              {showMaintenanceAsPrimary ? (
+              {showMaintenanceAsPrimary && maintenanceItems.length > 0 ? (
                 <Dropdown
                   label="Maintenance"
                   active={maintenanceActive}
@@ -451,12 +473,11 @@ export default function NavBar() {
                   onToggle={() => toggle("maintenance")}
                   items={maintenanceItems}
                   pathname={pathname}
-                  onNavigate={() => setOpenMenu(null)}
-                  disabled={maintenanceItems.length === 0}
+                  onNavigate={handleNavigate}
                 />
               ) : null}
 
-              {showManagerAsPrimary ? (
+              {showManagerAsPrimary && managerItems.length > 0 ? (
                 <Dropdown
                   label="Manager"
                   active={managerActive}
@@ -464,12 +485,11 @@ export default function NavBar() {
                   onToggle={() => toggle("manager")}
                   items={managerItems}
                   pathname={pathname}
-                  onNavigate={() => setOpenMenu(null)}
-                  disabled={managerItems.length === 0}
+                  onNavigate={handleNavigate}
                 />
               ) : null}
 
-              {showAdminAsPrimary ? (
+              {showAdminAsPrimary && adminItems.length > 0 ? (
                 <Dropdown
                   label="Admin"
                   active={adminActive}
@@ -477,8 +497,7 @@ export default function NavBar() {
                   onToggle={() => toggle("admin")}
                   items={adminItems}
                   pathname={pathname}
-                  onNavigate={() => setOpenMenu(null)}
-                  disabled={adminItems.length === 0}
+                  onNavigate={handleNavigate}
                 />
               ) : null}
 
@@ -495,14 +514,14 @@ export default function NavBar() {
                   onToggle={() => toggle("more")}
                   sections={moreSections}
                   pathname={pathname}
-                  onNavigate={() => setOpenMenu(null)}
+                  onNavigate={handleNavigate}
                 />
               ) : null}
             </>
           ) : null}
         </div>
 
-        {/* Right: search, quick action, user pill, hamburger */}
+        {/* Right: search, user pill, hamburger */}
         <div style={right}>
           {/* Desktop global search */}
           {navMode !== "small" && meLoaded && canGlobalSearch ? (
@@ -572,18 +591,6 @@ export default function NavBar() {
             )
           ) : null}
 
-          {/* Quick action — hide when mobile search is open */}
-          {quickAction && !mobileSearchOpen ? (
-            <Link
-              href={quickAction.href}
-              style={quickActionBtn}
-              title={quickAction.label}
-              onClick={() => setOpenMenu(null)}
-            >
-              + New
-            </Link>
-          ) : null}
-
           {/* User pill — hide when mobile search is open */}
           {!mobileSearchOpen ? (
             <div style={{ position: "relative" }}>
@@ -630,7 +637,7 @@ export default function NavBar() {
                     href="/playbooks"
                     role="menuitem"
                     style={menuItem}
-                    onClick={() => setOpenMenu(null)}
+                    onClick={handleNavigate}
                   >
                     Playbooks
                   </Link>
@@ -645,6 +652,7 @@ export default function NavBar() {
                       setMe(null);
                       setMeLoaded(false);
                       setOpenMenu(null);
+                      setIsNavigating(true);
                     }}
                   >
                     Logout
@@ -676,9 +684,14 @@ export default function NavBar() {
             sections={[
               {
                 title: "Quick Links",
-                items: [{ href: "/dashboard", label: "Home", show: true }],
+                items: [
+                  { href: "/dashboard", label: "Home", show: true },
+                  { href: "/design-workflow", label: "Workflow", show: true },
+                ],
               },
-              { title: "Production", items: productionItems },
+              ...(canSeeProduction && productionItems.length > 0
+  ? [{ title: "Production", items: productionItems }]
+  : []),
               ...(recutItems.length > 0 ? [{ title: "Recut", items: recutItems }] : []),
               ...(maintenanceItems.length > 0
                 ? [{ title: "Maintenance", items: maintenanceItems }]
@@ -687,7 +700,7 @@ export default function NavBar() {
               ...(adminItems.length > 0 ? [{ title: "Admin", items: adminItems }] : []),
             ]}
             pathname={pathname}
-            onNavigate={() => setMobileMenuOpen(false)}
+            onNavigate={handleNavigate}
           />
         </div>
       ) : null}
@@ -699,14 +712,16 @@ function NavLink({
   href,
   label,
   pathname,
+  onClick,
 }: {
   href: string;
   label: string;
   pathname: string;
+  onClick: () => void;
 }) {
   const active = isActive(pathname, href);
   return (
-    <Link href={href} style={{ ...link, ...(active ? activeLink : {}) }}>
+    <Link href={href} style={{ ...link, ...(active ? activeLink : {}) }} onClick={onClick}>
       {label}
     </Link>
   );
@@ -718,7 +733,6 @@ function Dropdown({
   pathname,
   open,
   active,
-  disabled,
   onToggle,
   onNavigate,
 }: {
@@ -727,7 +741,6 @@ function Dropdown({
   pathname: string;
   open: boolean;
   active: boolean;
-  disabled?: boolean;
   onToggle: () => void;
   onNavigate: () => void;
 }) {
@@ -741,15 +754,12 @@ function Dropdown({
           ...dropBtn,
           ...(active ? dropBtnActive : {}),
           ...(open ? dropBtnOpen : {}),
-          ...(disabled ? dropBtnDisabled : {}),
         }}
         onClick={() => {
-          if (disabled) return;
           onToggle();
         }}
         aria-expanded={open}
         aria-haspopup="menu"
-        disabled={disabled}
       >
         <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
           {label}
@@ -944,6 +954,27 @@ function MobileNavPanel({
   );
 }
 
+const loginNav: React.CSSProperties = {
+  position: "sticky",
+  top: 0,
+  zIndex: 50,
+  display: "flex",
+  justifyContent: "center",
+  alignItems: "center",
+  minHeight: 56,
+  padding: "10px 24px",
+  background: "linear-gradient(180deg,#ffffff 0%,#f9fafb 100%)",
+  borderBottom: "2px solid #b91c1c",
+};
+
+const loginBrandWrap: React.CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  justifyContent: "center",
+  gap: 8,
+  textDecoration: "none",
+};
+
 const nav: React.CSSProperties = {
   position: "sticky",
   top: 0,
@@ -957,7 +988,7 @@ const nav: React.CSSProperties = {
 
 const navInner: React.CSSProperties = {
   width: "100%",
-  maxWidth: 1600,
+  maxWidth: "none",
   display: "flex",
   justifyContent: "space-between",
   alignItems: "center",
@@ -1038,11 +1069,6 @@ const dropBtnOpen: React.CSSProperties = {
   background: "#ffffff",
   border: "1px solid #d1d5db",
   boxShadow: "0 8px 24px rgba(17,24,39,0.08)",
-};
-
-const dropBtnDisabled: React.CSSProperties = {
-  opacity: 0.55,
-  cursor: "not-allowed",
 };
 
 const chev: React.CSSProperties = {
@@ -1146,21 +1172,6 @@ const searchBtn: React.CSSProperties = {
   cursor: "pointer",
 };
 
-const quickActionBtn: React.CSSProperties = {
-  display: "inline-flex",
-  alignItems: "center",
-  justifyContent: "center",
-  minHeight: 38,
-  padding: "0 14px",
-  borderRadius: 10,
-  textDecoration: "none",
-  background: "#22448b",
-  color: "#ffffff",
-  fontWeight: 800,
-  fontSize: 14,
-  whiteSpace: "nowrap",
-};
-
 const userPillBtn: React.CSSProperties = {
   display: "inline-flex",
   alignItems: "center",
@@ -1233,3 +1244,24 @@ const mobilePanelStyle: React.CSSProperties = {
   overflowY: "auto",
   paddingBottom: 16,
 };
+
+const loadingBar: React.CSSProperties = {
+  position: "absolute",
+  top: 0,
+  left: 0,
+  right: 0,
+  height: 3,
+  backgroundColor: "#1d4ed8",
+  zIndex: 100,
+  animation: "loading-anim 2s infinite linear",
+  transformOrigin: "left",
+};
+
+// Add this to your globals.css or a <style> tag
+const styleSheet = `
+@keyframes loading-anim {
+  0% { transform: scaleX(0); }
+  50% { transform: scaleX(0.7); }
+  100% { transform: scaleX(1); opacity: 0; }
+}
+`;
