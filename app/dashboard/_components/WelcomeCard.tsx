@@ -7,27 +7,21 @@ type MeResponse = {
   username?: string | null;
   displayName?: string | null;
   role?: string | null;
+  department?: string | null;
 };
 
-function getRoleLabel(role: string, username: string) {
-  if (role === "ADMIN" || username === "admin") return "Administrator";
-  if (role === "MANAGER") return "Manager";
-  if (role === "SUPERVISOR") return "Supervisor";
-  if (role === "USER") return "User";
-  return "Team Member";
+function formatValue(value?: string | null, fallback = "Not Assigned") {
+  const clean = String(value ?? "").trim();
+  return clean || fallback;
 }
 
-function getRoleMessage(role: string, username: string) {
-  if (role === "ADMIN" || username === "admin") {
-    return "Use the dashboard as your starting point for platform administration, work areas, and sales order lookup.";
-  }
-  if (role === "MANAGER") {
-    return "Use the dashboard as your starting point for oversight work, production areas, and sales order lookup.";
-  }
-  if (role === "SUPERVISOR") {
-    return "Use the dashboard as your starting point for review work, production areas, and sales order lookup.";
-  }
-  return "Use the dashboard as your starting point for production entries, work areas, and sales order lookup.";
+function formatRole(role?: string | null, username?: string | null) {
+  const cleanRole = String(role ?? "").trim().toUpperCase();
+  const cleanUsername = String(username ?? "").trim().toLowerCase();
+
+  if (cleanRole === "ADMIN" || cleanUsername === "admin") return "ADMIN";
+
+  return cleanRole || "USER";
 }
 
 export default function WelcomeCard() {
@@ -63,36 +57,45 @@ export default function WelcomeCard() {
     };
   }, []);
 
-  const role = useMemo(() => (me?.role ?? "").trim().toUpperCase(), [me?.role]);
-  const username = useMemo(() => (me?.username ?? "").trim().toLowerCase(), [me?.username]);
+  const username = useMemo(
+    () => (me?.username ?? "").trim().toLowerCase(),
+    [me?.username]
+  );
+
   const displayName = useMemo(
     () => me?.displayName?.trim() || me?.username?.trim() || "User",
     [me?.displayName, me?.username]
   );
 
-  const roleLabel = getRoleLabel(role, username);
-  const roleMessage = getRoleMessage(role, username);
+  const roleLabel = useMemo(
+    () => formatRole(me?.role, username),
+    [me?.role, username]
+  );
+
+  const departmentLabel = useMemo(
+    () => formatValue(me?.department),
+    [me?.department]
+  );
 
   return (
     <section className="card card-lg dashboard-welcome-card">
       <div className="dashboard-welcome-main">
-        <div className="dashboard-kicker">Home Workspace</div>
+        <div className="dashboard-kicker">Dashboard</div>
+
         <h1 className="dashboard-title">Welcome, {displayName}</h1>
+
         <p className="dashboard-subtitle">
-          {loaded ? roleMessage : "Loading your dashboard workspace..."}
+          Use this page for quick access to CAP tools, company resources, local
+          weather, updates, and common lookup options.
         </p>
 
         <div className="dashboard-welcome-actions">
-          <Link href="/sales-orders" className="btn btn-primary">
-            Sales Order Lookup
-          </Link>
-
-          <Link href="/recuts" className="btn btn-secondary">
-            Open Recuts
-          </Link>
-
           <Link href="/dashboard/metrics" className="btn btn-secondary">
             My Metrics
+          </Link>
+
+          <Link href="/playbooks" className="btn btn-secondary">
+            Playbooks
           </Link>
         </div>
       </div>
@@ -100,12 +103,16 @@ export default function WelcomeCard() {
       <div className="dashboard-welcome-side">
         <div className="dashboard-summary-card">
           <div className="dashboard-summary-label">Role</div>
-          <div className="dashboard-summary-value">{loaded ? roleLabel : "..."}</div>
+          <div className="dashboard-summary-value">
+            {loaded ? roleLabel : "..."}
+          </div>
         </div>
 
         <div className="dashboard-summary-card">
-          <div className="dashboard-summary-label">Home</div>
-          <div className="dashboard-summary-value">Dashboard</div>
+          <div className="dashboard-summary-label">Department</div>
+          <div className="dashboard-summary-value">
+            {loaded ? departmentLabel : "..."}
+          </div>
         </div>
       </div>
 
