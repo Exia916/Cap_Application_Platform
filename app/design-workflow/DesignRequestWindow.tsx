@@ -73,13 +73,13 @@ type BinLookupRow = {
 };
 
 type CustomerLookupRow = {
-  id: number;
+  id: string;
   code: string;
   name: string;
 };
 
 type StyleLookupRow = {
-  id: number;
+  id: string;
   code: string;
   description: string | null;
 };
@@ -156,6 +156,244 @@ function emptyForm() {
   };
 }
 
+
+type SearchComboboxProps<T> = {
+  value: string;
+  disabled?: boolean;
+  placeholder?: string;
+  initialRows?: T[];
+  endpoint: string;
+  getKey: (row: T) => string;
+  getPrimary: (row: T) => string;
+  getSecondary?: (row: T) => string | null;
+  onSelect: (row: T) => void;
+  onTextChange?: (text: string) => void;
+};
+
+function LookupSearchCombobox<T>({
+  value,
+  disabled = false,
+  placeholder = "Search...",
+  initialRows = [],
+  endpoint,
+  getKey,
+  getPrimary,
+  getSecondary,
+  onSelect,
+  onTextChange,
+}: SearchComboboxProps<T>) {
+  const [query, setQuery] = useState(value || "");
+  const [rows, setRows] = useState<T[]>(initialRows);
+  const [open, setOpen] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const wrapRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    setQuery(value || "");
+  }, [value]);
+
+  useEffect(() => {
+    setRows(initialRows);
+  }, [initialRows]);
+
+  useEffect(() => {
+    function onDocMouseDown(e: MouseEvent) {
+      if (!wrapRef.current) return;
+      if (!wrapRef.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    }
+
+    document.addEventListener("mousedown", onDocMouseDown);
+    return () => document.removeEventListener("mousedown", onDocMouseDown);
+  }, []);
+
+  useEffect(() => {
+    if (disabled) return;
+
+    const controller = new AbortController();
+    const t = window.setTimeout(async () => {
+      try {
+        setLoading(true);
+        setError(null);
+
+        const sp = new URLSearchParams();
+        if (query.trim()) sp.set("q", query.trim());
+        sp.set("limit", "75");
+
+        const res = await fetch(`${endpoint}?${sp.toString()}`, {
+          cache: "no-store",
+          credentials: "include",
+          signal: controller.signal,
+        });
+
+        const data = await res.json().catch(() => []);
+
+        if (!res.ok) {
+          throw new Error((data as any)?.error || "Lookup search failed.");
+        }
+
+        setRows(Array.isArray(data) ? data : []);
+      } catch (err: any) {
+        if (err?.name === "AbortError") return;
+        setRows([]);
+        setError(err?.message || "Lookup search failed.");
+      } finally {
+        setLoading(false);
+      }
+    }, 250);
+
+    return () => {
+      window.clearTimeout(t);
+      controller.abort();
+    };
+  }, [query, disabled, endpoint]);
+
+  function choose(row: T) {
+    const next = getPrimary(row);
+    setQuery(next);
+    onSelect(row);
+    setOpen(false);
+  }
+
+  return (
+    <div ref={wrapRef} style={{ position: "relative" }}>
+      <input
+        className="input"
+        value={query}
+        disabled={disabled}
+        placeholder={placeholder}
+        autoComplete="off"
+        onFocus={() => setOpen(true)}
+        onChange={(e) => {
+          const next = e.target.value;
+          setQuery(next);
+          onTextChange?.(next);
+          setOpen(true);
+        }}
+        onKeyDown={(e) => {
+          if (e.key === "Escape") {
+            setOpen(false);
+            return;
+          }
+
+          if (e.key === "Enter") {
+            e.preventDefault();
+
+            const exact = rows.find(
+              (row) => getPrimary(row).toLowerCase() === query.trim().toLowerCase()
+            );
+
+            if (exact) {
+              choose(exact);
+              return;
+            }
+
+            if (rows.length === 1) {
+              choose(rows[0]);
+            }
+          }
+        }}
+      />
+
+      {open && !disabled ? (
+        <div style={lookupMenu}>
+          {loading ? (
+            <div style={lookupEmpty}>Searching…</div>
+          ) : error ? (
+            <div style={lookupError}>{error}</div>
+          ) : rows.length === 0 ? (
+            <div style={lookupEmpty}>No matching records found.</div>
+          ) : (
+            rows.map((row) => {
+              const primary = getPrimary(row);
+              const secondary = getSecondary?.(row);
+
+              return (
+                <button
+                  key={getKey(row)}
+                  type="button"
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => choose(row)}
+                  style={lookupItem}
+                >
+                  <strong>{primary}</strong>
+                  {secondary ? (
+                    <span style={{ color: "var(--text-soft)" }}> - {secondary}</span>
+                  ) : null}
+                </button>
+              );
+            })
+          )}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function CustomerSearchCombobox({
+  value,
+  selectedName,
+  rows,
+  disabled,
+  onSelect,
+  onTextChange,
+}: {
+  value: string;
+  selectedName: string;
+  rows: CustomerLookupRow[];
+  disabled?: boolean;
+  onSelect: (row: CustomerLookupRow) => void;
+  onTextChange: (text: string) => void;
+}) {
+  const displayValue = selectedName || value || "";
+
+  return (
+    <LookupSearchCombobox<CustomerLookupRow>
+      value={displayValue}
+      disabled={disabled}
+      placeholder="Search customer..."
+      initialRows={rows}
+      endpoint="/api/design-workflow/lookups/customers"
+      getKey={(row) => String(row.id)}
+      getPrimary={(row) => row.name || row.code}
+      getSecondary={(row) => (row.code && row.code !== row.name ? row.code : null)}
+      onSelect={onSelect}
+      onTextChange={onTextChange}
+    />
+  );
+}
+
+function StyleSearchCombobox({
+  value,
+  rows,
+  disabled,
+  onSelect,
+  onTextChange,
+}: {
+  value: string;
+  rows: StyleLookupRow[];
+  disabled?: boolean;
+  onSelect: (row: StyleLookupRow) => void;
+  onTextChange: (text: string) => void;
+}) {
+  return (
+    <LookupSearchCombobox<StyleLookupRow>
+      value={value || ""}
+      disabled={disabled}
+      placeholder="Search style..."
+      initialRows={rows}
+      endpoint="/api/design-workflow/lookups/styles"
+      getKey={(row) => String(row.id)}
+      getPrimary={(row) => row.code}
+      getSecondary={(row) => row.description}
+      onSelect={onSelect}
+      onTextChange={onTextChange}
+    />
+  );
+}
+
 export default function DesignRequestWindow({
   mode,
   requestId,
@@ -190,6 +428,7 @@ export default function DesignRequestWindow({
 
   const [serverError, setServerError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
+  const [suggestedSalesOrderNumber, setSuggestedSalesOrderNumber] = useState("");
 
   const [record, setRecord] = useState<RequestRecord | null>(null);
   const [loadFailed, setLoadFailed] = useState(false);
@@ -291,7 +530,10 @@ export default function DesignRequestWindow({
           stylesRes,
         ] = await Promise.all([
           fetch("/api/me", { cache: "no-store", credentials: "include" }),
-          fetch("/api/design-workflow/statuses", { cache: "no-store", credentials: "include" }),
+          fetch("/api/design-workflow/statuses", {
+            cache: "no-store",
+            credentials: "include",
+          }),
           fetch("/api/design-workflow/lookups/users?department=Digitizing", {
             cache: "no-store",
             credentials: "include",
@@ -322,6 +564,27 @@ export default function DesignRequestWindow({
         const customersData = customersRes.ok ? await customersRes.json() : [];
         const stylesData = stylesRes.ok ? await stylesRes.json() : [];
 
+        let nextSalesOrderData: any = null;
+
+        if (mode === "new") {
+          const nextSalesOrderRes = await fetch(
+            "/api/design-workflow/next-sales-order",
+            {
+              cache: "no-store",
+              credentials: "include",
+            }
+          );
+
+          nextSalesOrderData = await nextSalesOrderRes.json().catch(() => null);
+
+          if (!nextSalesOrderRes.ok) {
+            throw new Error(
+              nextSalesOrderData?.error ||
+                `Failed to generate suggested Sales Order #. Status: ${nextSalesOrderRes.status}`
+            );
+          }
+        }
+
         if (!alive) return;
 
         setMe(meData);
@@ -337,9 +600,17 @@ export default function DesignRequestWindow({
             ? statusesData.find((s: StatusRow) => s.label === "Unspecified")
             : null;
 
+          const suggestedSalesOrder =
+            typeof nextSalesOrderData?.nextSalesOrderNumber === "string"
+              ? nextSalesOrderData.nextSalesOrderNumber
+              : "";
+
+          setSuggestedSalesOrderNumber(suggestedSalesOrder);
+
           setForm((prev) => ({
             ...prev,
             statusId: unspecified ? String(unspecified.id) : "",
+            salesOrderNumber: prev.salesOrderNumber || suggestedSalesOrder,
           }));
         }
       } catch (err: any) {
@@ -385,6 +656,7 @@ export default function DesignRequestWindow({
 
         const row = data as RequestRecord;
         setRecord(row);
+        setSuggestedSalesOrderNumber("");
 
         setForm({
           requestNumber: row.requestNumber || "",
@@ -722,6 +994,15 @@ export default function DesignRequestWindow({
                     onChange={(e) => updateField("salesOrderNumber", e.target.value)}
                     disabled={readOnly || !!record?.isVoided}
                   />
+                  {mode === "new" ? (
+                    <div className="field-help">
+                      {suggestedSalesOrderNumber
+                        ? "Suggested number. You may overwrite it if needed. Duplicate sales order numbers are not allowed."
+                        : "You may enter a sales order number. Duplicate sales order numbers are not allowed."}
+                    </div>
+                  ) : (
+                    <div className="field-help">Duplicate sales order numbers are not allowed.</div>
+                  )}
                 </FieldRow>
 
                 <FieldRow label="PO #">
@@ -757,19 +1038,26 @@ export default function DesignRequestWindow({
                 </FieldRow>
 
                 <FieldRow label="Customer">
-                  <select
-                    className="select"
+                  <CustomerSearchCombobox
                     value={form.customerCode}
-                    onChange={(e) => chooseCustomer(e.target.value)}
+                    selectedName={form.customerName}
+                    rows={customers}
                     disabled={readOnly || !!record?.isVoided}
-                  >
-                    <option value="">(Select)</option>
-                    {customers.map((c) => (
-                      <option key={c.id} value={c.code}>
-                        {c.name}
-                      </option>
-                    ))}
-                  </select>
+                    onSelect={(row) => {
+                      setForm((prev) => ({
+                        ...prev,
+                        customerCode: row.code,
+                        customerName: row.name,
+                      }));
+                    }}
+                    onTextChange={(text) => {
+                      setForm((prev) => ({
+                        ...prev,
+                        customerCode: "",
+                        customerName: text,
+                      }));
+                    }}
+                  />
                 </FieldRow>
 
                 <FieldRow label="Bin #">
@@ -893,19 +1181,13 @@ export default function DesignRequestWindow({
                 </FieldRow>
 
                 <FieldRow label="Style">
-                  <select
-                    className="select"
+                  <StyleSearchCombobox
                     value={form.styleCode}
-                    onChange={(e) => updateField("styleCode", e.target.value)}
+                    rows={styles}
                     disabled={readOnly || !!record?.isVoided}
-                  >
-                    <option value="">(Select)</option>
-                    {styles.map((s) => (
-                      <option key={s.id} value={s.code}>
-                        {s.description ? `${s.code} - ${s.description}` : s.code}
-                      </option>
-                    ))}
-                  </select>
+                    onSelect={(row) => updateField("styleCode", row.code)}
+                    onTextChange={(text) => updateField("styleCode", text)}
+                  />
                 </FieldRow>
 
                 <FieldRow label="Sample SO Number">
@@ -1223,6 +1505,46 @@ function FieldStack({
     </div>
   );
 }
+
+
+
+const lookupMenu: React.CSSProperties = {
+  position: "absolute",
+  zIndex: 9999,
+  top: "calc(100% + 4px)",
+  left: 0,
+  right: 0,
+  maxHeight: 260,
+  overflowY: "auto",
+  background: "var(--surface)",
+  border: "1px solid var(--border-strong)",
+  borderRadius: 10,
+  boxShadow: "var(--shadow-md)",
+};
+
+const lookupItem: React.CSSProperties = {
+  display: "block",
+  width: "100%",
+  textAlign: "left",
+  padding: "8px 10px",
+  border: 0,
+  borderBottom: "1px solid var(--border)",
+  background: "transparent",
+  color: "var(--text)",
+  cursor: "pointer",
+  font: "inherit",
+};
+
+const lookupEmpty: React.CSSProperties = {
+  padding: 10,
+  color: "var(--text-soft)",
+};
+
+const lookupError: React.CSSProperties = {
+  padding: 10,
+  color: "var(--brand-red)",
+  fontWeight: 700,
+};
 
 const modalOverlay: React.CSSProperties = {
   position: "fixed",

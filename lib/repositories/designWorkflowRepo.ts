@@ -602,6 +602,76 @@ export async function getRequestById(
   return rows[0] || null;
 }
 
+
+function normalizeSalesOrderNumber(value?: string | null): string | null {
+  const trimmed = String(value ?? "").trim();
+  return trimmed || null;
+}
+
+function salesOrderBaseFromDisplay(value?: string | null): string | null {
+  const normalized = normalizeSalesOrderNumber(value);
+  if (!normalized) return null;
+
+  const match = normalized.match(/^(\d{7})/);
+  return match ? match[1] : null;
+}
+
+export async function getNextSuggestedSalesOrderNumber(query: QueryFn): Promise<string> {
+  const { rows } = await query<{ nextSalesOrderNumber: string }>(
+    `
+    SELECT nextval('public.design_workflow_sales_order_seq')::text AS "nextSalesOrderNumber"
+    `
+  );
+
+  return rows[0]?.nextSalesOrderNumber ?? "";
+}
+
+export async function salesOrderNumberExists(
+  query: QueryFn,
+  salesOrderNumber?: string | null,
+  excludeRequestId?: string | null
+): Promise<boolean> {
+  const normalized = normalizeSalesOrderNumber(salesOrderNumber);
+  if (!normalized) return false;
+
+  const params: any[] = [normalized];
+  let excludeSql = "";
+
+  if (excludeRequestId) {
+    params.push(excludeRequestId);
+    excludeSql = `AND id <> $${params.length}`;
+  }
+
+  const { rows } = await query<{ exists: boolean }>(
+    `
+    SELECT EXISTS (
+      SELECT 1
+      FROM public.design_workflow_requests
+      WHERE LOWER(BTRIM(sales_order_number)) = LOWER(BTRIM($1::text))
+        AND COALESCE(is_voided, false) = false
+        ${excludeSql}
+    ) AS "exists"
+    `,
+    params
+  );
+
+  return !!rows[0]?.exists;
+}
+
+async function assertUniqueSalesOrderNumber(
+  query: QueryFn,
+  salesOrderNumber?: string | null,
+  excludeRequestId?: string | null
+): Promise<void> {
+  const normalized = normalizeSalesOrderNumber(salesOrderNumber);
+  if (!normalized) return;
+
+  const exists = await salesOrderNumberExists(query, normalized, excludeRequestId);
+  if (exists) {
+    throw new Error(`Sales Order # ${normalized} is already used on another design request.`);
+  }
+}
+
 export interface CreateRequestInput {
   id: string;
   request_number: string;
@@ -634,14 +704,23 @@ export interface CreateRequestInput {
 }
 
 export async function createRequest(query: QueryFn, input: CreateRequestInput) {
+  const normalizedSalesOrderNumber = normalizeSalesOrderNumber(input.sales_order_number);
+  const normalizedInput: CreateRequestInput = {
+    ...input,
+    sales_order_number: normalizedSalesOrderNumber,
+    sales_order_base: input.sales_order_base ?? salesOrderBaseFromDisplay(normalizedSalesOrderNumber),
+  };
+
   await query("BEGIN");
   try {
+    await assertUniqueSalesOrderNumber(query, normalizedInput.sales_order_number);
+
     const cols: string[] = [];
     const placeholders: string[] = [];
     const values: any[] = [];
     let idx = 1;
 
-    for (const [key, value] of Object.entries(input)) {
+    for (const [key, value] of Object.entries(normalizedInput)) {
       if (value === undefined) continue;
 
       if (key === "date_request_created") {
@@ -663,13 +742,13 @@ export async function createRequest(query: QueryFn, input: CreateRequestInput) {
       values.push(value);
     }
 
-    if (!("rush" in input)) {
+    if (!("rush" in normalizedInput)) {
       cols.push("rush");
       placeholders.push(`$${idx++}`);
       values.push(false);
     }
 
-    if (!("art_proof" in input)) {
+    if (!("art_proof" in normalizedInput)) {
       cols.push("art_proof");
       placeholders.push(`$${idx++}`);
       values.push(false);
@@ -813,13 +892,21 @@ export async function updateRequest(query: QueryFn, opts: UpdateRequestInput) {
   const nextStatusId =
     typeof opts.data.status_id === "number" ? opts.data.status_id : existing.status_id;
 
+  const nextData = { ...opts.data };
+  if (Object.prototype.hasOwnProperty.call(nextData, "sales_order_number")) {
+    nextData.sales_order_number = normalizeSalesOrderNumber(nextData.sales_order_number);
+    nextData.sales_order_base = nextData.sales_order_base ?? salesOrderBaseFromDisplay(nextData.sales_order_number);
+  }
+
   await query("BEGIN");
   try {
+    await assertUniqueSalesOrderNumber(query, nextData.sales_order_number, opts.requestId);
+
     const sets: string[] = [];
     const params: any[] = [];
     let idx = 1;
 
-    for (const [key, value] of Object.entries(opts.data)) {
+    for (const [key, value] of Object.entries(nextData)) {
       sets.push(`${key} = $${idx++}`);
       params.push(value);
     }
