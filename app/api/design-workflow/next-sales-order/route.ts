@@ -12,13 +12,22 @@ export async function GET(req: NextRequest) {
     }
 
     const nextSalesOrderNumber = await getNextSuggestedSalesOrderNumber(
-      (sql, params) => db.query(sql, params)
+      async <T = any>(sql: string, params?: any[]) => {
+        const result = await db.query(sql, params);
+
+        return {
+          rows: result.rows as T[],
+          rowCount: result.rowCount ?? 0,
+        };
+      }
     );
 
     return NextResponse.json({ nextSalesOrderNumber });
   } catch (err: any) {
     return NextResponse.json(
-      { error: err?.message || "Failed to generate next sales order number." },
+      {
+        error: err?.message || "Failed to generate next sales order number.",
+      },
       { status: 500 }
     );
   }
