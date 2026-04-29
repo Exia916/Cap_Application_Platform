@@ -311,3 +311,18 @@ CREATE INDEX IF NOT EXISTS idx_design_workflow_styles_active
   ON public.design_workflow_styles (is_active, sort_order, code);
 
 COMMIT;
+
+CREATE SEQUENCE IF NOT EXISTS public.design_workflow_sales_order_seq
+  START WITH 1000000
+  INCREMENT BY 1
+  MINVALUE 1
+  NO MAXVALUE
+  CACHE 1;
+
+-- Prevent duplicate active sales order numbers.
+-- This treats leading/trailing whitespace and letter case as equivalent.
+CREATE UNIQUE INDEX IF NOT EXISTS ux_design_workflow_requests_sales_order_number_active
+  ON public.design_workflow_requests (LOWER(BTRIM(sales_order_number)))
+  WHERE sales_order_number IS NOT NULL
+    AND BTRIM(sales_order_number) <> ''
+    AND COALESCE(is_voided, false) = false;

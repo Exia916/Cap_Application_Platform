@@ -534,6 +534,7 @@ export default function WorkflowSearchModal({
                   options={customerOptions}
                   selected={localFilters.customerCodes}
                   onChange={(next) => setField("customerCodes", next)}
+                  searchEndpoint="/api/design-workflow/lookups/customers"
                 />
               </Field>
 
@@ -619,6 +620,7 @@ export default function WorkflowSearchModal({
                   selected={localFilters.styleCodes}
                   onChange={(next) => setField("styleCodes", next)}
                   openUp={true}
+                  searchEndpoint="/api/design-workflow/lookups/styles"
                 />
               </Field>
 
@@ -873,30 +875,146 @@ function Field({
   );
 }
 
+function normalizeRemoteOption(row: any): WorkflowOptionRow | null {
+  const value = String(row?.value ?? row?.code ?? row?.itemCode ?? row?.id ?? "").trim();
+  if (!value) return null;
+
+  const rawLabel = row?.label;
+  const name = row?.name ?? row?.customerName;
+  const description = row?.description;
+
+  let label = String(rawLabel ?? "").trim();
+
+  if (!label) {
+    const suffix = String(name ?? description ?? "").trim();
+    label = suffix ? `${value} - ${suffix}` : value;
+  }
+
+  return { value, label };
+}
+
+function uniqueOptions(options: WorkflowOptionRow[]): WorkflowOptionRow[] {
+  const map = new Map<string, WorkflowOptionRow>();
+
+  for (const option of options) {
+    const value = String(option?.value ?? "").trim();
+    if (!value) continue;
+
+    const label = String(option?.label ?? value).trim() || value;
+    if (!map.has(value)) {
+      map.set(value, { value, label });
+    }
+  }
+
+  return Array.from(map.values());
+}
+
 function MultiSelectPicker({
   options,
   selected,
   onChange,
   openUp = false,
+  searchEndpoint,
 }: {
   options: WorkflowOptionRow[];
   selected: string[];
   onChange: (next: string[]) => void;
   openUp?: boolean;
+  searchEndpoint?: string;
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
+  const [remoteOptions, setRemoteOptions] = useState<WorkflowOptionRow[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [lookupError, setLookupError] = useState<string | null>(null);
+
+  const localOptions = useMemo(() => uniqueOptions(options), [options]);
+
+  const selectedOptionRows = useMemo(() => {
+    const map = new Map<string, WorkflowOptionRow>();
+
+    for (const option of [...localOptions, ...remoteOptions]) {
+      map.set(option.value, option);
+    }
+
+    return selected
+      .map((value) => {
+        const v = String(value ?? "").trim();
+        return map.get(v) ?? { value: v, label: v };
+      })
+      .filter((option) => option.value);
+  }, [localOptions, remoteOptions, selected]);
+
+  useEffect(() => {
+    if (!open || !searchEndpoint) return;
+
+    const controller = new AbortController();
+
+    const timeout = window.setTimeout(async () => {
+      try {
+        setLoading(true);
+        setLookupError(null);
+
+        const sp = new URLSearchParams();
+        const q = query.trim();
+        if (q) sp.set("q", q);
+        sp.set("limit", "75");
+
+        const res = await fetch(`${searchEndpoint}?${sp.toString()}`, {
+          cache: "no-store",
+          credentials: "include",
+          signal: controller.signal,
+        });
+
+        const data = await res.json().catch(() => []);
+
+        if (!res.ok) {
+          throw new Error((data as any)?.error || "Lookup search failed.");
+        }
+
+        const normalized = Array.isArray(data)
+          ? (data.map(normalizeRemoteOption).filter(Boolean) as WorkflowOptionRow[])
+          : [];
+
+        // For async lookups, replace the visible result set with the server-filtered
+        // result set. Do not merge with prior/local options, or the field appears to
+        // only move matches to the top instead of filtering.
+        setRemoteOptions(uniqueOptions(normalized));
+      } catch (err: any) {
+        if (err?.name === "AbortError") return;
+        setRemoteOptions([]);
+        setLookupError(err?.message || "Lookup search failed.");
+      } finally {
+        if (!controller.signal.aborted) setLoading(false);
+      }
+    }, 300);
+
+    return () => {
+      window.clearTimeout(timeout);
+      controller.abort();
+    };
+  }, [open, query, searchEndpoint]);
+
+  const availableOptions = useMemo(() => {
+    if (searchEndpoint) {
+      return remoteOptions;
+    }
+
+    return uniqueOptions([...selectedOptionRows, ...localOptions]);
+  }, [searchEndpoint, remoteOptions, selectedOptionRows, localOptions]);
 
   const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    if (!q) return options;
-    return options.filter((opt) => opt.label.toLowerCase().includes(q));
-  }, [options, query]);
+    if (searchEndpoint) return availableOptions;
 
-  const selectedLabels = useMemo(() => {
-    const map = new Map(options.map((o) => [o.value, o.label]));
-    return selected.map((v) => map.get(v) ?? v);
-  }, [options, selected]);
+    const q = query.trim().toLowerCase();
+    if (!q) return availableOptions;
+    return availableOptions.filter((opt) => opt.label.toLowerCase().includes(q));
+  }, [availableOptions, query, searchEndpoint]);
+
+  const selectedLabels = useMemo(
+    () => selectedOptionRows.map((option) => option.label),
+    [selectedOptionRows]
+  );
 
   function toggle(value: string) {
     if (selected.includes(value)) {
@@ -904,6 +1022,10 @@ function MultiSelectPicker({
       return;
     }
     onChange([...selected, value]);
+  }
+
+  function clearSelected() {
+    onChange([]);
   }
 
   return (
@@ -941,9 +1063,22 @@ function MultiSelectPicker({
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             style={{ marginBottom: 8 }}
+            autoComplete="off"
           />
 
           <div style={pickerList}>
+            {loading ? <div style={pickerMessage}>Searching...</div> : null}
+
+            {lookupError ? (
+              <div style={{ ...pickerMessage, color: "var(--brand-red)", fontWeight: 700 }}>
+                {lookupError}
+              </div>
+            ) : null}
+
+            {!loading && !lookupError && filtered.length === 0 ? (
+              <div style={pickerMessage}>No matching values found.</div>
+            ) : null}
+
             {filtered.map((opt) => (
               <label key={opt.value} style={pickerRow}>
                 <input
@@ -967,7 +1102,7 @@ function MultiSelectPicker({
             <button
               type="button"
               className="btn btn-secondary btn-sm"
-              onClick={() => onChange([])}
+              onClick={clearSelected}
             >
               Clear
             </button>
@@ -1166,6 +1301,12 @@ const pickerRow: React.CSSProperties = {
   gap: 8,
   alignItems: "center",
   fontSize: 13,
+};
+
+const pickerMessage: React.CSSProperties = {
+  padding: "6px 4px",
+  fontSize: 13,
+  color: "var(--text-soft)",
 };
 
 const dialogOverlay: React.CSSProperties = {
