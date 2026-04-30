@@ -492,7 +492,7 @@ export default function WorkflowSearchModal({
               </Field>
 
               <Field label="Date Request Created">
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)", gap: 8 }}>
                   <input
                     className="input"
                     type="date"
@@ -511,7 +511,7 @@ export default function WorkflowSearchModal({
               </Field>
 
               <Field label="Due Date">
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)", gap: 8 }}>
                   <input
                     className="input"
                     type="date"
@@ -758,7 +758,15 @@ export default function WorkflowSearchModal({
             Reset
           </button>
 
-          <div style={{ marginLeft: "auto", display: "flex", gap: 10 }}>
+          <div
+            style={{
+              marginLeft: "auto",
+              display: "flex",
+              gap: 10,
+              flexWrap: "wrap",
+              justifyContent: "flex-end",
+            }}
+          >
             <button type="button" className="btn btn-secondary" disabled>
               Help
             </button>
@@ -864,13 +872,14 @@ function Field({
     <div
       style={{
         display: "grid",
-        gridTemplateColumns: "120px 1fr",
+        gridTemplateColumns: "120px minmax(0, 1fr)",
         gap: 10,
         alignItems: "center",
+        minWidth: 0,
       }}
     >
       <label style={fieldLabel}>{label}</label>
-      <div>{children}</div>
+      <div style={{ minWidth: 0 }}>{children}</div>
     </div>
   );
 }
@@ -1128,13 +1137,17 @@ const overlay: React.CSSProperties = {
   alignItems: "center",
   justifyContent: "center",
   zIndex: 1000,
-  padding: 24,
+  padding: 16,
+  overflow: "hidden",
 };
 
 const windowStyle: React.CSSProperties = {
-  width: "min(1180px, 100%)",
-  maxHeight: "calc(100vh - 48px)",
-  overflow: "visible",
+  width: "min(1180px, calc(100vw - 32px))",
+  maxHeight: "calc(100vh - 32px)",
+  minHeight: 0,
+  display: "flex",
+  flexDirection: "column",
+  overflow: "hidden",
   background: "var(--surface)",
   border: "1px solid var(--border-strong)",
   borderRadius: 10,
@@ -1142,6 +1155,7 @@ const windowStyle: React.CSSProperties = {
 };
 
 const titleBar: React.CSSProperties = {
+  flex: "0 0 auto",
   background: "var(--brand-blue)",
   color: "#fff",
   padding: "10px 14px",
@@ -1162,6 +1176,7 @@ const closeBtn: React.CSSProperties = {
 };
 
 const tabsRow: React.CSSProperties = {
+  flex: "0 0 auto",
   display: "flex",
   gap: 4,
   padding: "10px 10px 0 10px",
@@ -1199,34 +1214,37 @@ const body: React.CSSProperties = {
   padding: 16,
   display: "grid",
   gap: 18,
-  overflow: "visible",
+  overflowY: "auto",
+  overflowX: "hidden",
+  minHeight: 0,
+  flex: "1 1 auto",
 };
 
 const fieldsWrap: React.CSSProperties = {
   display: "grid",
-  gridTemplateColumns: "1fr 360px",
+  gridTemplateColumns: "minmax(0, 1fr) minmax(300px, 360px)",
   gap: 28,
-  overflow: "visible",
+  minWidth: 0,
 };
 
 const leftCol: React.CSSProperties = {
   display: "grid",
   gap: 10,
-  overflow: "visible",
+  minWidth: 0,
 };
 
 const rightCol: React.CSSProperties = {
   display: "grid",
   gap: 10,
   alignContent: "start",
-  overflow: "visible",
+  minWidth: 0,
 };
 
 const bottomRow: React.CSSProperties = {
   display: "grid",
-  gridTemplateColumns: "1fr 260px",
+  gridTemplateColumns: "minmax(0, 1fr) minmax(220px, 260px)",
   gap: 14,
-  overflow: "visible",
+  minWidth: 0,
 };
 
 const searchMethodBox: React.CSSProperties = {
@@ -1266,6 +1284,9 @@ const footer: React.CSSProperties = {
   background: "var(--surface-muted)",
   borderBottomLeftRadius: 10,
   borderBottomRightRadius: 10,
+  flex: "0 0 auto",
+  position: "relative",
+  zIndex: 5,
 };
 
 const fieldLabel: React.CSSProperties = {
