@@ -15,20 +15,6 @@ function roleOk(role: string | null | undefined) {
   return ALLOWED_ROLES.has(String(role || "").trim().toUpperCase());
 }
 
-function normalizeDept(value: string | null | undefined): string {
-  const v = String(value ?? "").trim().toUpperCase();
-  if (v === "EMBROIDERY") return "Embroidery";
-  if (v === "ANNEX EMB") return "Annex Embroidery";
-  if (v === "ANNEX EMBROIDERY") return "Annex Embroidery";
-  if (v === "SAMPLE EMBROIDERY") return "Sample Embroidery";
-  if (v === "QC") return "QC";
-  return "";
-}
-
-function isEmbDept(value: string | null | undefined) {
-  const v = normalizeDept(value);
-  return v === "Embroidery" || v === "Annex Embroidery" || v === "Sample Embroidery";
-}
 
 export async function POST(req: NextRequest) {
   let auth: ReturnType<typeof getAuthFromRequest> | null = null;
@@ -107,12 +93,7 @@ export async function POST(req: NextRequest) {
     }
 
     const authRole = String((auth as any).role ?? "").trim().toUpperCase();
-    const authDept = normalizeDept((auth as any).department ?? null);
     const authName = String((auth as any).displayName ?? (auth as any).username ?? "").trim();
-
-    if (isEmbDept(authDept)) {
-      operator = authName;
-    }
 
     const canSetFlags =
       authRole === "ADMIN" || authRole === "MANAGER" || authRole === "SUPERVISOR";
