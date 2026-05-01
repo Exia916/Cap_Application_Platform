@@ -22,20 +22,6 @@ function roleOk(role: string | null | undefined, allowed: Set<string>) {
   return allowed.has(String(role || "").trim().toUpperCase());
 }
 
-function normalizeDept(value: string | null | undefined): string {
-  const v = String(value ?? "").trim().toUpperCase();
-  if (v === "EMBROIDERY") return "Embroidery";
-  if (v === "ANNEX EMB") return "Annex Embroidery";
-  if (v === "ANNEX EMBROIDERY") return "Annex Embroidery";
-  if (v === "SAMPLE EMBROIDERY") return "Sample Embroidery";
-  if (v === "QC") return "QC";
-  return "";
-}
-
-function isEmbDept(value: string | null | undefined) {
-  const v = normalizeDept(value);
-  return v === "Embroidery" || v === "Annex Embroidery" || v === "Sample Embroidery";
-}
 
 function parseSalesOrderNumber(value: string | null | undefined): number | null {
   const s = String(value ?? "").trim();
@@ -371,12 +357,7 @@ export async function PUT(
       );
     }
 
-    const authDept = normalizeDept((auth as any).department ?? null);
     const authName = String((auth as any).displayName ?? (auth as any).username ?? "").trim();
-
-    if (isEmbDept(authDept)) {
-      operator = authName;
-    }
 
     const employeeNumber =
       (auth as any).employeeNumber != null

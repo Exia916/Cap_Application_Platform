@@ -10,6 +10,16 @@ type LookupOption = {
   itemCode?: string | null;
 };
 
+type OperatorOption = {
+  id: string;
+  username?: string | null;
+  displayName?: string | null;
+  name?: string | null;
+  employeeNumber?: number | null;
+  department?: string | null;
+  role?: string | null;
+};
+
 type MeResponse = {
   username?: string | null;
   displayName?: string | null;
@@ -82,10 +92,6 @@ function normalizeDept(value: string | null | undefined): string {
   return "";
 }
 
-function isEmbDept(value: string | null | undefined) {
-  const v = normalizeDept(value);
-  return v === "Embroidery" || v === "Annex Embroidery" || v === "Sample Embroidery";
-}
 
 function isValidSalesOrder(v: string) {
   return /^\d{7}\.\d{3}$/.test(String(v || "").trim());
@@ -117,6 +123,24 @@ function sanitizeReturnTo(
 
 function normalizeCode(value: string | null | undefined): string {
   return String(value ?? "").trim().toUpperCase();
+}
+
+function normalizeLookupText(value: string | null | undefined): string {
+  return String(value ?? "").trim().replace(/\s+/g, " ").toLowerCase();
+}
+
+function operatorLabel(option: OperatorOption): string {
+  return String(option.displayName ?? option.name ?? option.username ?? "").trim();
+}
+
+function shouldAutoFillOperator(me: MeResponse | null): boolean {
+  const role = String(me?.role ?? "").trim().toUpperCase();
+  const dept = normalizeDept(me?.department);
+
+  if (role === "ADMIN" || role === "MANAGER" || role === "SUPERVISOR") return false;
+  if (dept === "QC") return false;
+
+  return true;
 }
 
 function CapStyleCombobox({
@@ -248,6 +272,136 @@ function CapStyleCombobox({
   );
 }
 
+function OperatorCombobox({
+  operators,
+  value,
+  onSelect,
+  error,
+  disabled = false,
+}: {
+  operators: OperatorOption[];
+  value: string;
+  onSelect: (next: string) => void;
+  error?: string;
+  disabled?: boolean;
+}) {
+  const [query, setQuery] = useState(value);
+  const [open, setOpen] = useState(false);
+  const wrapRef = useRef<HTMLDivElement | null>(null);
+
+  const validNames = useMemo(
+    () => operators.map((x) => operatorLabel(x)).filter(Boolean),
+    [operators]
+  );
+
+  useEffect(() => {
+    setQuery(value);
+  }, [value]);
+
+  useEffect(() => {
+    function onDocClick(e: MouseEvent) {
+      if (!wrapRef.current) return;
+      if (e.target instanceof Node && !wrapRef.current.contains(e.target)) {
+        setOpen(false);
+      }
+    }
+
+    document.addEventListener("mousedown", onDocClick);
+    return () => document.removeEventListener("mousedown", onDocClick);
+  }, []);
+
+  const filtered = useMemo(() => {
+    const q = normalizeLookupText(query);
+
+    if (!q) return validNames.slice(0, 25);
+
+    const startsWith = validNames.filter((name) =>
+      normalizeLookupText(name).startsWith(q)
+    );
+    const contains = validNames.filter(
+      (name) =>
+        !normalizeLookupText(name).startsWith(q) &&
+        normalizeLookupText(name).includes(q)
+    );
+
+    return [...startsWith, ...contains].slice(0, 25);
+  }, [validNames, query]);
+
+  function choose(name: string) {
+    if (disabled) return;
+    setQuery(name);
+    onSelect(name);
+    setOpen(false);
+  }
+
+  return (
+    <div ref={wrapRef} style={{ position: "relative" }}>
+      <input
+        value={query}
+        disabled={disabled}
+        onChange={(e) => {
+          setQuery(e.target.value);
+          setOpen(true);
+        }}
+        onFocus={() => {
+          if (!disabled) setOpen(true);
+        }}
+        onBlur={() => {
+          const exact = validNames.find(
+            (x) => normalizeLookupText(x) === normalizeLookupText(query)
+          );
+
+          if (exact) {
+            setQuery(exact);
+            onSelect(exact);
+          }
+        }}
+        onKeyDown={(e) => {
+          if (disabled) return;
+
+          if (e.key === "Enter") {
+            e.preventDefault();
+
+            const exact = filtered.find(
+              (x) => normalizeLookupText(x) === normalizeLookupText(query)
+            );
+
+            if (exact) {
+              choose(exact);
+              return;
+            }
+
+            if (filtered.length === 1) {
+              choose(filtered[0]);
+            }
+          }
+
+          if (e.key === "Escape") setOpen(false);
+        }}
+        placeholder="Type operator name..."
+        style={inputStyle(!!error, disabled)}
+        autoComplete="off"
+      />
+
+      {!disabled && open && filtered.length > 0 ? (
+        <div style={comboMenu}>
+          {filtered.map((name) => (
+            <button
+              key={name}
+              type="button"
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => choose(name)}
+              style={comboItem}
+            >
+              {name}
+            </button>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 export default function RecutForm({
   mode,
   initialId,
@@ -266,6 +420,7 @@ export default function RecutForm({
   const [reasons, setReasons] = useState<LookupOption[]>([]);
   const [requestedDepartments, setRequestedDepartments] = useState<LookupOption[]>([]);
   const [items, setItems] = useState<LookupOption[]>([]);
+  const [operators, setOperators] = useState<OperatorOption[]>([]);
 
   const validCapStyleCodes = useMemo(
     () =>
@@ -273,6 +428,11 @@ export default function RecutForm({
         .map((x) => String(x.itemCode ?? "").trim())
         .filter(Boolean),
     [items]
+  );
+
+  const validOperatorNames = useMemo(
+    () => operators.map((x) => operatorLabel(x)).filter(Boolean),
+    [operators]
   );
 
   const [loading, setLoading] = useState(mode === "edit");
@@ -293,6 +453,7 @@ export default function RecutForm({
   const [capStyle, setCapStyle] = useState("");
   const [pieces, setPieces] = useState("");
   const [operator, setOperator] = useState("");
+  const [originalOperator, setOriginalOperator] = useState("");
   const [deliverTo, setDeliverTo] = useState("");
   const [notes, setNotes] = useState("");
   const [event, setEvent] = useState(false);
@@ -310,7 +471,7 @@ export default function RecutForm({
   useEffect(() => {
     (async () => {
       try {
-        const [meRes, reasonsRes, deptRes, itemsRes] = await Promise.all([
+        const [meRes, reasonsRes, deptRes, itemsRes, operatorsRes] = await Promise.all([
           fetch("/api/me", { cache: "no-store", credentials: "include" }),
           fetch("/api/recuts/lookups/reasons", { cache: "no-store", credentials: "include" }),
           fetch("/api/recuts/lookups/requested-departments", {
@@ -318,6 +479,7 @@ export default function RecutForm({
             credentials: "include",
           }),
           fetch("/api/recuts/lookups/items", { cache: "no-store", credentials: "include" }),
+          fetch("/api/recuts/lookups/operators", { cache: "no-store", credentials: "include" }),
         ]);
 
         if (meRes.ok) {
@@ -331,8 +493,9 @@ export default function RecutForm({
             setRequestedByName(inferredName);
             setRequestedDepartment(inferredDept);
 
-            if (isEmbDept(meData.department)) {
+            if (shouldAutoFillOperator(meData)) {
               setOperator(inferredName);
+              setOriginalOperator(inferredName);
             }
           }
         }
@@ -350,6 +513,11 @@ export default function RecutForm({
         if (itemsRes.ok) {
           const data = await itemsRes.json();
           setItems(Array.isArray(data?.rows) ? data.rows : []);
+        }
+
+        if (operatorsRes.ok) {
+          const data = await operatorsRes.json();
+          setOperators(Array.isArray(data?.rows) ? data.rows : []);
         }
       } catch {
         // ignore bootstrap errors here
@@ -392,6 +560,7 @@ export default function RecutForm({
         setCapStyle(row.capStyle ?? "");
         setPieces(String(row.pieces ?? ""));
         setOperator(row.operator ?? "");
+        setOriginalOperator(row.operator ?? "");
         setDeliverTo(row.deliverTo ?? "");
         setNotes(String(row.notes ?? ""));
         setEvent(!!row.event);
@@ -415,8 +584,7 @@ export default function RecutForm({
   const canSeeApprovalFlags =
     role === "ADMIN" || role === "MANAGER" || role === "SUPERVISOR";
 
-  const hideOperatorField = isEmbDept(me?.department);
-  const showOperatorField = !hideOperatorField;
+  const showOperatorField = true;
   const isReadOnly = mode === "edit" && isVoided;
 
   function clearFieldError<K extends keyof FormErrors>(key: K) {
@@ -517,7 +685,22 @@ export default function RecutForm({
       next.pieces = "Pieces must be a whole number greater than 0.";
     }
 
-    if (!operator.trim()) next.operator = "Operator is required.";
+    if (!operator.trim()) {
+      next.operator = "Operator is required.";
+    } else {
+      const selectedActiveOperator = validOperatorNames.some(
+        (name) => normalizeLookupText(name) === normalizeLookupText(operator)
+      );
+      const unchangedHistoricalOperator =
+        mode === "edit" &&
+        !!originalOperator.trim() &&
+        normalizeLookupText(operator) === normalizeLookupText(originalOperator);
+
+      if (!selectedActiveOperator && !unchangedHistoricalOperator) {
+        next.operator = "Select a valid Operator from the list.";
+      }
+    }
+
     if (!deliverTo.trim()) next.deliverTo = "Deliver To is required.";
 
     return next;
@@ -747,11 +930,12 @@ export default function RecutForm({
 
           {showOperatorField ? (
             <FieldBlock label="Operator" error={errors.operator}>
-              <input
+              <OperatorCombobox
+                operators={operators}
                 value={operator}
+                onSelect={handleOperatorChange}
+                error={errors.operator}
                 disabled={isReadOnly}
-                onChange={(e) => handleOperatorChange(e.target.value)}
-                style={inputStyle(!!errors.operator, isReadOnly)}
               />
             </FieldBlock>
           ) : null}
