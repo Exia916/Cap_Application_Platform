@@ -789,6 +789,7 @@ export async function createRequest(query: QueryFn, input: CreateRequestInput) {
 export interface DuplicateRequestInput {
   sourceRequestId: string;
   requestNumber?: string | null;
+  salesOrderNumber?: string | null;
   createdByUserId?: string | null;
   createdByName?: string | null;
   createdBy?: string | null;
@@ -821,8 +822,8 @@ export async function duplicateRequest(
   return createRequest(query, {
     id: randomUUID(),
     request_number: requestNumber,
-    sales_order_number: null,
-    sales_order_base: null,
+    sales_order_number: normalizeSalesOrderNumber(input.salesOrderNumber),
+    sales_order_base: salesOrderBaseFromDisplay(input.salesOrderNumber),
     po_number: source.po_number ?? null,
     tape_name: source.tape_name ?? null,
     date_request_created: nowIso,
