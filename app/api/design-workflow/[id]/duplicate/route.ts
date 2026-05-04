@@ -3,6 +3,7 @@ import { db } from "@/lib/db";
 import { getAuthFromRequest } from "@/lib/auth";
 import {
   duplicateRequest,
+  getNextSuggestedSalesOrderNumber,
   getRequestById,
 } from "@/lib/repositories/designWorkflowRepo";
 import {
@@ -73,14 +74,17 @@ export async function POST(
 
     const dbQuery = db.query.bind(db);
 
-    const copied = await duplicateRequest(dbQuery, {
-      sourceRequestId,
-      createdByUserId: actor.userId,
-      createdByName: actor.userName,
-      createdBy: actor.userName,
-      requestNumber: `DW-${Date.now()}`,
-      nowIso: new Date().toISOString(),
-    });
+    const nextSalesOrderNumber = await getNextSuggestedSalesOrderNumber(dbQuery);
+
+const copied = await duplicateRequest(dbQuery, {
+  sourceRequestId,
+  createdByUserId: actor.userId,
+  createdByName: actor.userName,
+  createdBy: actor.userName,
+  requestNumber: `DW-${Date.now()}`,
+  salesOrderNumber: nextSalesOrderNumber,
+  nowIso: new Date().toISOString(),
+});
 
     const sourceAttachments = await listAttachmentsByEntity(
       "design_workflow",

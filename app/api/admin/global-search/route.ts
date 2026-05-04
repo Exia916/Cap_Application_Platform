@@ -44,6 +44,7 @@ export async function GET(req: Request) {
         { key: "knitQc", title: "Knit QC", count: 0, rows: [] },
         { key: "recut", title: "Recut Requests", count: 0, rows: [] },
         { key: "workOrders", title: "CMMS Work Orders", count: 0, rows: [] },
+        { key: "designWorkflow", title: "Design Workflow", count: 0, rows: [] },
       ],
     });
   }
@@ -465,6 +466,105 @@ export async function GET(req: Request) {
     limit,
   ];
 
+// ---------------------------------------------------------------------------
+  // Design Workflow
+  // ---------------------------------------------------------------------------
+  const designWorkflowDate = dateClause("dwr.date_request_created");
+
+  const designWorkflowSql = `
+    SELECT
+      dwr.id,
+      dwr.created_at AS entry_ts,
+      dwr.date_request_created AS entry_date,
+      COALESCE(dwr.created_by_name, '') AS name,
+      NULL::int AS employee_number,
+
+      dwr.request_number,
+      dwr.sales_order_number AS sales_order,
+      dwr.sales_order_base,
+      dwr.po_number,
+      dwr.tape_name,
+      dwr.due_date,
+      dwr.customer_name,
+      dwr.customer_code,
+      dwr.bin_code,
+      dwr.digitizer_name,
+      dwr.designer_name,
+      COALESCE(dws.label, '') AS request_status,
+      dwr.instructions,
+      dwr.additional_instructions,
+      dwr.colorways_text,
+      dwr.tape_number,
+      dwr.rush,
+      dwr.style_code,
+      dwr.sample_so_number,
+      dwr.stitch_count,
+      dwr.art_proof,
+      COALESCE(
+        NULLIF(dwr.instructions, ''),
+        NULLIF(dwr.additional_instructions, ''),
+        NULLIF(dwr.colorways_text, ''),
+        ''
+      ) AS notes
+    FROM public.design_workflow_requests dwr
+    LEFT JOIN public.design_workflow_statuses dws
+      ON dws.id = dwr.status_id
+    WHERE
+      COALESCE(dwr.is_voided, false) = false
+      AND (
+        CAST(dwr.request_number AS text) ILIKE $1
+        OR COALESCE(dwr.sales_order_number, '') ILIKE $2
+        OR COALESCE(dwr.sales_order_base, '') ILIKE $3
+        OR COALESCE(dwr.po_number, '') ILIKE $4
+        OR COALESCE(dwr.tape_name, '') ILIKE $5
+        OR CAST(dwr.date_request_created AS text) ILIKE $6
+        OR CAST(dwr.due_date AS text) ILIKE $7
+        OR COALESCE(dwr.customer_name, '') ILIKE $8
+        OR COALESCE(dwr.customer_code, '') ILIKE $9
+        OR COALESCE(dwr.bin_code, '') ILIKE $10
+        OR COALESCE(dwr.created_by_name, '') ILIKE $11
+        OR COALESCE(dwr.digitizer_name, '') ILIKE $12
+        OR COALESCE(dwr.designer_name, '') ILIKE $13
+        OR COALESCE(dws.label, '') ILIKE $14
+        OR COALESCE(dwr.instructions, '') ILIKE $15
+        OR COALESCE(dwr.additional_instructions, '') ILIKE $16
+        OR COALESCE(dwr.colorways_text, '') ILIKE $17
+        OR COALESCE(dwr.tape_number, '') ILIKE $18
+        OR COALESCE(dwr.style_code, '') ILIKE $19
+        OR COALESCE(dwr.sample_so_number, '') ILIKE $20
+        OR CAST(dwr.stitch_count AS text) ILIKE $21
+      )
+      ${designWorkflowDate.sql}
+    ORDER BY dwr.created_at DESC, dwr.request_number DESC
+    LIMIT $${21 + designWorkflowDate.params.length + 1}
+  `;
+
+  const designWorkflowParams = [
+    like,
+    like,
+    like,
+    like,
+    like,
+    like,
+    like,
+    like,
+    like,
+    like,
+    like,
+    like,
+    like,
+    like,
+    like,
+    like,
+    like,
+    like,
+    like,
+    like,
+    like,
+    ...designWorkflowDate.params,
+    limit,
+  ];
+
   // ---------------------------------------------------------------------------
   // Recut
   // ---------------------------------------------------------------------------
@@ -620,6 +720,7 @@ export async function GET(req: Request) {
     sampleEmbroideryRes,
     knitProductionRes,
     knitQcRes,
+    designWorkflowRes,
     recutRes,
     workOrdersRes,
   ] = await Promise.all([
@@ -630,6 +731,7 @@ export async function GET(req: Request) {
     db.query(sampleEmbroiderySql, sampleEmbroideryParams),
     db.query(knitProductionSql, knitProductionParams),
     db.query(knitQcSql, knitQcParams),
+    db.query(designWorkflowSql, designWorkflowParams),
     db.query(recutSql, recutParams),
     db.query(workOrdersSql, workOrdersParams),
   ]);
@@ -662,6 +764,12 @@ export async function GET(req: Request) {
         title: "Knit QC",
         count: knitQcRes.rows.length,
         rows: knitQcRes.rows,
+      },
+      {
+        key: "designWorkflow",
+        title: "Design Workflow",
+        count: designWorkflowRes.rows.length,
+        rows: designWorkflowRes.rows,
       },
       { key: "recut", title: "Recut Requests", count: recutRes.rows.length, rows: recutRes.rows },
       { key: "workOrders", title: "CMMS Work Orders", count: workOrdersRes.rows.length, rows: workOrdersRes.rows },

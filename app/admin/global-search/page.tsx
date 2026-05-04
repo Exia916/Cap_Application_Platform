@@ -18,6 +18,7 @@ type SectionKey =
   | "sampleEmbroidery"
   | "knitProduction"
   | "knitQc"
+  | "designWorkflow"
   | "recut"
   | "workOrders";
 
@@ -95,6 +96,7 @@ function getOpenUrl(sectionKey: SectionKey, q: string) {
   if (sectionKey === "sampleEmbroidery") return `/production/sample-embroidery?q=${encodeURIComponent(q)}`;
   if (sectionKey === "knitProduction") return `/knit-production?q=${encodeURIComponent(q)}`;
   if (sectionKey === "knitQc") return `/knit-qc?q=${encodeURIComponent(q)}`;
+  if (sectionKey === "designWorkflow") return `/design-workflow?q=${encodeURIComponent(q)}`;
   if (sectionKey === "recut") return `/recuts?q=${encodeURIComponent(q)}`;
   return `/cmms?q=${encodeURIComponent(q)}`;
 }
@@ -131,6 +133,10 @@ function getRowUrl(sectionKey: SectionKey, r: any): string | null {
   if (sectionKey === "knitQc") {
     const id = r?.submission_id ?? r?.id;
     return id ? `/knit-qc/${encodeURIComponent(String(id))}` : null;
+  }
+
+  if (sectionKey === "designWorkflow") {
+    return r?.id ? `/design-workflow?requestId=${encodeURIComponent(String(r.id))}` : null;
   }
 
   if (sectionKey === "recut") {
@@ -208,6 +214,17 @@ function KeyFields({ sectionKey, r }: { sectionKey: SectionKey; r: any }) {
         <b>{r.detail_number ?? ""}</b> · Logo: <b>{r.logo ?? ""}</b> · Order Qty:{" "}
         <b>{r.order_quantity ?? ""}</b> · Inspected: <b>{r.inspected_quantity ?? ""}</b> · Rejected:{" "}
         <b>{r.rejected_quantity ?? ""}</b> · QC Emp#: <b>{r.qc_employee_number ?? ""}</b>
+      </span>
+    );
+  }
+
+  if (sectionKey === "designWorkflow") {
+    return (
+      <span>
+        Req#: <b>{r.request_number ?? ""}</b> · SO: <b>{r.sales_order ?? ""}</b> · PO:{" "}
+        <b>{r.po_number ?? ""}</b> · Tape: <b>{r.tape_name ?? ""}</b> · Customer:{" "}
+        <b>{r.customer_name ?? ""}</b> · Status: <b>{r.request_status ?? ""}</b> · Due:{" "}
+        <b>{fmtDateOnly(r.due_date)}</b> · Rush: <b>{r.rush ? "Yes" : "No"}</b>
       </span>
     );
   }
