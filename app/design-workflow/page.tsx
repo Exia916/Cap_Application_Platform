@@ -1854,7 +1854,7 @@ async function duplicateSelected() {
           onRowClick={(row) => setSelectedRequestId(row.id)}
           onRowDoubleClick={(row) => {
             setSelectedRequestId(row.id);
-            setModalState({ open: true, mode: "view", requestId: row.id });
+            setModalState({ open: true, mode: "edit", requestId: row.id });
           }}
           rowClassName={(row) => {
             const classes = [rowStatusClass(row)];
