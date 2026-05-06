@@ -89,6 +89,8 @@ export async function GET(req: Request) {
     params.push(value);
   };
 
+  where.push(`COALESCE(s.is_voided, false) = false`);
+
   if (!showAll) {
     if (start) add(`q.entry_date >= ?::date`, start);
     if (end) add(`q.entry_date <= ?::date`, end);
@@ -153,6 +155,8 @@ export async function GET(req: Request) {
 
   const fromSql = `
     FROM qc_daily_entries q
+    LEFT JOIN qc_daily_submissions s
+      ON s.id = q.submission_id
     LEFT JOIN users u
       ON u.employee_number = q.employee_number
   `;

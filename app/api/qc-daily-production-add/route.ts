@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getAuthFromRequest } from "@/lib/auth";
 import { createQCSubmission, addQCLinesBulk } from "@/lib/repositories/qcRepo";
+import { createActivityHistory } from "@/lib/repositories/activityHistoryRepo";
 import { normalizeSalesOrder, toLegacySalesOrderNumber } from "@/lib/utils/salesOrder";
 
 type LineBody = {
@@ -46,13 +47,23 @@ function normalizeFlatOr3d(v: unknown): "FLAT" | "3D" | null {
   throw new Error("Flat Or 3D must be FLAT or 3D.");
 }
 
+function parseSalesOrderNumber(value: string | null | undefined): number | null {
+  const s = String(value ?? "").trim();
+  const m = s.match(/^(\d{7})/);
+  if (!m) return null;
+
+  const n = Number(m[1]);
+  return Number.isFinite(n) ? n : null;
+}
+
 export async function POST(req: Request) {
   try {
     const auth = await getAuthFromRequest(req as any);
     if (!auth) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-    const name = auth.displayName ?? auth.username ?? "";
-    const employeeNumber = Number(auth.employeeNumber);
+    const authAny = auth as any;
+    const name = authAny.displayName ?? authAny.username ?? "";
+    const employeeNumber = Number(authAny.employeeNumber);
 
     if (!name) throw new Error("Authenticated user name not found.");
     if (!Number.isFinite(employeeNumber)) throw new Error("Authenticated employeeNumber not found.");
@@ -109,6 +120,24 @@ export async function POST(req: Request) {
           notes: l.notes?.toString().trim() || null,
         };
       }),
+    });
+
+    await createActivityHistory({
+      entityType: "qc_daily_submissions",
+      entityId: sub.id,
+      eventType: "CREATED",
+      message: `QC submission created with ${inserted.ids.length} line(s).`,
+      module: "QC",
+      userId: authAny.userId != null ? String(authAny.userId) : null,
+      userName: name,
+      employeeNumber,
+      salesOrder: parseSalesOrderNumber(
+        normalizedSO.salesOrderDisplay ?? normalizedSO.salesOrderBase
+      ),
+      newValue: {
+        salesOrder: normalizedSO.salesOrderDisplay ?? normalizedSO.salesOrderBase,
+        lineCount: inserted.ids.length,
+      },
     });
 
     return NextResponse.json({

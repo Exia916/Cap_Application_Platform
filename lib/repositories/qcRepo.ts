@@ -1,5 +1,10 @@
 import { db } from "@/lib/db";
 
+export type QCRepoOptions = {
+  includeVoided?: boolean;
+  onlyVoided?: boolean;
+};
+
 export type QCSubmission = {
   id: string;
   entryTs: string;
@@ -10,6 +15,10 @@ export type QCSubmission = {
   salesOrderBase: string | null;
   salesOrderDisplay: string | null;
   notes: string | null;
+  isVoided: boolean;
+  voidedAt: string | null;
+  voidedBy: string | null;
+  voidReason: string | null;
   createdAt: string;
 };
 
@@ -37,6 +46,20 @@ export type QCLine = {
   notes: string | null;
   createdAt: string;
 };
+
+function resolveVoidWhere(alias: string, options?: QCRepoOptions): string {
+  const col = `${alias}.is_voided`;
+
+  if (options?.onlyVoided) {
+    return `COALESCE(${col}, false) = true`;
+  }
+
+  if (options?.includeVoided) {
+    return `1=1`;
+  }
+
+  return `COALESCE(${col}, false) = false`;
+}
 
 export async function createQCSubmission(input: {
   entryTs: Date;
@@ -143,7 +166,10 @@ export async function addQCLinesBulk(input: {
   return { ids };
 }
 
-export async function getQCSubmissionWithLines(submissionId: string): Promise<{
+export async function getQCSubmissionWithLines(
+  submissionId: string,
+  options?: QCRepoOptions
+): Promise<{
   submission: QCSubmission | null;
   lines: QCLine[];
 }> {
@@ -159,9 +185,14 @@ export async function getQCSubmissionWithLines(submissionId: string): Promise<{
       sales_order_base AS "salesOrderBase",
       sales_order_display AS "salesOrderDisplay",
       notes,
+      COALESCE(is_voided, false) AS "isVoided",
+      voided_at AS "voidedAt",
+      voided_by AS "voidedBy",
+      void_reason AS "voidReason",
       created_at AS "createdAt"
-    FROM public.qc_daily_submissions
-    WHERE id = $1
+    FROM public.qc_daily_submissions s
+    WHERE s.id = $1
+      AND ${resolveVoidWhere("s", options)}
     LIMIT 1
     `,
     [submissionId]
@@ -219,45 +250,137 @@ export async function replaceQCSubmission(input: {
     notes: string | null;
   }>;
 }): Promise<{ count: number }> {
-  await db.query(
+  const client = await db.connect();
+
+  try {
+    await client.query("BEGIN");
+
+    const existing = await client.query<{ isVoided: boolean }>(
+      `
+      SELECT COALESCE(is_voided, false) AS "isVoided"
+      FROM public.qc_daily_submissions
+      WHERE id = $1
+      LIMIT 1
+      `,
+      [input.submissionId]
+    );
+
+    const current = existing.rows[0];
+
+    if (!current) {
+      throw new Error("Submission not found.");
+    }
+
+    if (current.isVoided) {
+      throw new Error("Voided submissions cannot be edited.");
+    }
+
+    await client.query(
+      `
+      UPDATE public.qc_daily_submissions
+      SET
+        entry_ts = $2,
+        name = $3,
+        employee_number = $4,
+        sales_order = $5,
+        sales_order_base = $6,
+        sales_order_display = $7,
+        notes = $8
+      WHERE id = $1
+        AND COALESCE(is_voided, false) = false
+      `,
+      [
+        input.submissionId,
+        input.entryTs,
+        input.name,
+        input.employeeNumber,
+        input.legacySalesOrder,
+        input.salesOrderBase,
+        input.salesOrderDisplay,
+        input.notes,
+      ]
+    );
+
+    await client.query(
+      `DELETE FROM public.qc_daily_entries WHERE submission_id = $1`,
+      [input.submissionId]
+    );
+
+    const ids: string[] = [];
+
+    for (const l of input.lines) {
+      const { rows } = await client.query<{ id: string }>(
+        `
+        INSERT INTO public.qc_daily_entries (
+          submission_id,
+          entry_ts,
+          name,
+          employee_number,
+          sales_order,
+          sales_order_base,
+          sales_order_display,
+          detail_number,
+          flat_or_3d,
+          order_quantity,
+          inspected_quantity,
+          rejected_quantity,
+          quantity_shipped,
+          notes
+        )
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
+        RETURNING id
+        `,
+        [
+          input.submissionId,
+          input.entryTs,
+          input.name,
+          input.employeeNumber,
+          input.legacySalesOrder,
+          input.salesOrderBase,
+          input.salesOrderDisplay,
+          l.detailNumber,
+          l.flatOr3d,
+          l.orderQuantity,
+          l.inspectedQuantity,
+          l.rejectedQuantity,
+          l.quantityShipped,
+          l.notes,
+        ]
+      );
+
+      ids.push(rows[0].id);
+    }
+
+    await client.query("COMMIT");
+    return { count: ids.length };
+  } catch (err) {
+    await client.query("ROLLBACK");
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+export async function voidQCSubmission(input: {
+  id: string;
+  voidedBy: string;
+  reason?: string | null;
+}): Promise<boolean> {
+  const { rowCount } = await db.query(
     `
     UPDATE public.qc_daily_submissions
     SET
-      entry_ts = $2,
-      name = $3,
-      employee_number = $4,
-      sales_order = $5,
-      sales_order_base = $6,
-      sales_order_display = $7,
-      notes = $8
+      is_voided = true,
+      voided_at = NOW(),
+      voided_by = $2,
+      void_reason = $3
     WHERE id = $1
+      AND COALESCE(is_voided, false) = false
     `,
-    [
-      input.submissionId,
-      input.entryTs,
-      input.name,
-      input.employeeNumber,
-      input.legacySalesOrder,
-      input.salesOrderBase,
-      input.salesOrderDisplay,
-      input.notes,
-    ]
+    [input.id, input.voidedBy, input.reason ?? null]
   );
 
-  await db.query(`DELETE FROM public.qc_daily_entries WHERE submission_id = $1`, [input.submissionId]);
-
-  const inserted = await addQCLinesBulk({
-    submissionId: input.submissionId,
-    entryTs: input.entryTs,
-    name: input.name,
-    employeeNumber: input.employeeNumber,
-    salesOrderBase: input.salesOrderBase,
-    salesOrderDisplay: input.salesOrderDisplay,
-    legacySalesOrder: input.legacySalesOrder,
-    lines: input.lines,
-  });
-
-  return { count: inserted.ids.length };
+  return (rowCount ?? 0) > 0;
 }
 
 export async function listQCSubmissionsForUserAndSO(input: {
@@ -287,6 +410,7 @@ export async function listQCSubmissionsForUserAndSO(input: {
       ON e.submission_id = s.id
     WHERE s.employee_number = $1
       AND COALESCE(s.sales_order_base, s.sales_order::text) = $2
+      AND COALESCE(s.is_voided, false) = false
     GROUP BY s.id
     ORDER BY s.entry_ts DESC
     `,
@@ -311,7 +435,7 @@ export async function listQCSubmissionSummariesByEntryDate(input: {
   lineCount: number;
 }>> {
   const params: any[] = [input.entryDate];
-  let where = `s.entry_date = $1::date`;
+  let where = `s.entry_date = $1::date AND COALESCE(s.is_voided, false) = false`;
 
   if (input.employeeNumber != null) {
     params.push(input.employeeNumber);
@@ -357,7 +481,7 @@ export type QCSubmissionSummaryRow = {
   lineCount: number;
 };
 
-export type ListQCSubmissionSummariesArgs = {
+export type ListQCSubmissionSummariesArgs = QCRepoOptions & {
   entryDateFrom: string;
   entryDateTo: string;
   employeeNumber?: number;
@@ -378,7 +502,7 @@ export async function listQCSubmissionSummariesRange(
 ): Promise<{ rows: QCSubmissionSummaryRow[]; totalCount: number }> {
   const params: any[] = [input.entryDateFrom, input.entryDateTo];
 
-  let where = `s.entry_date BETWEEN $1::date AND $2::date`;
+  let where = `s.entry_date BETWEEN $1::date AND $2::date AND ${resolveVoidWhere("s", input)}`;
 
   if (input.employeeNumber != null) {
     params.push(input.employeeNumber);

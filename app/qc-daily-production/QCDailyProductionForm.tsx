@@ -242,9 +242,13 @@ export default function QCDailyProductionForm({ initialSubmissionId }: Props) {
     setSuccessMsg(null);
     setErrors({});
 
-    const res = await fetch(`/api/qc-daily-production-submission?id=${encodeURIComponent(submissionId)}`, {
-      cache: "no-store",
-    });
+    const res = await fetch(
+  `/api/qc-daily-production-submission?id=${encodeURIComponent(submissionId)}`,
+  {
+    cache: "no-store",
+    credentials: "include",
+  }
+);
     const data = await res.json();
     if (!res.ok) throw new Error(data?.error ?? "Failed to load submission.");
 
