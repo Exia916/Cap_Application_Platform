@@ -1,8 +1,13 @@
-// app/qc-daily-production/[id]/page.tsx
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { use, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import ActivityHistoryPanel from "@/components/platform/ActivityHistoryPanel";
+
+type MeResponse = {
+  role?: string | null;
+};
 
 type QCSubmission = {
   id: string;
@@ -10,8 +15,14 @@ type QCSubmission = {
   entryDate: string;
   name: string;
   employeeNumber: number;
-  salesOrder: number | null;
+  salesOrder: string | null;
+  salesOrderBase?: string | null;
+  salesOrderDisplay?: string | null;
   notes: string | null;
+  isVoided?: boolean | null;
+  voidedAt?: string | null;
+  voidedBy?: string | null;
+  voidReason?: string | null;
 };
 
 type QCLine = {
@@ -31,19 +42,25 @@ function fmtTs(v?: string | null) {
   return Number.isNaN(d.getTime()) ? String(v) : d.toLocaleString();
 }
 
-import { use } from "react";
+function yesNo(v: boolean | null | undefined) {
+  if (v == null) return "";
+  return v ? "Yes" : "No";
+}
 
 export default function QCDailyProductionViewPage({
   params,
 }: {
   params: Promise<{ id: string }>;
 }) {
+  const router = useRouter();
   const { id } = use(params);
 
   const [loading, setLoading] = useState(true);
+  const [voiding, setVoiding] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [submission, setSubmission] = useState<QCSubmission | null>(null);
   const [lines, setLines] = useState<QCLine[]>([]);
+  const [me, setMe] = useState<MeResponse | null>(null);
 
   useEffect(() => {
     let alive = true;
@@ -53,16 +70,36 @@ export default function QCDailyProductionViewPage({
         setLoading(true);
         setError(null);
 
-        const res = await fetch(`/api/qc-daily-production-submission?id=${encodeURIComponent(id)}`, {
-          cache: "no-store",
-        });
-        const data = await res.json();
+        const [submissionRes, meRes] = await Promise.all([
+          fetch(
+            `/api/qc-daily-production-submission?id=${encodeURIComponent(
+              id
+            )}&includeVoided=true`,
+            {
+              cache: "no-store",
+              credentials: "include",
+            }
+          ),
+          fetch("/api/me", {
+            cache: "no-store",
+            credentials: "include",
+          }),
+        ]);
 
-        if (!res.ok) throw new Error(data?.error || "Failed to load submission");
+        const submissionData = await submissionRes.json().catch(() => ({}));
+        const meData = await meRes.json().catch(() => ({}));
+
+        if (!submissionRes.ok) {
+          throw new Error(submissionData?.error || "Failed to load submission");
+        }
 
         if (!alive) return;
-        setSubmission(data?.submission ?? null);
-        setLines(Array.isArray(data?.lines) ? data.lines : []);
+
+        setSubmission(submissionData?.submission ?? null);
+        setLines(
+          Array.isArray(submissionData?.lines) ? submissionData.lines : []
+        );
+        setMe(meRes.ok ? meData : null);
       } catch (e: any) {
         if (!alive) return;
         setError(e?.message || "Failed to load submission");
@@ -90,14 +127,67 @@ export default function QCDailyProductionViewPage({
     );
   }, [lines]);
 
+  const role = String(me?.role ?? "").trim().toUpperCase();
+  const canVoid =
+    role === "ADMIN" || role === "MANAGER" || role === "SUPERVISOR";
+
+  async function handleVoid() {
+    if (!submission?.id || voiding) return;
+
+    const reason =
+      window.prompt(
+        "Enter a reason for voiding this QC submission (optional):",
+        ""
+      ) ?? "";
+
+    const confirmed = window.confirm(
+      "Void this QC submission?\n\nIt will be hidden from standard lists and reports by default, but kept in the database for audit history."
+    );
+
+    if (!confirmed) return;
+
+    setVoiding(true);
+    setError(null);
+
+    try {
+      const res = await fetch(
+        `/api/qc-daily-production-submission/${encodeURIComponent(
+          submission.id
+        )}/void`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({ reason }),
+        }
+      );
+
+      const data = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        setError(data?.error || "Failed to void QC submission.");
+        return;
+      }
+
+      router.push("/qc-daily-production");
+      router.refresh();
+    } catch {
+      setError("Failed to void QC submission.");
+    } finally {
+      setVoiding(false);
+    }
+  }
+
   if (loading) return <div className="p-6">Loading…</div>;
 
   if (error) {
     return (
       <div className="p-6 space-y-4">
         <h1 className="text-xl font-semibold">QC Daily Production View</h1>
-        <div className="rounded border border-red-300 bg-red-50 p-3 text-sm text-red-700">{error}</div>
-        <Link href="/qc-daily-production" className="btn btn-secondary">Back</Link>
+        <div className="alert alert-danger">{error}</div>
+        <Link href="/qc-daily-production" className="btn btn-secondary">
+          Back
+        </Link>
       </div>
     );
   }
@@ -106,8 +196,10 @@ export default function QCDailyProductionViewPage({
     return (
       <div className="p-6 space-y-4">
         <h1 className="text-xl font-semibold">QC Daily Production View</h1>
-        <div className="rounded border border-red-300 bg-red-50 p-3 text-sm text-red-700">Not found.</div>
-        <Link href="/qc-daily-production" className="btn btn-secondary">Back</Link>
+        <div className="alert alert-danger">Not found.</div>
+        <Link href="/qc-daily-production" className="btn btn-secondary">
+          Back
+        </Link>
       </div>
     );
   }
@@ -116,15 +208,64 @@ export default function QCDailyProductionViewPage({
     <div className="p-6 space-y-6">
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <h1 className="text-xl font-semibold">QC Daily Production View</h1>
-        <Link href="/qc-daily-production" className="btn btn-secondary">Back</Link>
+
+        <div className="flex flex-wrap gap-2">
+          <Link href="/qc-daily-production" className="btn btn-secondary">
+            Back
+          </Link>
+
+          {!submission.isVoided ? (
+            <Link
+              href={`/qc-daily-production/${submission.id}/edit`}
+              className="btn btn-primary"
+            >
+              Edit
+            </Link>
+          ) : null}
+
+          {canVoid && !submission.isVoided ? (
+            <button
+              type="button"
+              className="btn btn-danger"
+              disabled={voiding}
+              onClick={handleVoid}
+            >
+              {voiding ? "Voiding..." : "Void Submission"}
+            </button>
+          ) : null}
+        </div>
       </div>
+
+      {submission.isVoided ? (
+        <div className="alert alert-danger">
+          This QC submission has been voided.
+          {submission.voidedAt ? ` Voided ${fmtTs(submission.voidedAt)}` : ""}
+          {submission.voidedBy ? ` by ${submission.voidedBy}.` : "."}
+          {submission.voidReason ? ` Reason: ${submission.voidReason}` : ""}
+        </div>
+      ) : null}
 
       <div className="rounded border p-4 grid grid-cols-1 md:grid-cols-3 gap-4">
         <Info label="Timestamp" value={fmtTs(submission.entryTs)} />
         <Info label="Entry Date" value={submission.entryDate} />
         <Info label="Name" value={submission.name} />
         <Info label="Employee #" value={submission.employeeNumber} />
-        <Info label="Sales Order" value={submission.salesOrder} />
+        <Info
+          label="Sales Order"
+          value={submission.salesOrder ?? submission.salesOrderDisplay ?? ""}
+        />
+        <Info label="Voided" value={yesNo(submission.isVoided)} />
+
+        {submission.isVoided ? (
+          <>
+            <Info label="Voided At" value={fmtTs(submission.voidedAt)} />
+            <Info label="Voided By" value={submission.voidedBy ?? ""} />
+            <div className="md:col-span-3">
+              <Info label="Void Reason" value={submission.voidReason ?? ""} />
+            </div>
+          </>
+        ) : null}
+
         <div className="md:col-span-3">
           <Info label="Header Notes" value={submission.notes || ""} />
         </div>
@@ -134,7 +275,9 @@ export default function QCDailyProductionViewPage({
         <div className="flex items-center justify-between flex-wrap gap-3 mb-4">
           <h2 className="text-base font-semibold">Lines</h2>
           <div className="text-sm text-gray-600">
-            Order Qty: <b>{totals.orderQty}</b> · Inspected: <b>{totals.inspected}</b> · Rejected: <b>{totals.rejected}</b> · Shipped: <b>{totals.shipped}</b>
+            Order Qty: <b>{totals.orderQty}</b> · Inspected:{" "}
+            <b>{totals.inspected}</b> · Rejected: <b>{totals.rejected}</b> ·
+            Shipped: <b>{totals.shipped}</b>
           </div>
         </div>
 
@@ -163,6 +306,7 @@ export default function QCDailyProductionViewPage({
                   <Td>{line.notes ?? ""}</Td>
                 </tr>
               ))}
+
               {lines.length === 0 ? (
                 <tr>
                   <Td colSpan={7}>No lines found.</Td>
@@ -172,6 +316,13 @@ export default function QCDailyProductionViewPage({
           </table>
         </div>
       </div>
+
+      <ActivityHistoryPanel
+        entityType="qc_daily_submissions"
+        entityId={String(submission.id)}
+        title="Activity History"
+        defaultExpanded={false}
+      />
     </div>
   );
 }
@@ -179,16 +330,32 @@ export default function QCDailyProductionViewPage({
 function Info({ label, value }: { label: string; value: any }) {
   return (
     <div>
-      <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide">{label}</div>
+      <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
+        {label}
+      </div>
       <div className="mt-1 text-sm">{value ?? ""}</div>
     </div>
   );
 }
 
 function Th({ children }: { children: React.ReactNode }) {
-  return <th className="text-left border-b bg-gray-50 px-3 py-2 whitespace-nowrap">{children}</th>;
+  return (
+    <th className="text-left border-b bg-gray-50 px-3 py-2 whitespace-nowrap">
+      {children}
+    </th>
+  );
 }
 
-function Td({ children, colSpan }: { children: React.ReactNode; colSpan?: number }) {
-  return <td colSpan={colSpan} className="border-b px-3 py-2 align-top">{children}</td>;
+function Td({
+  children,
+  colSpan,
+}: {
+  children: React.ReactNode;
+  colSpan?: number;
+}) {
+  return (
+    <td colSpan={colSpan} className="border-b px-3 py-2 align-top">
+      {children}
+    </td>
+  );
 }

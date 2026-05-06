@@ -31,12 +31,27 @@ function clampInt(value: string | null, def: number, min: number, max: number): 
   return Math.max(min, Math.min(max, i));
 }
 
-const ALLOWED_SORT = new Set(["entryTs", "entryDate", "name", "salesOrder", "lineCount"]);
+const ALLOWED_SORT = new Set([
+  "entryTs",
+  "entryDate",
+  "name",
+  "salesOrder",
+  "lineCount",
+]);
+
+const QC_ACCESS_ROLES = new Set(["ADMIN", "MANAGER", "SUPERVISOR"]);
+
+function canAccessAllQc(role: string | null | undefined) {
+  return QC_ACCESS_ROLES.has(String(role || "").trim().toUpperCase());
+}
 
 export async function GET(req: NextRequest) {
   const auth = await getAuthFromRequest(req as any);
-  if (!auth) return NextResponse.json<Resp>({ error: "Unauthorized" }, { status: 401 });
+  if (!auth) {
+    return NextResponse.json<Resp>({ error: "Unauthorized" }, { status: 401 });
+  }
 
+  const authAny = auth as any;
   const sp = req.nextUrl.searchParams;
 
   // Defaults: last 30 days
@@ -69,43 +84,46 @@ export async function GET(req: NextRequest) {
     | "salesOrder"
     | "lineCount";
 
-  const sortDir = (sp.get("sortDir")?.trim() || "desc").toLowerCase() === "asc" ? "asc" : "desc";
+  const sortDir =
+    (sp.get("sortDir")?.trim() || "desc").toLowerCase() === "asc"
+      ? "asc"
+      : "desc";
 
   // Filters
   const name = sp.get("name")?.trim() ?? "";
   const notes = sp.get("notes")?.trim() ?? "";
   const salesOrderNumber = sp.get("salesOrderNumber")?.trim() ?? ""; // starts-with
-  const detailNumber = sp.get("detailNumber")?.trim() ?? "";         // starts-with (exists on any line)
+  const detailNumber = sp.get("detailNumber")?.trim() ?? ""; // starts-with (exists on any line)
 
   try {
-    const result =
-  auth.role === "ADMIN"
-    ? await listQCSubmissionSummariesRange({
-        entryDateFrom,
-        entryDateTo,
-        name,
-        notes,
-        salesOrderStartsWith: salesOrderNumber,
-        detailStartsWith: detailNumber,
-        sortBy,
-        sortDir,
-        limit,
-        offset,
-      })
-    : await listQCSubmissionSummariesRange({
-        entryDateFrom,
-        entryDateTo,
-        employeeNumber: Number(auth.employeeNumber),
-        name,
-        notes,
-        salesOrderStartsWith: salesOrderNumber,
-        detailStartsWith: detailNumber,
-        sortBy,
-        sortDir,
-        limit,
-        offset,
-      });
+    const canAccessAll = canAccessAllQc(authAny.role);
 
+    const result = canAccessAll
+      ? await listQCSubmissionSummariesRange({
+          entryDateFrom,
+          entryDateTo,
+          name,
+          notes,
+          salesOrderStartsWith: salesOrderNumber,
+          detailStartsWith: detailNumber,
+          sortBy,
+          sortDir,
+          limit,
+          offset,
+        })
+      : await listQCSubmissionSummariesRange({
+          entryDateFrom,
+          entryDateTo,
+          employeeNumber: Number(authAny.employeeNumber),
+          name,
+          notes,
+          salesOrderStartsWith: salesOrderNumber,
+          detailStartsWith: detailNumber,
+          sortBy,
+          sortDir,
+          limit,
+          offset,
+        });
 
     return NextResponse.json<Resp>(
       {
