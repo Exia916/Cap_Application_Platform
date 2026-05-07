@@ -6,6 +6,12 @@ type Resp =
   | { submissions: any[]; totalCount: number; limit: number; offset: number }
   | { error: string };
 
+const ALL_ACCESS_ROLES = new Set(["ADMIN", "MANAGER", "SUPERVISOR"]);
+
+function canAccessAll(role: unknown): boolean {
+  return ALL_ACCESS_ROLES.has(String(role ?? "").trim().toUpperCase());
+}
+
 function isValidDate(value: string): boolean {
   return /^\d{4}-\d{2}-\d{2}$/.test(value);
 }
@@ -40,6 +46,7 @@ const ALLOWED_SORT = new Set([
   "lineCount",
   "totalStitches",
   "totalPieces",
+  "isVoided",
 ]);
 
 export async function GET(req: NextRequest) {
@@ -70,9 +77,13 @@ export async function GET(req: NextRequest) {
     | "salesOrder"
     | "lineCount"
     | "totalStitches"
-    | "totalPieces";
-
-  const sortDir = (sp.get("sortDir")?.trim() || "desc").toLowerCase() === "asc" ? "asc" : "desc";
+    | "totalPieces"
+    | "isVoided";
+  
+  const sortDir: "asc" | "desc" =
+    (sp.get("sortDir")?.trim() || "desc").toLowerCase() === "asc"
+      ? "asc"
+      : "desc";
 
   const name = sp.get("name")?.trim() ?? "";
   const machineNumber = sp.get("machineNumber")?.trim() ?? "";
@@ -80,33 +91,25 @@ export async function GET(req: NextRequest) {
   const notes = sp.get("notes")?.trim() ?? "";
 
   try {
-    const result =
-      auth.role === "ADMIN"
-        ? await listEmbroiderySubmissionSummariesRange({
-            shiftDateFrom,
-            shiftDateTo,
-            name,
-            machineNumber,
-            salesOrderStartsWith: salesOrder,
-            notes,
-            sortBy,
-            sortDir,
-            limit,
-            offset,
-          })
-        : await listEmbroiderySubmissionSummariesRange({
-            shiftDateFrom,
-            shiftDateTo,
-            employeeNumber: Number(auth.employeeNumber),
-            name,
-            machineNumber,
-            salesOrderStartsWith: salesOrder,
-            notes,
-            sortBy,
-            sortDir,
-            limit,
-            offset,
-          });
+    const args = {
+      shiftDateFrom,
+      shiftDateTo,
+      name,
+      machineNumber,
+      salesOrderStartsWith: salesOrder,
+      notes,
+      sortBy,
+      sortDir,
+      limit,
+      offset,
+    };
+
+    const result = canAccessAll(auth.role)
+      ? await listEmbroiderySubmissionSummariesRange(args)
+      : await listEmbroiderySubmissionSummariesRange({
+          ...args,
+          employeeNumber: Number(auth.employeeNumber),
+        });
 
     return NextResponse.json<Resp>(
       {

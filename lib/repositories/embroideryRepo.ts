@@ -28,6 +28,11 @@ export type EmbroideryEntry = {
   jobberSamplesRan?: number | null;
 
   notes: string | null;
+
+  isVoided?: boolean;
+  voidedAt?: string | null;
+  voidedBy?: string | null;
+  voidReason?: string | null;
 };
 
 export type AddEmbroideryEntryInput = {
@@ -88,7 +93,9 @@ export type UpdateEmbroideryEntryInput = {
   notes: string | null;
 };
 
-export async function addEmbroideryEntry(input: AddEmbroideryEntryInput): Promise<{ id: string }> {
+export async function addEmbroideryEntry(
+  input: AddEmbroideryEntryInput
+): Promise<{ id: string }> {
   const { rows } = await db.query<{ id: string }>(
     `
     INSERT INTO public.embroidery_daily_entries (
@@ -162,16 +169,23 @@ function entrySelectSql() {
       detail_complete AS "detailComplete",
       annex,
       jobber_samples_ran AS "jobberSamplesRan",
-      notes
+      notes,
+      COALESCE(is_voided, false) AS "isVoided",
+      voided_at AS "voidedAt",
+      voided_by AS "voidedBy",
+      void_reason AS "voidReason"
     FROM public.embroidery_daily_entries
   `;
 }
 
-export async function listEmbroideryEntriesByShiftDate(shiftDate: string): Promise<EmbroideryEntry[]> {
+export async function listEmbroideryEntriesByShiftDate(
+  shiftDate: string
+): Promise<EmbroideryEntry[]> {
   const { rows } = await db.query<EmbroideryEntry>(
     `
     ${entrySelectSql()}
     WHERE shift_date = $1
+      AND COALESCE(is_voided, false) = false
     ORDER BY entry_ts DESC
     `,
     [shiftDate]
@@ -189,6 +203,7 @@ export async function listEmbroideryEntriesByUserAndShiftDate(
     ${entrySelectSql()}
     WHERE employee_number = $1
       AND shift_date = $2
+      AND COALESCE(is_voided, false) = false
     ORDER BY entry_ts DESC
     `,
     [employeeNumber, shiftDate]
@@ -197,20 +212,26 @@ export async function listEmbroideryEntriesByUserAndShiftDate(
   return rows;
 }
 
-export async function getEmbroideryEntryById(id: string): Promise<EmbroideryEntry | null> {
+export async function getEmbroideryEntryById(
+  id: string,
+  options?: { includeVoided?: boolean }
+): Promise<EmbroideryEntry | null> {
   const { rows } = await db.query<EmbroideryEntry>(
     `
     ${entrySelectSql()}
     WHERE id = $1
+      AND ($2::boolean = true OR COALESCE(is_voided, false) = false)
     LIMIT 1
     `,
-    [id]
+    [id, !!options?.includeVoided]
   );
 
   return rows[0] ?? null;
 }
 
-export async function updateEmbroideryEntry(input: UpdateEmbroideryEntryInput): Promise<void> {
+export async function updateEmbroideryEntry(
+  input: UpdateEmbroideryEntryInput
+): Promise<void> {
   await db.query(
     `
     UPDATE public.embroidery_daily_entries
@@ -234,6 +255,7 @@ export async function updateEmbroideryEntry(input: UpdateEmbroideryEntryInput): 
       jobber_samples_ran = $18,
       notes = $19
     WHERE id = $1
+      AND COALESCE(is_voided, false) = false
     `,
     [
       input.id,
@@ -279,6 +301,12 @@ export type EmbroiderySubmission = {
   annex: boolean;
 
   notes: string | null;
+
+  isVoided: boolean;
+  voidedAt: string | null;
+  voidedBy: string | null;
+  voidReason: string | null;
+
   createdAt: string;
   lineCount?: number;
   totalStitches?: number | null;
@@ -305,6 +333,10 @@ function submissionBaseSelectSql() {
       sales_order_display AS "salesOrderDisplay",
       annex,
       notes,
+      COALESCE(is_voided, false) AS "isVoided",
+      voided_at AS "voidedAt",
+      voided_by AS "voidedBy",
+      void_reason AS "voidReason",
       created_at AS "createdAt"
     FROM public.embroidery_daily_submissions
   `;
@@ -470,6 +502,10 @@ export async function listEmbroiderySubmissionsForUserAndSO(input: {
       s.sales_order_display AS "salesOrderDisplay",
       s.annex AS "annex",
       s.notes,
+      COALESCE(s.is_voided, false) AS "isVoided",
+      s.voided_at AS "voidedAt",
+      s.voided_by AS "voidedBy",
+      s.void_reason AS "voidReason",
       s.created_at AS "createdAt",
       COUNT(e.id)::int AS "lineCount",
       COALESCE(SUM(e.stitches), 0)::bigint AS "totalStitches",
@@ -477,8 +513,10 @@ export async function listEmbroiderySubmissionsForUserAndSO(input: {
     FROM public.embroidery_daily_submissions s
     JOIN public.embroidery_daily_entries e
       ON e.submission_id = s.id
+     AND COALESCE(e.is_voided, false) = false
     WHERE s.employee_number = $1
       AND COALESCE(s.sales_order_base, s.sales_order::text) = $2
+      AND COALESCE(s.is_voided, false) = false
     GROUP BY s.id
     ORDER BY s.entry_ts DESC
     `,
@@ -488,14 +526,20 @@ export async function listEmbroiderySubmissionsForUserAndSO(input: {
   return rows;
 }
 
-export async function getEmbroiderySubmissionWithLines(submissionId: string): Promise<SubmissionWithLines | null> {
+export async function getEmbroiderySubmissionWithLines(
+  submissionId: string,
+  options?: { includeVoided?: boolean }
+): Promise<SubmissionWithLines | null> {
+  const includeVoided = !!options?.includeVoided;
+
   const sub = await db.query<EmbroiderySubmission>(
     `
     ${submissionBaseSelectSql()}
     WHERE id = $1
+      AND ($2::boolean = true OR COALESCE(is_voided, false) = false)
     LIMIT 1
     `,
-    [submissionId]
+    [submissionId, includeVoided]
   );
 
   const submission = sub.rows[0];
@@ -505,9 +549,10 @@ export async function getEmbroiderySubmissionWithLines(submissionId: string): Pr
     `
     ${entrySelectSql()}
     WHERE submission_id = $1
+      AND ($2::boolean = true OR COALESCE(is_voided, false) = false)
     ORDER BY id ASC
     `,
-    [submissionId]
+    [submissionId, includeVoided]
   );
 
   return { submission, lines: linesRes.rows };
@@ -538,7 +583,30 @@ export async function replaceEmbroiderySubmission(input: {
   }>;
 }): Promise<{ count: number }> {
   await db.query("BEGIN");
+
   try {
+    const { rows: existingRows } = await db.query<{
+      isVoided: boolean;
+    }>(
+      `
+      SELECT COALESCE(is_voided, false) AS "isVoided"
+      FROM public.embroidery_daily_submissions
+      WHERE id = $1
+      LIMIT 1
+      `,
+      [input.submissionId]
+    );
+
+    const existing = existingRows[0];
+
+    if (!existing) {
+      throw new Error("Submission not found.");
+    }
+
+    if (existing.isVoided) {
+      throw new Error("Voided submissions cannot be edited.");
+    }
+
     await db.query(
       `
       UPDATE public.embroidery_daily_submissions
@@ -551,6 +619,7 @@ export async function replaceEmbroiderySubmission(input: {
         annex = $7,
         notes = $8
       WHERE id = $1
+        AND COALESCE(is_voided, false) = false
       `,
       [
         input.submissionId,
@@ -584,7 +653,13 @@ export async function replaceEmbroiderySubmission(input: {
     const s = subRows[0];
     if (!s) throw new Error("Submission not found.");
 
-    await db.query(`DELETE FROM public.embroidery_daily_entries WHERE submission_id = $1`, [input.submissionId]);
+    await db.query(
+      `
+      DELETE FROM public.embroidery_daily_entries
+      WHERE submission_id = $1
+      `,
+      [input.submissionId]
+    );
 
     await addEmbroideryEntriesBulk({
       submissionId: input.submissionId,
@@ -611,6 +686,72 @@ export async function replaceEmbroiderySubmission(input: {
   }
 }
 
+export async function voidEmbroiderySubmission(input: {
+  submissionId: string;
+  voidedBy: string;
+  voidReason?: string | null;
+}): Promise<EmbroiderySubmission | null> {
+  await db.query("BEGIN");
+
+  try {
+    const result = await db.query<EmbroiderySubmission>(
+      `
+      UPDATE public.embroidery_daily_submissions
+      SET
+        is_voided = true,
+        voided_at = NOW(),
+        voided_by = $2,
+        void_reason = $3
+      WHERE id = $1
+        AND COALESCE(is_voided, false) = false
+      RETURNING
+        id,
+        entry_ts AS "entryTs",
+        ((entry_ts AT TIME ZONE 'America/Chicago') - interval '6 hours')::date AS "shiftDate",
+        name,
+        employee_number AS "employeeNumber",
+        shift,
+        machine_number AS "machineNumber",
+        COALESCE(sales_order_display, sales_order::text) AS "salesOrder",
+        sales_order_base AS "salesOrderBase",
+        sales_order_display AS "salesOrderDisplay",
+        annex,
+        notes,
+        COALESCE(is_voided, false) AS "isVoided",
+        voided_at AS "voidedAt",
+        voided_by AS "voidedBy",
+        void_reason AS "voidReason",
+        created_at AS "createdAt"
+      `,
+      [input.submissionId, input.voidedBy, input.voidReason ?? null]
+    );
+
+    const row = result.rows[0] ?? null;
+
+    if (row) {
+      await db.query(
+        `
+        UPDATE public.embroidery_daily_entries
+        SET
+          is_voided = true,
+          voided_at = NOW(),
+          voided_by = $2,
+          void_reason = $3
+        WHERE submission_id = $1
+          AND COALESCE(is_voided, false) = false
+        `,
+        [input.submissionId, input.voidedBy, input.voidReason ?? null]
+      );
+    }
+
+    await db.query("COMMIT");
+    return row;
+  } catch (e) {
+    await db.query("ROLLBACK");
+    throw e;
+  }
+}
+
 export type EmbroiderySubmissionSummaryRow = {
   id: string;
   entryTs: string;
@@ -624,6 +765,10 @@ export type EmbroiderySubmissionSummaryRow = {
   totalStitches: number | null;
   totalPieces: number | null;
   notes: string | null;
+  isVoided: boolean;
+  voidedAt: string | null;
+  voidedBy: string | null;
+  voidReason: string | null;
 };
 
 export type ListEmbroiderySubmissionSummariesArgs = {
@@ -644,7 +789,8 @@ export type ListEmbroiderySubmissionSummariesArgs = {
     | "salesOrder"
     | "lineCount"
     | "totalStitches"
-    | "totalPieces";
+    | "totalPieces"
+    | "isVoided";
   sortDir?: "asc" | "desc";
   limit: number;
   offset: number;
@@ -654,7 +800,12 @@ export async function listEmbroiderySubmissionSummariesRange(
   input: ListEmbroiderySubmissionSummariesArgs
 ): Promise<{ rows: EmbroiderySubmissionSummaryRow[]; totalCount: number }> {
   const params: any[] = [input.shiftDateFrom, input.shiftDateTo];
-  let where = `e.shift_date BETWEEN $1::date AND $2::date`;
+
+  let where = `
+    e.shift_date BETWEEN $1::date AND $2::date
+    AND COALESCE(s.is_voided, false) = false
+    AND COALESCE(e.is_voided, false) = false
+  `;
 
   if (input.employeeNumber != null) {
     params.push(input.employeeNumber);
@@ -690,6 +841,7 @@ export async function listEmbroiderySubmissionSummariesRange(
           SELECT 1
           FROM public.embroidery_daily_entries e2
           WHERE e2.submission_id = s.id
+            AND COALESCE(e2.is_voided, false) = false
             AND COALESCE(e2.notes,'') ILIKE $${params.length}
         )
       )
@@ -708,6 +860,7 @@ export async function listEmbroiderySubmissionSummariesRange(
     lineCount: `b."lineCount"`,
     totalStitches: `b."totalStitches"`,
     totalPieces: `b."totalPieces"`,
+    isVoided: `b."isVoided"`,
   };
 
   const orderExpr = ORDER_MAP[sortBy] ?? ORDER_MAP.entryTs;
@@ -715,6 +868,7 @@ export async function listEmbroiderySubmissionSummariesRange(
 
   params.push(input.limit);
   const limitParam = `$${params.length}`;
+
   params.push(input.offset);
   const offsetParam = `$${params.length}`;
 
@@ -733,7 +887,11 @@ export async function listEmbroiderySubmissionSummariesRange(
         COUNT(e.id)::int AS "lineCount",
         COALESCE(SUM(e.stitches), 0)::bigint AS "totalStitches",
         COALESCE(SUM(e.pieces), 0)::bigint AS "totalPieces",
-        s.notes AS "notes"
+        s.notes AS "notes",
+        COALESCE(s.is_voided, false) AS "isVoided",
+        s.voided_at AS "voidedAt",
+        s.voided_by AS "voidedBy",
+        s.void_reason AS "voidReason"
       FROM public.embroidery_daily_submissions s
       LEFT JOIN public.embroidery_daily_entries e
         ON e.submission_id = s.id
