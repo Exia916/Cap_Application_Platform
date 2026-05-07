@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import ReadOnlyAttachmentsPanel from "@/components/platform/ReadOnlyAttachmentsPanel";
 
 type Article = {
   id: string;
@@ -24,6 +25,8 @@ type RelatedArticle = {
   categoryName: string;
 };
 
+const PLAYBOOK_ATTACHMENT_ENTITY_TYPE = "playbook_article";
+
 function fmtDate(value?: string | null) {
   if (!value) return "";
   const d = new Date(value);
@@ -41,7 +44,6 @@ export default function PlaybookArticleView({
 
   return (
     <div className="record-shell">
-      {/* Back Button */}
       <div style={{ marginBottom: 12 }}>
         <button
           type="button"
@@ -82,9 +84,11 @@ export default function PlaybookArticleView({
             <span className="record-pill record-pill-neutral">
               {article.categoryName}
             </span>
+
             <span className="record-pill record-pill-info">
               {article.articleType}
             </span>
+
             {article.publishedAt ? (
               <span className="record-pill record-pill-success">
                 Published {fmtDate(article.publishedAt)}
@@ -110,9 +114,7 @@ export default function PlaybookArticleView({
               </div>
 
               {relatedArticles.length === 0 ? (
-                <div className="text-soft">
-                  No related articles linked yet.
-                </div>
+                <div className="text-soft">No related articles linked yet.</div>
               ) : (
                 <div className="record-sidebar-nav">
                   {relatedArticles.map((row) => (
@@ -132,8 +134,15 @@ export default function PlaybookArticleView({
               <div className="record-sidebar-section-title">
                 Supporting Files
               </div>
+
+              <div className="record-sidebar-nav">
+                <a href="#supporting-files" className="record-sidebar-link">
+                  View supporting files
+                </a>
+              </div>
+
               <div className="text-soft">
-                Phase 1 attachment management is enabled on the admin edit page.
+                Files are managed from the admin edit page.
               </div>
             </div>
           </div>
@@ -156,6 +165,24 @@ export default function PlaybookArticleView({
               >
                 {article.contentMarkdown}
               </article>
+            </div>
+          </section>
+
+          <section id="supporting-files" className="record-section">
+            <div className="record-section-card">
+              <div className="record-section-header">
+                <div>
+                  <h2 className="record-section-title">Supporting Files</h2>
+                  <p className="page-subtitle" style={{ marginTop: 4 }}>
+                    Open or download files attached to this playbook article.
+                  </p>
+                </div>
+              </div>
+
+              <ReadOnlyAttachmentsPanel
+                entityType={PLAYBOOK_ATTACHMENT_ENTITY_TYPE}
+                entityId={article.id}
+              />
             </div>
           </section>
         </div>
