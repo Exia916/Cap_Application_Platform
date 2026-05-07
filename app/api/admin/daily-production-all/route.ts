@@ -169,7 +169,7 @@ export async function GET(req: Request) {
   const baseSelect = `
     SELECT
       e.id,
-      e.shift_date,
+      e.shift_date::text AS shift_date,
       e.entry_ts,
       e.name,
       e.employee_number,

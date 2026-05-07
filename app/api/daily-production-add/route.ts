@@ -1,7 +1,14 @@
 import { NextResponse } from "next/server";
 import { getAuthFromRequest } from "@/lib/auth";
-import { createEmbroiderySubmission, addEmbroideryEntriesBulk } from "@/lib/repositories/embroideryRepo";
-import { normalizeSalesOrder, toLegacySalesOrderNumber } from "@/lib/utils/salesOrder";
+import {
+  createEmbroiderySubmission,
+  addEmbroideryEntriesBulk,
+} from "@/lib/repositories/embroideryRepo";
+import {
+  normalizeSalesOrder,
+  toLegacySalesOrderNumber,
+} from "@/lib/utils/salesOrder";
+import { createActivityHistory } from "@/lib/repositories/activityHistoryRepo";
 
 type LineBody = {
   detailNumber: string;
@@ -40,6 +47,12 @@ function toNonNegIntOrNull(value: unknown, label: string): number | null {
     throw new Error(`${label} must be a non-negative integer.`);
   }
   return n;
+}
+
+function authDisplayName(auth: any): string {
+  return String(
+    auth?.displayName ?? auth?.name ?? auth?.username ?? "Unknown"
+  ).trim();
 }
 
 export async function POST(req: Request) {
@@ -121,6 +134,28 @@ export async function POST(req: Request) {
         };
       }),
     });
+
+    try {
+      await createActivityHistory({
+        entityType: "embroidery_daily_submissions",
+        entityId: sub.id,
+        eventType: "CREATED",
+        message: `Embroidery submission created with ${inserted.length} line(s).`,
+        module: "Embroidery",
+        userId: auth.userId != null ? String(auth.userId) : null,
+        userName: authDisplayName(auth),
+        employeeNumber,
+        salesOrder: legacySalesOrder,
+        newValue: {
+          lineCount: inserted.length,
+          salesOrder: normalizedSO.salesOrderDisplay ?? normalizedSO.salesOrderBase,
+          machineNumber,
+          annex,
+        },
+      });
+    } catch (historyErr) {
+      console.error("daily-production-add activity history error:", historyErr);
+    }
 
     return NextResponse.json({
       success: true,
