@@ -2,6 +2,8 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 
+type AttachmentVisibility = "standard" | "os_secure";
+
 type Attachment = {
   id: number;
   originalFileName: string;
@@ -10,6 +12,7 @@ type Attachment = {
   createdAt: string;
   uploadedByName?: string | null;
   attachmentComment?: string | null;
+  visibility?: AttachmentVisibility | null;
   canPreviewInline?: boolean;
 };
 
@@ -24,7 +27,16 @@ type OpenWithState =
 
 type CommentDialogState =
   | { open: false }
-  | { open: true; attachment: Attachment; value: string };
+  | {
+      open: true;
+      attachment: Attachment;
+      value: string;
+      visibility: AttachmentVisibility;
+    };
+
+function normalizeVisibility(v?: string | null): AttachmentVisibility {
+  return v === "os_secure" ? "os_secure" : "standard";
+}
 
 function fmtFileSize(bytes?: number | null) {
   const value = Number(bytes ?? 0);
@@ -78,6 +90,11 @@ export default function AttachmentsPanel({ entityType, entityId }: Props) {
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [selectedId, setSelectedId] = useState<number | null>(null);
 
+  const [supportsOsSecureFiles, setSupportsOsSecureFiles] = useState(false);
+  const [canManageOsSecureFiles, setCanManageOsSecureFiles] = useState(false);
+  const [uploadVisibility, setUploadVisibility] =
+    useState<AttachmentVisibility>("standard");
+
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [removingId, setRemovingId] = useState<number | null>(null);
@@ -104,6 +121,8 @@ export default function AttachmentsPanel({ entityType, entityId }: Props) {
     () => attachments.find((x) => x.id === selectedId) ?? null,
     [attachments, selectedId]
   );
+
+  const selectedIsSecure = normalizeVisibility(selectedAttachment?.visibility) === "os_secure";
 
   useEffect(() => {
     function onDown(e: MouseEvent) {
@@ -180,7 +199,14 @@ export default function AttachmentsPanel({ entityType, entityId }: Props) {
       }
 
       const rows = Array.isArray((data as any)?.rows) ? (data as any).rows : [];
+
       setAttachments(rows);
+      setSupportsOsSecureFiles(!!(data as any)?.supportsOsSecureFiles);
+      setCanManageOsSecureFiles(!!(data as any)?.canManageOsSecureFiles);
+
+      if (!(data as any)?.canManageOsSecureFiles) {
+        setUploadVisibility("standard");
+      }
 
       setSelectedId((current) => {
         if (!rows.length) return null;
@@ -190,6 +216,9 @@ export default function AttachmentsPanel({ entityType, entityId }: Props) {
     } catch (e: any) {
       setAttachments([]);
       setSelectedId(null);
+      setSupportsOsSecureFiles(false);
+      setCanManageOsSecureFiles(false);
+      setUploadVisibility("standard");
       setError(e?.message || "Failed to load attachments.");
     } finally {
       setLoading(false);
@@ -198,6 +227,7 @@ export default function AttachmentsPanel({ entityType, entityId }: Props) {
 
   useEffect(() => {
     load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [entityType, entityId]);
 
   async function uploadFiles(files: File[]) {
@@ -216,6 +246,10 @@ export default function AttachmentsPanel({ entityType, entityId }: Props) {
         form.append("file", file);
         form.append("entityType", entityType);
         form.append("entityId", entityId);
+        form.append(
+          "visibility",
+          canManageOsSecureFiles ? uploadVisibility : "standard"
+        );
 
         const res = await fetch("/api/platform/attachments", {
           method: "POST",
@@ -300,14 +334,24 @@ export default function AttachmentsPanel({ entityType, entityId }: Props) {
     }
   }
 
+  async function openAttachment(attachment: Attachment, download = false) {
+    const url = `/api/platform/attachments/${attachment.id}${download ? "?action=download" : ""}`;
+    window.open(url, "_blank", "noopener,noreferrer");
+  }
+
   async function openSelected(download = false) {
     if (!selectedAttachment) return;
-    const url = `/api/platform/attachments/${selectedAttachment.id}${download ? "?action=download" : ""}`;
-    window.open(url, "_blank", "noopener,noreferrer");
+    await openAttachment(selectedAttachment, download);
   }
 
   async function copyShareLink() {
     if (!selectedAttachment) return;
+
+    if (normalizeVisibility(selectedAttachment.visibility) === "os_secure") {
+      setError("OS Secure Files cannot be shared by link.");
+      setOpenWith({ open: false });
+      return;
+    }
 
     try {
       setError(null);
@@ -337,6 +381,7 @@ export default function AttachmentsPanel({ entityType, entityId }: Props) {
       open: true,
       attachment: selectedAttachment,
       value: selectedAttachment.attachmentComment || "",
+      visibility: normalizeVisibility(selectedAttachment.visibility),
     });
   }
 
@@ -348,25 +393,34 @@ export default function AttachmentsPanel({ entityType, entityId }: Props) {
       setError(null);
       setSuccessMsg(null);
 
+      const body: {
+        attachmentComment: string;
+        visibility?: AttachmentVisibility;
+      } = {
+        attachmentComment: commentDialog.value,
+      };
+
+      if (canManageOsSecureFiles) {
+        body.visibility = commentDialog.visibility;
+      }
+
       const res = await fetch(`/api/platform/attachments/${commentDialog.attachment.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({
-          attachmentComment: commentDialog.value,
-        }),
+        body: JSON.stringify(body),
       });
 
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        throw new Error((data as any)?.error || "Failed to update attachment comment.");
+        throw new Error((data as any)?.error || "Failed to update attachment.");
       }
 
       setCommentDialog({ open: false });
-      setSuccessMsg(`Updated comments for "${commentDialog.attachment.originalFileName}".`);
+      setSuccessMsg(`Updated "${commentDialog.attachment.originalFileName}".`);
       await load();
     } catch (e: any) {
-      setError(e?.message || "Failed to update attachment comment.");
+      setError(e?.message || "Failed to update attachment.");
     } finally {
       setSavingComment(false);
     }
@@ -425,12 +479,27 @@ export default function AttachmentsPanel({ entityType, entityId }: Props) {
           min-height: 30px;
           display: flex;
           align-items: center;
+          justify-content: space-between;
+          gap: 10px;
         }
 
         .dw-attach-dropzone.active {
           background: var(--accent-soft);
           border-color: var(--brand-blue);
           color: var(--brand-blue);
+        }
+
+        .dw-attach-upload-mode {
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+          white-space: nowrap;
+          font-size: 12px;
+          color: var(--text);
+        }
+
+        .dw-attach-upload-mode input {
+          margin: 0;
         }
 
         .dw-attach-resize-shell {
@@ -514,6 +583,33 @@ export default function AttachmentsPanel({ entityType, entityId }: Props) {
           text-align: center;
           font-size: 14px;
           line-height: 1;
+        }
+
+        .dw-attach-filename {
+          overflow: hidden;
+          text-overflow: ellipsis;
+        }
+
+        .dw-secure-badge {
+          display: inline-flex;
+          align-items: center;
+          gap: 4px;
+          margin-left: 6px;
+          padding: 1px 6px;
+          border: 1px solid var(--warning-border);
+          background: var(--warning-bg);
+          color: var(--warning-text);
+          border-radius: 999px;
+          font-size: 10px;
+          font-weight: 700;
+          line-height: 1.4;
+          white-space: nowrap;
+        }
+
+        .dw-selected .dw-secure-badge {
+          background: #ffffff;
+          color: #8a5a12;
+          border-color: #f4d39b;
         }
 
         .dw-attach-splitter,
@@ -645,7 +741,7 @@ export default function AttachmentsPanel({ entityType, entityId }: Props) {
           top: 100%;
           left: 0;
           margin-top: 4px;
-          min-width: 170px;
+          min-width: 190px;
           background: #fff;
           border: 1px solid var(--border-table-strong);
           box-shadow: var(--shadow-md);
@@ -665,6 +761,14 @@ export default function AttachmentsPanel({ entityType, entityId }: Props) {
 
         .dw-attach-openwith-menu button:hover {
           background: var(--surface-muted);
+        }
+
+        .dw-attach-secure-note {
+          padding: 8px 10px;
+          font-size: 12px;
+          color: var(--warning-text);
+          background: var(--warning-bg);
+          border-top: 1px solid var(--warning-border);
         }
 
         .dw-attach-dialog-backdrop {
@@ -715,6 +819,13 @@ export default function AttachmentsPanel({ entityType, entityId }: Props) {
           min-height: 30px;
           box-shadow: none;
         }
+
+        @media (max-width: 720px) {
+          .dw-attach-dropzone {
+            align-items: flex-start;
+            flex-direction: column;
+          }
+        }
       `}</style>
 
       {error ? <div className="alert alert-danger dw-attach-msg">{error}</div> : null}
@@ -730,9 +841,26 @@ export default function AttachmentsPanel({ entityType, entityId }: Props) {
               onDragLeave={handleDrag}
               onDragOver={handleDrag}
             >
-              {uploading
-                ? "Uploading attachments..."
-                : "Drag and drop files here, or use Add. Max 100 MB. Executable and script files are blocked."}
+              <span>
+                {uploading
+                  ? "Uploading attachments..."
+                  : uploadVisibility === "os_secure" && canManageOsSecureFiles
+                    ? "Drag and drop OS Secure Files here, or use Add. Max 100 MB. Executable and script files are blocked."
+                    : "Drag and drop files here, or use Add. Max 100 MB. Executable and script files are blocked."}
+              </span>
+
+              {supportsOsSecureFiles && canManageOsSecureFiles ? (
+                <label className="dw-attach-upload-mode" title="Only authorized roles can open OS Secure Files.">
+                  <input
+                    type="checkbox"
+                    checked={uploadVisibility === "os_secure"}
+                    onChange={(e) =>
+                      setUploadVisibility(e.target.checked ? "os_secure" : "standard")
+                    }
+                  />
+                  <span>Upload as OS Secure File</span>
+                </label>
+              ) : null}
             </div>
 
             <div className="dw-attach-resize-shell">
@@ -772,6 +900,8 @@ export default function AttachmentsPanel({ entityType, entityId }: Props) {
                       ) : (
                         attachments.map((a) => {
                           const selected = a.id === selectedId;
+                          const secure = normalizeVisibility(a.visibility) === "os_secure";
+
                           return (
                             <tr
                               key={a.id}
@@ -782,18 +912,31 @@ export default function AttachmentsPanel({ entityType, entityId }: Props) {
                               }}
                               onDoubleClick={() => {
                                 setSelectedId(a.id);
-                                void openSelected(false);
+                                void openAttachment(a, false);
                               }}
                             >
                               <td title={a.originalFileName}>
                                 <div className="dw-attach-filecell">
-                                  <span className="dw-attach-icon">{fileIcon(a.originalFileName, a.mimeType)}</span>
-                                  <span>{a.originalFileName}</span>
+                                  <span className="dw-attach-icon">
+                                    {fileIcon(a.originalFileName, a.mimeType)}
+                                  </span>
+                                  <span className="dw-attach-filename">
+                                    {a.originalFileName}
+                                  </span>
+                                  {secure ? (
+                                    <span className="dw-secure-badge">🔒 OS Secure</span>
+                                  ) : null}
                                 </div>
                               </td>
-                              <td title={a.attachmentComment || ""}>{a.attachmentComment || ""}</td>
-                              <td title={a.uploadedByName || ""}>{a.uploadedByName || ""}</td>
-                              <td title={fmtDateOnly(a.createdAt)}>{fmtDateOnly(a.createdAt)}</td>
+                              <td title={a.attachmentComment || ""}>
+                                {a.attachmentComment || ""}
+                              </td>
+                              <td title={a.uploadedByName || ""}>
+                                {a.uploadedByName || ""}
+                              </td>
+                              <td title={fmtDateOnly(a.createdAt)}>
+                                {fmtDateOnly(a.createdAt)}
+                              </td>
                             </tr>
                           );
                         })
@@ -817,6 +960,7 @@ export default function AttachmentsPanel({ entityType, entityId }: Props) {
                     onChange={(e) => setFitToWindow(e.target.checked)}
                   />
                   <span>Fit To Window</span>
+                  {selectedIsSecure ? <span className="dw-secure-badge">🔒 OS Secure</span> : null}
                 </label>
 
                 <div className="dw-attach-preview" style={{ height: `${previewHeight}px` }}>
@@ -844,8 +988,12 @@ export default function AttachmentsPanel({ entityType, entityId }: Props) {
                         <div style={{ fontWeight: 700, marginBottom: 6 }}>
                           {selectedAttachment.originalFileName}
                         </div>
-                        <div>{selectedAttachment.mimeType || "File preview not available in browser."}</div>
-                        <div style={{ marginTop: 6 }}>{fmtFileSize(selectedAttachment.fileSizeBytes)}</div>
+                        <div>
+                          {selectedAttachment.mimeType || "File preview not available in browser."}
+                        </div>
+                        <div style={{ marginTop: 6 }}>
+                          {fmtFileSize(selectedAttachment.fileSizeBytes)}
+                        </div>
                       </div>
                     </div>
                   )}
@@ -942,14 +1090,21 @@ export default function AttachmentsPanel({ entityType, entityId }: Props) {
                   >
                     Download file
                   </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      void copyShareLink();
-                    }}
-                  >
-                    Copy share link
-                  </button>
+
+                  {selectedIsSecure ? (
+                    <div className="dw-attach-secure-note">
+                      OS Secure Files cannot be shared by link.
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        void copyShareLink();
+                      }}
+                    >
+                      Copy share link
+                    </button>
+                  )}
                 </div>
               ) : null}
             </div>
@@ -993,6 +1148,38 @@ export default function AttachmentsPanel({ entityType, entityId }: Props) {
                 }
                 autoFocus
               />
+
+              {supportsOsSecureFiles && canManageOsSecureFiles ? (
+                <label
+                  className="muted-box"
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 8,
+                    minHeight: 38,
+                    padding: "8px 10px",
+                    cursor: "pointer",
+                    borderRadius: 0,
+                    fontSize: 12,
+                  }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={commentDialog.visibility === "os_secure"}
+                    onChange={(e) =>
+                      setCommentDialog((current) =>
+                        current.open
+                          ? {
+                              ...current,
+                              visibility: e.target.checked ? "os_secure" : "standard",
+                            }
+                          : current
+                      )
+                    }
+                  />
+                  <span>OS Secure File</span>
+                </label>
+              ) : null}
             </div>
 
             <div className="dw-attach-dialog-foot">

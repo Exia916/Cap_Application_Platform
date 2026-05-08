@@ -6,6 +6,11 @@ import {
 } from "@/lib/repositories/attachmentsRepo";
 import { saveUploadedFile, canInlineMimeType } from "@/lib/platform/fileStorage";
 import { createActivityHistory } from "@/lib/repositories/activityHistoryRepo";
+import {
+  canManageOsSecureAttachments,
+  isOsSecureAttachmentEntity,
+  normalizeAttachmentVisibility,
+} from "@/lib/platform/attachmentVisibility";
 
 export const runtime = "nodejs";
 
@@ -18,21 +23,25 @@ function buildActor(auth: ReturnType<typeof getAuthFromRequest>) {
   const empNum = Number(rawEmp);
 
   return {
-    userId: String(
-      (auth as any)?.userId ??
-        (auth as any)?.id ??
-        (auth as any)?.username ??
-        ""
-    ).trim() || null,
+    userId:
+      String(
+        (auth as any)?.userId ??
+          (auth as any)?.id ??
+          (auth as any)?.username ??
+          ""
+      ).trim() || null,
 
-    userName: String(
-      (auth as any)?.displayName ??
-        (auth as any)?.name ??
-        (auth as any)?.username ??
-        ""
-    ).trim() || null,
+    userName:
+      String(
+        (auth as any)?.displayName ??
+          (auth as any)?.name ??
+          (auth as any)?.username ??
+          ""
+      ).trim() || null,
 
     employeeNumber: Number.isFinite(empNum) ? Math.trunc(empNum) : null,
+
+    role: String((auth as any)?.role ?? "").trim().toUpperCase(),
   };
 }
 
@@ -42,6 +51,8 @@ export async function GET(req: NextRequest) {
     if (!auth) {
       return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
     }
+
+    const actor = buildActor(auth);
 
     const { searchParams } = new URL(req.url);
     const entityType = String(searchParams.get("entityType") || "").trim();
@@ -56,14 +67,27 @@ export async function GET(req: NextRequest) {
       );
     }
 
-    const rows = await listAttachmentsByEntity(entityType, entityId, limit);
+    const supportsOsSecureFiles = isOsSecureAttachmentEntity(entityType);
+    const canManageOsSecureFiles =
+      supportsOsSecureFiles && canManageOsSecureAttachments(actor.role);
+
+    const rows = await listAttachmentsByEntity(entityType, entityId, limit, {
+      includeOsSecure: canManageOsSecureFiles,
+    });
 
     const responseRows = rows.map((row) => ({
       ...row,
       canPreviewInline: canInlineMimeType(row.mimeType),
     }));
 
-    return NextResponse.json({ rows: responseRows }, { status: 200 });
+    return NextResponse.json(
+      {
+        rows: responseRows,
+        supportsOsSecureFiles,
+        canManageOsSecureFiles,
+      },
+      { status: 200 }
+    );
   } catch (err: any) {
     return NextResponse.json(
       { error: err?.message || "Failed to load attachments" },
@@ -79,10 +103,13 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
     }
 
+    const actor = buildActor(auth);
+
     const form = await req.formData();
     const entityType = String(form.get("entityType") || "").trim();
     const entityId = String(form.get("entityId") || "").trim();
     const attachmentComment = String(form.get("attachmentComment") || "").trim() || null;
+    const visibility = normalizeAttachmentVisibility(form.get("visibility"));
     const file = form.get("file");
 
     if (!entityType || !entityId) {
@@ -96,6 +123,20 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "file is required" }, { status: 400 });
     }
 
+    if (visibility === "os_secure" && !isOsSecureAttachmentEntity(entityType)) {
+      return NextResponse.json(
+        { error: "OS Secure Files are only supported for CAP Workflow attachments." },
+        { status: 400 }
+      );
+    }
+
+    if (visibility === "os_secure" && !canManageOsSecureAttachments(actor.role)) {
+      return NextResponse.json(
+        { error: "Not authorized to upload OS Secure Files." },
+        { status: 403 }
+      );
+    }
+
     const arr = await file.arrayBuffer();
     const bytes = Buffer.from(arr);
 
@@ -106,8 +147,6 @@ export async function POST(req: NextRequest) {
       mimeType: file.type || null,
       bytes,
     });
-
-    const actor = buildActor(auth);
 
     const row = await createAttachment({
       entityType,
@@ -120,6 +159,7 @@ export async function POST(req: NextRequest) {
       objectKey: stored.objectKey,
       objectVersionId: stored.objectVersionId,
       attachmentComment,
+      visibility,
       mimeType: file.type || null,
       fileSizeBytes: stored.fileSizeBytes,
       uploadedByUserId: actor.userId,
@@ -133,7 +173,10 @@ export async function POST(req: NextRequest) {
         entityId,
         eventType: "attachment_added",
         fieldName: "attachment",
-        message: `Attachment added: "${row.originalFileName}".`,
+        message:
+          row.visibility === "os_secure"
+            ? `OS Secure File added: "${row.originalFileName}".`
+            : `Attachment added: "${row.originalFileName}".`,
         module: entityType.startsWith("cmms") ? "cmms" : null,
         userId: actor.userId,
         userName: actor.userName,
@@ -141,6 +184,7 @@ export async function POST(req: NextRequest) {
         newValue: {
           attachmentId: row.id,
           originalFileName: row.originalFileName,
+          visibility: row.visibility,
           mimeType: row.mimeType,
           fileSizeBytes: row.fileSizeBytes,
           attachmentComment: row.attachmentComment,

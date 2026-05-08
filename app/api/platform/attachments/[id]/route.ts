@@ -3,7 +3,8 @@ import { getAuthFromRequest } from "@/lib/auth";
 import {
   getAttachmentById,
   softDeleteAttachment,
-  updateAttachmentComment,
+  updateAttachment,
+  type UpdateAttachmentInput,
 } from "@/lib/repositories/attachmentsRepo";
 import {
   canInlineMimeType,
@@ -11,6 +12,12 @@ import {
   getPresignedUrlTtlSeconds,
 } from "@/lib/platform/fileStorage";
 import { createActivityHistory } from "@/lib/repositories/activityHistoryRepo";
+import {
+  canManageOsSecureAttachments,
+  isOsSecureAttachmentEntity,
+  isOsSecureVisibility,
+  normalizeAttachmentVisibility,
+} from "@/lib/platform/attachmentVisibility";
 
 export const runtime = "nodejs";
 
@@ -23,27 +30,39 @@ function buildActor(auth: ReturnType<typeof getAuthFromRequest>) {
   const empNum = Number(rawEmp);
 
   return {
-    userId: String(
-      (auth as any)?.userId ??
-        (auth as any)?.id ??
-        (auth as any)?.username ??
-        ""
-    ).trim() || null,
+    userId:
+      String(
+        (auth as any)?.userId ??
+          (auth as any)?.id ??
+          (auth as any)?.username ??
+          ""
+      ).trim() || null,
 
-    userName: String(
-      (auth as any)?.displayName ??
-        (auth as any)?.name ??
-        (auth as any)?.username ??
-        ""
-    ).trim() || null,
+    userName:
+      String(
+        (auth as any)?.displayName ??
+          (auth as any)?.name ??
+          (auth as any)?.username ??
+          ""
+      ).trim() || null,
 
     employeeNumber: Number.isFinite(empNum) ? Math.trunc(empNum) : null,
+
+    role: String((auth as any)?.role ?? "").trim().toUpperCase(),
   };
 }
 
 function parseId(raw: string): number | null {
   const id = Number.parseInt(String(raw || "").trim(), 10);
   return Number.isFinite(id) && id > 0 ? id : null;
+}
+
+function canAccessAttachmentContent(input: {
+  visibility?: string | null;
+  role?: string | null;
+}) {
+  if (!isOsSecureVisibility(input.visibility)) return true;
+  return canManageOsSecureAttachments(input.role);
 }
 
 export async function GET(
@@ -56,6 +75,8 @@ export async function GET(
       return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
     }
 
+    const actor = buildActor(auth);
+
     const params = await Promise.resolve(ctx.params);
     const id = parseId(params.id);
     if (!id) {
@@ -65,6 +86,13 @@ export async function GET(
     const row = await getAttachmentById(id);
     if (!row) {
       return NextResponse.json({ error: "Attachment not found" }, { status: 404 });
+    }
+
+    if (!canAccessAttachmentContent({ visibility: row.visibility, role: actor.role })) {
+      return NextResponse.json(
+        { error: "Not authorized to access this attachment." },
+        { status: 403 }
+      );
     }
 
     if (!row.bucketName || !row.objectKey) {
@@ -79,6 +107,13 @@ export async function GET(
     const wantsDownload = action === "download" || searchParams.get("download") === "1";
     const wantsShare = action === "share";
     const wantsMeta = action === "meta";
+
+    if (wantsShare && row.visibility === "os_secure") {
+      return NextResponse.json(
+        { error: "OS Secure Files cannot be shared by link." },
+        { status: 403 }
+      );
+    }
 
     const ttlSeconds = getPresignedUrlTtlSeconds();
     const inline = canInlineMimeType(row.mimeType);
@@ -126,6 +161,8 @@ export async function PATCH(
       return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
     }
 
+    const actor = buildActor(auth);
+
     const params = await Promise.resolve(ctx.params);
     const id = parseId(params.id);
     if (!id) {
@@ -137,30 +174,78 @@ export async function PATCH(
       return NextResponse.json({ error: "Attachment not found" }, { status: 404 });
     }
 
-    const body = await req.json().catch(() => ({}));
-    const attachmentComment =
-      String((body as any)?.attachmentComment ?? "").trim() || null;
+    if (!canAccessAttachmentContent({ visibility: before.visibility, role: actor.role })) {
+      return NextResponse.json(
+        { error: "Not authorized to update this attachment." },
+        { status: 403 }
+      );
+    }
 
-    const row = await updateAttachmentComment(id, attachmentComment);
+    const body = await req.json().catch(() => ({}));
+
+    const hasAttachmentComment = Object.prototype.hasOwnProperty.call(
+      body,
+      "attachmentComment"
+    );
+
+    const hasVisibility = Object.prototype.hasOwnProperty.call(body, "visibility");
+
+    const updateInput: UpdateAttachmentInput = { id };
+
+    if (hasAttachmentComment) {
+      updateInput.attachmentComment =
+        String((body as any)?.attachmentComment ?? "").trim() || null;
+    }
+
+    if (hasVisibility) {
+      const requestedVisibility = normalizeAttachmentVisibility((body as any)?.visibility);
+
+      if (!isOsSecureAttachmentEntity(before.entityType)) {
+        return NextResponse.json(
+          { error: "OS Secure Files are only supported for CAP Workflow attachments." },
+          { status: 400 }
+        );
+      }
+
+      if (!canManageOsSecureAttachments(actor.role)) {
+        return NextResponse.json(
+          { error: "Not authorized to update OS Secure File visibility." },
+          { status: 403 }
+        );
+      }
+
+      updateInput.visibility = requestedVisibility;
+    }
+
+    const row = await updateAttachment(updateInput);
     if (!row) {
       return NextResponse.json({ error: "Attachment not found" }, { status: 404 });
     }
-
-    const actor = buildActor(auth);
 
     try {
       await createActivityHistory({
         entityType: row.entityType,
         entityId: row.entityId,
         eventType: "attachment_updated",
-        fieldName: "attachment_comment",
-        message: `Attachment comment updated: "${row.originalFileName}".`,
+        fieldName:
+          hasVisibility && hasAttachmentComment
+            ? "attachment"
+            : hasVisibility
+              ? "attachment_visibility"
+              : "attachment_comment",
+        message: `Attachment updated: "${row.originalFileName}".`,
         module: row.entityType.startsWith("cmms") ? "cmms" : null,
         userId: actor.userId,
         userName: actor.userName,
         employeeNumber: actor.employeeNumber,
-        previousValue: before.attachmentComment,
-        newValue: row.attachmentComment,
+        previousValue: {
+          attachmentComment: before.attachmentComment,
+          visibility: before.visibility,
+        },
+        newValue: {
+          attachmentComment: row.attachmentComment,
+          visibility: row.visibility,
+        },
       });
     } catch {
       // do not fail update if history logging fails
@@ -188,6 +273,8 @@ export async function DELETE(
       return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
     }
 
+    const actor = buildActor(auth);
+
     const params = await Promise.resolve(ctx.params);
     const id = parseId(params.id);
     if (!id) {
@@ -199,7 +286,12 @@ export async function DELETE(
       return NextResponse.json({ error: "Attachment not found" }, { status: 404 });
     }
 
-    const actor = buildActor(auth);
+    if (!canAccessAttachmentContent({ visibility: row.visibility, role: actor.role })) {
+      return NextResponse.json(
+        { error: "Not authorized to remove this attachment." },
+        { status: 403 }
+      );
+    }
 
     const ok = await softDeleteAttachment({
       id,
@@ -228,6 +320,7 @@ export async function DELETE(
         previousValue: {
           attachmentId: row.id,
           originalFileName: row.originalFileName,
+          visibility: row.visibility,
           attachmentComment: row.attachmentComment,
           objectKey: row.objectKey,
         },

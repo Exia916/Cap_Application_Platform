@@ -11,6 +11,7 @@ import {
   createAttachment,
 } from "@/lib/repositories/attachmentsRepo";
 import { copyStoredFileToEntity } from "@/lib/platform/fileStorage";
+import { canManageOsSecureAttachments } from "@/lib/platform/attachmentVisibility";
 
 export const runtime = "nodejs";
 
@@ -76,20 +77,23 @@ export async function POST(
 
     const nextSalesOrderNumber = await getNextSuggestedSalesOrderNumber(dbQuery);
 
-const copied = await duplicateRequest(dbQuery, {
-  sourceRequestId,
-  createdByUserId: actor.userId,
-  createdByName: actor.userName,
-  createdBy: actor.userName,
-  requestNumber: `DW-${Date.now()}`,
-  salesOrderNumber: nextSalesOrderNumber,
-  nowIso: new Date().toISOString(),
-});
+    const copied = await duplicateRequest(dbQuery, {
+      sourceRequestId,
+      createdByUserId: actor.userId,
+      createdByName: actor.userName,
+      createdBy: actor.userName,
+      requestNumber: `DW-${Date.now()}`,
+      salesOrderNumber: nextSalesOrderNumber,
+      nowIso: new Date().toISOString(),
+    });
 
     const sourceAttachments = await listAttachmentsByEntity(
       "design_workflow",
       sourceRequestId,
       500,
+      {
+        includeOsSecure: canManageOsSecureAttachments(actor.role),
+      },
     );
 
     let copiedAttachmentCount = 0;
@@ -121,6 +125,7 @@ const copied = await duplicateRequest(dbQuery, {
         objectKey: stored.objectKey,
         objectVersionId: stored.objectVersionId,
         attachmentComment: (attachment as any).attachmentComment ?? null,
+        visibility: attachment.visibility ?? "standard",
         mimeType: attachment.mimeType ?? null,
         fileSizeBytes: attachment.fileSizeBytes ?? stored.fileSizeBytes,
         uploadedByUserId: actor.userId,
