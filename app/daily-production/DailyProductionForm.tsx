@@ -78,6 +78,7 @@ export default function DailyProductionForm(props: DailyProductionFormProps) {
 
   const [annex, setAnnex] = useState(false);
   const annexTouchedRef = useRef(false);
+  const originalEntryTsRef = useRef<string | null>(null);
 
   const [lines, setLines] = useState<Line[]>([blankLine()]);
 
@@ -207,6 +208,8 @@ export default function DailyProductionForm(props: DailyProductionFormProps) {
 
         const submission = data?.submission;
         const loadedLines = Array.isArray(data?.lines) ? data.lines : [];
+
+        originalEntryTsRef.current = submission?.entryTs ? String(submission.entryTs) : null;
 
         if (submission?.salesOrder != null) setSalesOrder(String(submission.salesOrder));
         setHeaderNotes(submission?.notes ?? "");
@@ -361,6 +364,13 @@ export default function DailyProductionForm(props: DailyProductionFormProps) {
       return;
     }
 
+    if (isEditMode && !originalEntryTsRef.current) {
+      setServerError(
+        "Original entry timestamp was not loaded. Please refresh the record before saving."
+      );
+      return;
+    }
+
     setSaving(true);
     try {
       const isUpdate = isEditMode;
@@ -375,7 +385,7 @@ export default function DailyProductionForm(props: DailyProductionFormProps) {
         method,
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          entryTs: new Date().toISOString(),
+          entryTs: isUpdate ? originalEntryTsRef.current : new Date().toISOString(),
           salesOrder: salesOrder.trim(),
           machineNumber: machineNumber.trim() || null,
           notes: headerNotes.trim() || null,
