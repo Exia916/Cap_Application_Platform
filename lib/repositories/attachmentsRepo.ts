@@ -1,4 +1,8 @@
 import { db } from "@/lib/db";
+import {
+  normalizeAttachmentVisibility,
+  type AttachmentVisibility,
+} from "@/lib/platform/attachmentVisibility";
 
 export type AttachmentRow = {
   id: number;
@@ -12,6 +16,7 @@ export type AttachmentRow = {
   objectKey: string | null;
   objectVersionId: string | null;
   attachmentComment: string | null;
+  visibility: AttachmentVisibility;
   mimeType: string | null;
   fileSizeBytes: number | null;
   uploadedByUserId: string | null;
@@ -32,6 +37,7 @@ export type CreateAttachmentInput = {
   objectKey?: string | null;
   objectVersionId?: string | null;
   attachmentComment?: string | null;
+  visibility?: AttachmentVisibility | null;
   mimeType?: string | null;
   fileSizeBytes?: number | null;
   uploadedByUserId?: string | null;
@@ -39,10 +45,20 @@ export type CreateAttachmentInput = {
   employeeNumber?: number | null;
 };
 
+export type UpdateAttachmentInput = {
+  id: number;
+  attachmentComment?: string | null;
+  visibility?: AttachmentVisibility | null;
+};
+
 export type DeleteAttachmentInput = {
   id: number;
   deletedByUserId?: string | null;
   deletedByName?: string | null;
+};
+
+export type ListAttachmentsOptions = {
+  includeOsSecure?: boolean;
 };
 
 function cleanText(v: unknown): string {
@@ -62,6 +78,7 @@ const SELECT_SQL = `
     object_key as "objectKey",
     object_version_id as "objectVersionId",
     attachment_comment as "attachmentComment",
+    COALESCE(visibility, 'standard') as "visibility",
     mime_type as "mimeType",
     file_size_bytes as "fileSizeBytes",
     uploaded_by_user_id as "uploadedByUserId",
@@ -98,12 +115,15 @@ export async function createAttachment(input: CreateAttachmentInput): Promise<At
   const entityType = cleanText(input.entityType);
   const entityId = cleanText(input.entityId);
   const originalFileName = cleanText(input.originalFileName);
+  const visibility = normalizeAttachmentVisibility(input.visibility);
 
   if (await attachmentFileNameExists(entityType, entityId, originalFileName)) {
-    throw new Error("A file with this name already exists for this record. Please rename the file and try again.");
+    throw new Error(
+      "A file with this name already exists for this record. Please rename the file and try again."
+    );
   }
 
-  const { rows } = await db.query(
+  const { rows } = await db.query<AttachmentRow>(
     `
       insert into public.attachments (
         entity_type,
@@ -116,13 +136,14 @@ export async function createAttachment(input: CreateAttachmentInput): Promise<At
         object_key,
         object_version_id,
         attachment_comment,
+        visibility,
         mime_type,
         file_size_bytes,
         uploaded_by_user_id,
         uploaded_by_name,
         employee_number
       )
-      values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
+      values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
       returning
         id,
         entity_type as "entityType",
@@ -135,6 +156,7 @@ export async function createAttachment(input: CreateAttachmentInput): Promise<At
         object_key as "objectKey",
         object_version_id as "objectVersionId",
         attachment_comment as "attachmentComment",
+        COALESCE(visibility, 'standard') as "visibility",
         mime_type as "mimeType",
         file_size_bytes as "fileSizeBytes",
         uploaded_by_user_id as "uploadedByUserId",
@@ -154,6 +176,7 @@ export async function createAttachment(input: CreateAttachmentInput): Promise<At
       cleanText(input.objectKey) || null,
       cleanText(input.objectVersionId) || null,
       cleanText(input.attachmentComment) || null,
+      visibility,
       cleanText(input.mimeType) || null,
       input.fileSizeBytes ?? null,
       cleanText(input.uploadedByUserId) || null,
@@ -162,31 +185,38 @@ export async function createAttachment(input: CreateAttachmentInput): Promise<At
     ]
   );
 
-  return rows[0] as AttachmentRow;
+  return rows[0];
 }
 
 export async function listAttachmentsByEntity(
   entityType: string,
   entityId: string,
-  limit = 100
+  limit = 100,
+  options?: ListAttachmentsOptions
 ): Promise<AttachmentRow[]> {
-  const { rows } = await db.query(
+  const includeOsSecure = options?.includeOsSecure === true;
+
+  const { rows } = await db.query<AttachmentRow>(
     `
       ${SELECT_SQL}
       where entity_type = $1
         and entity_id = $2
         and is_deleted = false
+        and (
+          $4::boolean = true
+          or COALESCE(visibility, 'standard') <> 'os_secure'
+        )
       order by created_at desc, id desc
       limit $3
     `,
-    [cleanText(entityType), cleanText(entityId), limit]
+    [cleanText(entityType), cleanText(entityId), limit, includeOsSecure]
   );
 
-  return rows as AttachmentRow[];
+  return rows;
 }
 
 export async function getAttachmentById(id: number): Promise<AttachmentRow | null> {
-  const { rows } = await db.query(
+  const { rows } = await db.query<AttachmentRow>(
     `
       ${SELECT_SQL}
       where id = $1
@@ -196,18 +226,39 @@ export async function getAttachmentById(id: number): Promise<AttachmentRow | nul
     [id]
   );
 
-  return (rows[0] as AttachmentRow | undefined) ?? null;
+  return rows[0] ?? null;
 }
 
-export async function updateAttachmentComment(
-  id: number,
-  attachmentComment: string | null
+export async function updateAttachment(
+  input: UpdateAttachmentInput
 ): Promise<AttachmentRow | null> {
-  const { rows } = await db.query(
+  const hasAttachmentComment = Object.prototype.hasOwnProperty.call(
+    input,
+    "attachmentComment"
+  );
+
+  const hasVisibility = Object.prototype.hasOwnProperty.call(input, "visibility");
+
+  const attachmentComment = hasAttachmentComment
+    ? cleanText(input.attachmentComment) || null
+    : null;
+
+  const visibility = hasVisibility
+    ? normalizeAttachmentVisibility(input.visibility)
+    : "standard";
+
+  const { rows } = await db.query<AttachmentRow>(
     `
       update public.attachments
       set
-        attachment_comment = $2,
+        attachment_comment = case
+          when $2::boolean = true then $3
+          else attachment_comment
+        end,
+        visibility = case
+          when $4::boolean = true then $5
+          else COALESCE(visibility, 'standard')
+        end,
         updated_at = now()
       where id = $1
         and is_deleted = false
@@ -223,6 +274,7 @@ export async function updateAttachmentComment(
         object_key as "objectKey",
         object_version_id as "objectVersionId",
         attachment_comment as "attachmentComment",
+        COALESCE(visibility, 'standard') as "visibility",
         mime_type as "mimeType",
         file_size_bytes as "fileSizeBytes",
         uploaded_by_user_id as "uploadedByUserId",
@@ -231,10 +283,20 @@ export async function updateAttachmentComment(
         created_at as "createdAt",
         updated_at as "updatedAt"
     `,
-    [id, cleanText(attachmentComment) || null]
+    [input.id, hasAttachmentComment, attachmentComment, hasVisibility, visibility]
   );
 
-  return (rows[0] as AttachmentRow | undefined) ?? null;
+  return rows[0] ?? null;
+}
+
+export async function updateAttachmentComment(
+  id: number,
+  attachmentComment: string | null
+): Promise<AttachmentRow | null> {
+  return updateAttachment({
+    id,
+    attachmentComment,
+  });
 }
 
 export async function softDeleteAttachment(input: DeleteAttachmentInput): Promise<boolean> {
