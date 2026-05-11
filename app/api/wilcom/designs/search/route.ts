@@ -37,8 +37,19 @@ function friendlyWilcomError(message: string) {
     return "Wilcom design lookup is not authorized. Please contact IT.";
   }
 
-  if (lower.includes("fetch failed") || lower.includes("network")) {
+  if (
+    lower.includes("fetch failed") ||
+    lower.includes("network") ||
+    lower.includes("unable to reach") ||
+    lower.includes("econnrefused") ||
+    lower.includes("enotfound") ||
+    lower.includes("etimedout")
+  ) {
     return "Unable to reach the Wilcom design lookup service.";
+  }
+
+  if (lower.includes("pointing back to cap")) {
+    return "Wilcom design lookup is misconfigured. Please contact IT.";
   }
 
   return message || "Failed to search Wilcom designs.";
@@ -77,9 +88,21 @@ export async function GET(req: NextRequest) {
       results: result.results,
     });
   } catch (err: any) {
+    const rawMessage = err?.message || "Failed to search Wilcom designs.";
+
+    console.error("[DesignLookupAPI] Wilcom design search failed.", {
+      message: rawMessage,
+      input: {
+        ...input,
+        limit: input.limit ?? 50,
+      },
+      hasWilcomApiKey: Boolean(process.env.WILCOM_API_KEY?.trim()),
+      wilcomSearchUrl: process.env.WILCOM_DESIGNS_SEARCH_URL || null,
+    });
+
     return NextResponse.json(
       {
-        error: friendlyWilcomError(err?.message || "Failed to search Wilcom designs."),
+        error: friendlyWilcomError(rawMessage),
       },
       { status: 500 }
     );

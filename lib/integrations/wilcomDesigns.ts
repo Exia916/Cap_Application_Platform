@@ -38,16 +38,42 @@ function getSearchUrl() {
   }
 }
 
+function safeUrlForLog(url: URL) {
+  const copy = new URL(url.toString());
+  return copy.toString();
+}
+
+function isSelfReferencingUrl(url: URL) {
+  const host = url.hostname.toLowerCase();
+
+  return (
+    host === "app.capamerica.net" ||
+    host.endsWith(".vercel.app")
+  );
+}
+
 export async function searchWilcomDesigns(
   input: WilcomDesignSearchInput
 ): Promise<WilcomDesignSearchResponse> {
   const apiKey = process.env.WILCOM_API_KEY?.trim();
 
   if (!apiKey) {
+    console.error("[WilcomDesigns] Missing WILCOM_API_KEY environment variable.");
     throw new Error("Wilcom API key is not configured.");
   }
 
   const url = getSearchUrl();
+
+  if (isSelfReferencingUrl(url)) {
+    console.error(
+      "[WilcomDesigns] WILCOM_DESIGNS_SEARCH_URL appears to point back to CAP/Vercel. This would cause a recursive API call.",
+      {
+        configuredUrl: safeUrlForLog(url),
+      }
+    );
+
+    throw new Error("Wilcom search URL is pointing back to CAP instead of the Wilcom service.");
+  }
 
   for (const key of WILCOM_DESIGN_SEARCH_PARAMS) {
     if (key === "limit") continue;
@@ -62,14 +88,29 @@ export async function searchWilcomDesigns(
 
   url.searchParams.set("limit", String(clampLimit(input.limit)));
 
-  const res = await fetch(url.toString(), {
-    method: "GET",
-    headers: {
-      Accept: "application/json",
-      "x-api-key": apiKey,
-    },
-    cache: "no-store",
-  });
+  let res: Response;
+
+  try {
+    res = await fetch(url.toString(), {
+      method: "GET",
+      headers: {
+        Accept: "application/json",
+        "x-api-key": apiKey,
+      },
+      cache: "no-store",
+    });
+  } catch (err: any) {
+    console.error("[WilcomDesigns] Fetch to external Wilcom endpoint failed.", {
+      url: safeUrlForLog(url),
+      errorName: err?.name,
+      errorMessage: err?.message,
+      errorCause: err?.cause,
+    });
+
+    throw new Error(
+      "Unable to reach the Wilcom design lookup service from the CAP server."
+    );
+  }
 
   const text = await res.text();
 
@@ -87,7 +128,14 @@ export async function searchWilcomDesigns(
       "error" in data &&
       typeof (data as { error?: unknown }).error === "string"
         ? (data as { error: string }).error
-        : text?.slice(0, 300) || "Wilcom design lookup failed.";
+        : text?.slice(0, 500) || "Wilcom design lookup failed.";
+
+    console.error("[WilcomDesigns] External Wilcom endpoint returned an error.", {
+      url: safeUrlForLog(url),
+      status: res.status,
+      statusText: res.statusText,
+      responseText: text?.slice(0, 1000),
+    });
 
     throw new Error(message);
   }
@@ -113,6 +161,12 @@ export async function searchWilcomDesigns(
       results: payload.results,
     };
   }
+
+  console.warn("[WilcomDesigns] External Wilcom endpoint returned an unexpected payload.", {
+    url: safeUrlForLog(url),
+    payloadType: typeof data,
+    responseText: text?.slice(0, 1000),
+  });
 
   return {
     count: 0,
