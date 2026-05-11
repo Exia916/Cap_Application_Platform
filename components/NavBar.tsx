@@ -240,6 +240,7 @@ export default function NavBar() {
       role === "WAREHOUSE");
 
   const canSeeCmmsMasterData = meLoaded && (isAdmin || role === "TECH");
+  const canSeeReports = meLoaded && isManager;
 
   function runGlobalSearch() {
     const q = globalQ.trim();
@@ -287,8 +288,10 @@ export default function NavBar() {
   ].filter((x) => x.show !== false);
 
   const managerItems: MenuItem[] = [
-    { href: "/manager", label: "Manager", show: meLoaded && isManager },
-  ].filter((x) => x.show !== false);
+  { kind: "section" as const, label: "Manager Tools", show: meLoaded && isManager },
+  { href: "/manager", label: "Manager Home", show: meLoaded && isManager },
+  { href: "/reports", label: "Reports", show: canSeeReports },
+].filter((x) => x.show !== false);
 
   const adminItems: MenuItem[] = [
     { kind: "section" as const, label: "Administration", show: meLoaded && isAdmin },
