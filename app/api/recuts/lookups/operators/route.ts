@@ -52,7 +52,7 @@ export async function GET(req: NextRequest) {
         role
       FROM public.users
       WHERE COALESCE(is_active, true) = true
-        AND UPPER(TRIM(role)) = 'USER'
+        AND UPPER(TRIM(COALESCE(role, ''))) IN ('USER', 'SUPERVISOR')
       ORDER BY
         COALESCE(NULLIF(TRIM(display_name), ''), NULLIF(TRIM(name), ''), username) ASC,
         username ASC
