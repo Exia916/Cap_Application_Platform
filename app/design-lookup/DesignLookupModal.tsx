@@ -1,7 +1,12 @@
 "use client";
 
 import { useEffect, useMemo, useState, type CSSProperties } from "react";
-import type { WilcomColorway, WilcomDesign, WilcomThread } from "./types";
+import type {
+  WilcomColorway,
+  WilcomDesign,
+  WilcomStopSequenceRow,
+  WilcomThread,
+} from "./types";
 import DesignPreviewImage from "./DesignPreviewImage";
 
 type TabKey = "general" | "trueview" | "colorways";
@@ -10,6 +15,16 @@ type Props = {
   design: WilcomDesign | null;
   open: boolean;
   onClose: () => void;
+};
+
+type ColorwayDisplayRow = {
+  stop: number | null;
+  code: string | null;
+  brand: string | null;
+  description: string | null;
+  rgb: number | null;
+  stitches: number | null;
+  elementName: string | null;
 };
 
 function displayValue(value: unknown) {
@@ -179,16 +194,59 @@ function TrueViewTab({ design }: { design: WilcomDesign }) {
   );
 }
 
-function ThreadRow({ thread }: { thread: WilcomThread }) {
-  const color = bgrToCssColor(thread.rgb);
-  const colorLabel = bgrToHexLabel(thread.rgb);
+function buildColorwayRows(
+  colorway: WilcomColorway,
+  stopSequence: WilcomStopSequenceRow[]
+): ColorwayDisplayRow[] {
+  const threads = Array.isArray(colorway.threads) ? colorway.threads : [];
+
+  if (!stopSequence.length) {
+    return threads.map((thread) => ({
+      stop: thread.index,
+      code: thread.code,
+      brand: thread.brand,
+      description: thread.description,
+      rgb: thread.rgb,
+      stitches: null,
+      elementName: null,
+    }));
+  }
+
+  const threadByIndex = new Map<number, WilcomThread>();
+  for (const thread of threads) {
+    threadByIndex.set(Number(thread.index), thread);
+  }
+
+  return stopSequence.map((stopRow) => {
+    const colorIndex = Number(stopRow.colorIndex);
+    const matchingThread = Number.isFinite(colorIndex)
+      ? threadByIndex.get(colorIndex)
+      : undefined;
+
+    return {
+      stop: stopRow.stop ?? null,
+      code: matchingThread?.code ?? stopRow.code ?? null,
+      brand: matchingThread?.brand ?? stopRow.brand ?? null,
+      description: matchingThread?.description ?? stopRow.description ?? null,
+      rgb: matchingThread?.rgb ?? stopRow.rgb ?? null,
+      stitches: stopRow.stitches ?? null,
+      elementName: stopRow.elementName ?? null,
+    };
+  });
+}
+
+function ThreadRow({ row }: { row: ColorwayDisplayRow }) {
+  const color = bgrToCssColor(row.rgb);
+  const colorLabel = bgrToHexLabel(row.rgb);
 
   return (
     <tr>
-      <td>{thread.index}</td>
-      <td>{displayValue(thread.code)}</td>
-      <td>{displayValue(thread.brand)}</td>
-      <td>{displayValue(thread.description)}</td>
+      <td>{displayValue(row.stop)}</td>
+      <td>{displayValue(row.code)}</td>
+      <td>{displayValue(row.brand)}</td>
+      <td>{displayValue(row.description)}</td>
+      <td>{fmtNumber(row.stitches)}</td>
+      <td>{displayValue(row.elementName)}</td>
       <td>
         <span style={swatchWrap}>
           <span style={{ ...swatch, background: color }} />
@@ -199,7 +257,15 @@ function ThreadRow({ thread }: { thread: WilcomThread }) {
   );
 }
 
-function ColorwayBlock({ colorway }: { colorway: WilcomColorway }) {
+function ColorwayBlock({
+  colorway,
+  stopSequence,
+}: {
+  colorway: WilcomColorway;
+  stopSequence: WilcomStopSequenceRow[];
+}) {
+  const rows = buildColorwayRows(colorway, stopSequence);
+
   return (
     <div className="section-card" style={{ padding: 14 }}>
       <div style={colorwayHeader}>
@@ -211,27 +277,29 @@ function ColorwayBlock({ colorway }: { colorway: WilcomColorway }) {
         </div>
 
         <span className="badge badge-neutral">
-          {colorway.threads?.length ?? 0} Threads
+          {rows.length} {rows.length === 1 ? "Thread" : "Threads"}
         </span>
       </div>
 
-      {colorway.threads?.length ? (
+      {rows.length ? (
         <div className="table-scroll">
-          <table className="table-clean" style={{ minWidth: 620 }}>
+          <table className="table-clean" style={{ minWidth: 860 }}>
             <thead>
               <tr>
                 <th>Stop</th>
                 <th>Code</th>
                 <th>Brand</th>
                 <th>Description</th>
+                <th>Stitches</th>
+                <th>Element Name</th>
                 <th>Color</th>
               </tr>
             </thead>
             <tbody>
-              {colorway.threads.map((thread) => (
+              {rows.map((row, index) => (
                 <ThreadRow
-                  key={`${colorway.colorwayId}-${thread.index}-${thread.code ?? ""}-${thread.rgb ?? ""}`}
-                  thread={thread}
+                  key={`${colorway.colorwayId}-${row.stop ?? index}-${row.code ?? ""}-${row.rgb ?? ""}-${row.elementName ?? ""}`}
+                  row={row}
                 />
               ))}
             </tbody>
@@ -246,6 +314,7 @@ function ColorwayBlock({ colorway }: { colorway: WilcomColorway }) {
 
 function ColorwaysTab({ design }: { design: WilcomDesign }) {
   const colorways = Array.isArray(design.colorways) ? design.colorways : [];
+  const stopSequence = Array.isArray(design.stopSequence) ? design.stopSequence : [];
 
   if (!colorways.length) {
     return <div className="muted-box">No colorways available for this design.</div>;
@@ -257,6 +326,7 @@ function ColorwaysTab({ design }: { design: WilcomDesign }) {
         <ColorwayBlock
           key={`${colorway.colorwayId || "colorway"}-${colorway.colorway || index}`}
           colorway={colorway}
+          stopSequence={stopSequence}
         />
       ))}
     </div>
