@@ -212,6 +212,21 @@ export default function NavBar() {
 
   const canGlobalSearch = GLOBAL_SEARCH_ROLES.includes(role as any);
 
+    const DESIGN_LOOKUP_ROLES = [
+    "ADMIN",
+    "MANAGER",
+    "SUPERVISOR",
+    "CUSTOMER SERVICE",
+    "OVERSEAS CUSTOMER SERVICE",
+    "SALES",
+    "PURCHASING",
+    "ART",
+    "DIGITIZING",
+    "ORDER PROCESSING",
+    "USER",
+    "WAREHOUSE",
+  ] as const;
+
   const canSeeProduction =
   meLoaded &&
   (isAdmin ||
@@ -219,6 +234,9 @@ export default function NavBar() {
     role === "MANAGER" ||
     role === "USER" ||
     role === "SALES");
+
+  const canSeeDesignLookup =
+    meLoaded && (isAdmin || DESIGN_LOOKUP_ROLES.includes(role as any));
 
   const canSeeRepairRequests =
     meLoaded && (isAdmin || role === "MANAGER" || role === "SUPERVISOR");
@@ -338,7 +356,12 @@ export default function NavBar() {
         items: [
           { href: "/dashboard", label: "Home", show: true },
           { href: "/design-workflow", label: "Workflow", show: true },
-        ],
+          {
+            href: "/design-lookup",
+            label: "Design Lookup",
+            show: canSeeDesignLookup,
+          },
+        ].filter((x) => x.show !== false),
       });
     }
 
@@ -444,6 +467,15 @@ export default function NavBar() {
 
               <NavLink href="/design-workflow" label="Workflow" pathname={pathname} onClick={handleNavigate} />
 
+              {canSeeDesignLookup ? (
+                <NavLink
+                  href="/design-lookup"
+                  label="Design Lookup"
+                  pathname={pathname}
+                  onClick={handleNavigate}
+                />
+              ) : null}
+
               {canSeeProduction && productionItems.length > 0 ? (
                 <Dropdown
                   label="Production"
@@ -455,6 +487,7 @@ export default function NavBar() {
                   onNavigate={() => setOpenMenu(null)}
                 />
               ) : null}
+              
 
               {showRecutAsPrimary && recutItems.length > 0 ? (
                 <Dropdown
