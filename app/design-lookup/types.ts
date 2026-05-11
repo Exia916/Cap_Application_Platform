@@ -14,6 +14,19 @@ export type WilcomColorway = {
   threads: WilcomThread[];
 };
 
+export type WilcomStopSequenceRow = {
+  stop: number;
+  stitches: number | null;
+  length: number | null;
+  colorIndex: number | null;
+  description: string | null;
+  brand: string | null;
+  code: string | null;
+  rgb: number | null;
+  density: number | null;
+  elementName: string | null;
+};
+
 export type WilcomDesign = {
   id: number;
   name: string;
@@ -49,6 +62,7 @@ export type WilcomDesign = {
   style: string | null;
   typeOfWork: string | null;
   colorways: WilcomColorway[];
+  stopSequence?: WilcomStopSequenceRow[];
 };
 
 export type WilcomDesignSearchResponse = {
