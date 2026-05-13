@@ -1,7 +1,10 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import DataTable, { type Column, type SortDir } from "@/components/DataTable";
+import { getReportTemplate, REPORT_TEMPLATES } from "@/lib/reports/reportTemplates";
+import ReportSummaryCards from "./ReportSummaryCards";
 import ReportVisualization from "./ReportVisualization";
 
 type SavedReport = {
@@ -11,10 +14,12 @@ type SavedReport = {
   datasetKey: string;
   selectedColumns: string[];
   filters: Record<string, any>;
+  filterLogic?: "AND" | "OR";
   sort: { column: string; direction: "asc" | "desc" } | null;
   grouping: string[];
   aggregations: any[];
   visualization: string;
+  chartConfig?: Record<string, any> | null;
 };
 
 type RunResult = {
@@ -24,6 +29,108 @@ type RunResult = {
   page: number;
   pageSize: number;
 };
+
+function formatDateOnly(value: unknown) {
+  if (value === null || value === undefined || value === "") return "";
+
+  const raw = String(value);
+
+  const match = raw.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (match) {
+    return `${match[2]}/${match[3]}/${match[1]}`;
+  }
+
+  const d = new Date(raw);
+  if (Number.isNaN(d.getTime())) return raw;
+
+  return new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/Chicago",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(d);
+}
+
+function formatDateTime(value: unknown) {
+  if (value === null || value === undefined || value === "") return "";
+
+  const d = new Date(String(value));
+  if (Number.isNaN(d.getTime())) return String(value);
+
+  return new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/Chicago",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(d);
+}
+
+function formatNumber(value: number) {
+  return new Intl.NumberFormat("en-US", {
+    maximumFractionDigits: 2,
+  }).format(value);
+}
+
+function fmtCell(value: unknown, type?: string) {
+  if (value === null || value === undefined) return "";
+
+  if (type === "date") return formatDateOnly(value);
+  if (type === "datetime") return formatDateTime(value);
+
+  if (typeof value === "number") return formatNumber(value);
+
+  const asNumber = Number(value);
+  if (type === "number" && Number.isFinite(asNumber)) {
+    return formatNumber(asNumber);
+  }
+
+  if (typeof value === "boolean") return value ? "Yes" : "No";
+
+  return String(value);
+}
+
+function inferTemplate(report: SavedReport | null) {
+  if (!report) return null;
+
+  const templateKey = report.chartConfig?.templateKey;
+  const direct = getReportTemplate(typeof templateKey === "string" ? templateKey : null);
+  if (direct) return direct;
+
+  return REPORT_TEMPLATES.find((template) => template.datasetKey === report.datasetKey) ?? null;
+}
+
+function getReportColumnWidth(column: { key: string; type: string }) {
+  if (column.key === "record_url") return 90;
+  if (column.type === "date") return 130;
+  if (column.type === "datetime") return 180;
+  if (column.type === "number") return 140;
+  if (column.type === "boolean") return 110;
+
+  if (
+    column.key.includes("notes") ||
+    column.key.includes("instructions") ||
+    column.key.includes("description") ||
+    column.key.includes("issue") ||
+    column.key.includes("resolution")
+  ) {
+    return 280;
+  }
+
+  if (
+    column.key.includes("operator") ||
+    column.key.includes("customer") ||
+    column.key.includes("designer") ||
+    column.key.includes("digitizer")
+  ) {
+    return 220;
+  }
+
+  if (column.key.includes("sales_order")) return 160;
+
+  return 180;
+}
 
 export default function ReportRunnerClient({ savedReportId }: { savedReportId: string }) {
   const [report, setReport] = useState<SavedReport | null>(null);
@@ -37,6 +144,9 @@ export default function ReportRunnerClient({ savedReportId }: { savedReportId: s
   const [pageSize, setPageSize] = useState(25);
   const [sortBy, setSortBy] = useState("");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
+
+  const template = useMemo(() => inferTemplate(report), [report]);
+  const isDetailReport = report?.chartConfig?.advancedOutputMode === "detail";
 
   async function loadReport() {
     try {
@@ -71,6 +181,10 @@ export default function ReportRunnerClient({ savedReportId }: { savedReportId: s
       setRunning(true);
       setError(null);
 
+      const filterLogic =
+        report.filterLogic ||
+        (report.chartConfig?.filterLogic === "OR" ? "OR" : "AND");
+
       const res = await fetch("/api/reports/run", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -80,6 +194,7 @@ export default function ReportRunnerClient({ savedReportId }: { savedReportId: s
           datasetKey: report.datasetKey,
           selectedColumns: report.selectedColumns,
           filters: report.filters,
+          filterLogic,
           sort: sortBy ? { column: sortBy, direction: sortDir } : report.sort,
           grouping: report.grouping,
           aggregations: report.aggregations,
@@ -106,6 +221,10 @@ export default function ReportRunnerClient({ savedReportId }: { savedReportId: s
   async function exportCsv() {
     if (!report) return;
 
+    const filterLogic =
+      report.filterLogic ||
+      (report.chartConfig?.filterLogic === "OR" ? "OR" : "AND");
+
     const res = await fetch("/api/reports/export", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -115,6 +234,7 @@ export default function ReportRunnerClient({ savedReportId }: { savedReportId: s
         datasetKey: report.datasetKey,
         selectedColumns: report.selectedColumns,
         filters: report.filters,
+        filterLogic,
         sort: sortBy ? { column: sortBy, direction: sortDir } : report.sort,
         grouping: report.grouping,
         aggregations: report.aggregations,
@@ -144,6 +264,7 @@ export default function ReportRunnerClient({ savedReportId }: { savedReportId: s
 
   useEffect(() => {
     loadReport();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [savedReportId]);
 
   useEffect(() => {
@@ -156,13 +277,33 @@ export default function ReportRunnerClient({ savedReportId }: { savedReportId: s
       key: column.key,
       header: column.label,
       sortable: true,
+      width: getReportColumnWidth(column),
       render: (row) => {
         const value = row[column.key];
 
-        if (value === null || value === undefined) return "";
-        if (typeof value === "number") return value.toLocaleString();
+        if (column.key === "record_url") {
+          const href = String(value || "").trim();
 
-        return String(value);
+          if (!href) return "";
+
+          return (
+            <Link href={href} className="btn btn-secondary btn-sm">
+              Open
+            </Link>
+          );
+        }
+
+        return (
+          <span
+            className={
+              column.type === "number"
+                ? "report-output-cell report-output-number"
+                : "report-output-cell"
+            }
+          >
+            {fmtCell(value, column.type)}
+          </span>
+        );
       },
       getSearchText: (row) => String(row[column.key] ?? ""),
     }));
@@ -195,6 +336,32 @@ export default function ReportRunnerClient({ savedReportId }: { savedReportId: s
 
   return (
     <div className="section-stack">
+      <style>{`
+        .report-output-table .dt-table th,
+        .report-output-table .dt-table td {
+          text-align: left !important;
+          white-space: nowrap;
+          vertical-align: middle;
+        }
+
+        .report-output-table .dt-table {
+          table-layout: auto !important;
+          min-width: 100%;
+        }
+
+        .report-output-cell {
+          display: inline-block;
+          max-width: 280px;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          vertical-align: middle;
+        }
+
+        .report-output-number {
+          font-variant-numeric: tabular-nums;
+        }
+      `}</style>
+
       <div className="page-header">
         <div>
           <h1 className="page-title">{report?.reportName || "Report"}</h1>
@@ -217,6 +384,14 @@ export default function ReportRunnerClient({ savedReportId }: { savedReportId: s
       {error ? <div className="alert alert-danger">{error}</div> : null}
 
       {result ? (
+        <ReportSummaryCards
+          rows={result.rows}
+          columns={result.columns}
+          cards={isDetailReport ? undefined : template?.summaryCards}
+        />
+      ) : null}
+
+      {result ? (
         <ReportVisualization
           visualization={report?.visualization || "datatable"}
           columns={result.columns}
@@ -225,25 +400,27 @@ export default function ReportRunnerClient({ savedReportId }: { savedReportId: s
       ) : null}
 
       {result ? (
-        <DataTable
-          columns={tableColumns}
-          rows={result.rows}
-          loading={running}
-          error={error}
-          sortBy={sortBy}
-          sortDir={sortDir}
-          onToggleSort={onToggleSort}
-          filters={{}}
-          onFilterChange={() => {}}
-          totalCount={result.total}
-          pageIndex={pageIndex}
-          pageSize={pageSize}
-          onPageIndexChange={onPageIndexChange}
-          onPageSizeChange={onPageSizeChange}
-          rowKey={(row) => JSON.stringify(row)}
-          enableCsvExport={false}
-          emptyText="No report results found."
-        />
+        <div className="report-output-table">
+          <DataTable
+            columns={tableColumns}
+            rows={result.rows}
+            loading={running}
+            error={error}
+            sortBy={sortBy}
+            sortDir={sortDir}
+            onToggleSort={onToggleSort}
+            filters={{}}
+            onFilterChange={() => {}}
+            totalCount={result.total}
+            pageIndex={pageIndex}
+            pageSize={pageSize}
+            onPageIndexChange={onPageIndexChange}
+            onPageSizeChange={onPageSizeChange}
+            rowKey={(row) => JSON.stringify(row)}
+            enableCsvExport={false}
+            emptyText="No report results found."
+          />
+        </div>
       ) : null}
     </div>
   );
