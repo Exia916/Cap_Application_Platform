@@ -164,3 +164,40 @@ export async function replaceUserSecurityQuestions(
     client.release();
   }
 }
+
+export async function resetUserSecurityQuestions(input: {
+  userId: string;
+  updatedBy: string | null;
+}): Promise<void> {
+  const client = await db.connect();
+
+  try {
+    await client.query("BEGIN");
+
+    await client.query(
+      `
+      DELETE FROM public.user_security_questions
+      WHERE user_id = $1
+      `,
+      [input.userId]
+    );
+
+    await client.query(
+      `
+      UPDATE public.users
+      SET
+        security_questions_enrolled_at = NULL,
+        updated_at = NOW()
+      WHERE id = $1
+      `,
+      [input.userId]
+    );
+
+    await client.query("COMMIT");
+  } catch (err) {
+    await client.query("ROLLBACK");
+    throw err;
+  } finally {
+    client.release();
+  }
+}
