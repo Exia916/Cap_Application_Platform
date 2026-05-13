@@ -6,6 +6,7 @@ import { Fragment, useEffect, useMemo, useState } from "react";
 type UserRow = {
   id: string;
   username: string;
+  email: string | null;
   display_name: string;
   name: string | null;
   employee_number: number | null;
@@ -31,11 +32,12 @@ export default function AdminUsersPage() {
   const [shiftOptions, setShiftOptions] = useState<ShiftOption[]>([]);
   const [deptOptions, setDeptOptions] = useState<DepartmentOption[]>([]);
 
-  // ✅ search
+  // search
   const [search, setSearch] = useState("");
 
   const [newUser, setNewUser] = useState({
     username: "",
+    email: "",
     password: "",
     display_name: "",
     name: "",
@@ -50,6 +52,7 @@ export default function AdminUsersPage() {
   const [editForm, setEditForm] = useState({
     id: "",
     username: "",
+    email: "",
     display_name: "",
     name: "",
     employee_number: "",
@@ -137,6 +140,7 @@ export default function AdminUsersPage() {
 
     const haystack = [
       u.username,
+      u.email ?? "",
       u.display_name,
       u.name ?? "",
       String(u.employee_number ?? ""),
@@ -183,6 +187,7 @@ export default function AdminUsersPage() {
       credentials: "include",
       body: JSON.stringify({
         ...newUser,
+        email: newUser.email.trim() || null,
         role: String(newUser.role || "").toUpperCase(),
         employee_number: newUser.employee_number ? Number(newUser.employee_number) : null,
         shift: newUser.shift || null,
@@ -198,6 +203,7 @@ export default function AdminUsersPage() {
 
     setNewUser({
       username: "",
+      email: "",
       password: "",
       display_name: "",
       name: "",
@@ -218,6 +224,7 @@ export default function AdminUsersPage() {
     setEditForm({
       id: u.id,
       username: u.username,
+      email: u.email || "",
       display_name: u.display_name || "",
       name: u.name || "",
       employee_number: u.employee_number?.toString() || "",
@@ -234,6 +241,7 @@ export default function AdminUsersPage() {
     setEditForm({
       id: "",
       username: "",
+      email: "",
       display_name: "",
       name: "",
       employee_number: "",
@@ -255,6 +263,7 @@ export default function AdminUsersPage() {
       credentials: "include",
       body: JSON.stringify({
         ...editForm,
+        email: editForm.email.trim() || null,
         role: String(editForm.role || "").toUpperCase(),
         employee_number: editForm.employee_number ? Number(editForm.employee_number) : null,
         shift: editForm.shift || null,
@@ -321,6 +330,17 @@ export default function AdminUsersPage() {
             <input className="input" name="username" value={newUser.username} onChange={onNewChange} />
           </Field>
 
+          <Field label="Email">
+            <input
+              className="input"
+              type="email"
+              name="email"
+              value={newUser.email}
+              onChange={onNewChange}
+              placeholder="name@capamerica.com"
+            />
+          </Field>
+
           <Field label="Employee #">
             <input className="input" name="employee_number" value={newUser.employee_number} onChange={onNewChange} />
           </Field>
@@ -380,7 +400,7 @@ export default function AdminUsersPage() {
           <div className="flex items-center gap-2 w-full">
             <input
               className="input w-full"
-              placeholder="Search by name, username, employee #, role, shift, department…"
+              placeholder="Search by name, username, email, employee #, role, shift, department…"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
             />
@@ -413,6 +433,7 @@ export default function AdminUsersPage() {
               <tr className="border-b">
                 <th className="py-2 pr-3">Name</th>
                 <th className="py-2 pr-3">Username</th>
+                <th className="py-2 pr-3">Email</th>
                 <th className="py-2 pr-3">Employee #</th>
                 <th className="py-2 pr-3">Role</th>
                 <th className="py-2 pr-3">Shift</th>
@@ -428,6 +449,7 @@ export default function AdminUsersPage() {
                   <tr className="border-b">
                     <td className="py-2 pr-3">{u.display_name || u.name || "-"}</td>
                     <td className="py-2 pr-3">{u.username}</td>
+                    <td className="py-2 pr-3">{u.email || "-"}</td>
                     <td className="py-2 pr-3">{u.employee_number ?? "-"}</td>
                     <td className="py-2 pr-3">{String(u.role).toUpperCase()}</td>
                     <td className="py-2 pr-3">{u.shift || "-"}</td>
@@ -451,7 +473,7 @@ export default function AdminUsersPage() {
 
                   {editingId === u.id ? (
                     <tr className="border-b">
-                      <td colSpan={8} className="py-3">
+                      <td colSpan={9} className="py-3">
                         <div className="rounded-lg border bg-gray-50 p-4">
                           <div className="mb-3 flex items-center justify-between">
                             <div className="text-sm font-semibold">
@@ -465,6 +487,17 @@ export default function AdminUsersPage() {
                           <form onSubmit={saveEdit} className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
                             <Field label="Username">
                               <input className="input" name="username" value={editForm.username} onChange={onEditChange} />
+                            </Field>
+
+                            <Field label="Email">
+                              <input
+                                className="input"
+                                type="email"
+                                name="email"
+                                value={editForm.email}
+                                onChange={onEditChange}
+                                placeholder="name@capamerica.com"
+                              />
                             </Field>
 
                             <Field label="Display Name">
@@ -543,7 +576,7 @@ export default function AdminUsersPage() {
 
               {activeUsers.length === 0 ? (
                 <tr>
-                  <td className="py-3 text-gray-500" colSpan={8}>
+                  <td className="py-3 text-gray-500" colSpan={9}>
                     No active users.
                   </td>
                 </tr>
@@ -576,6 +609,12 @@ export default function AdminUsersPage() {
                 <span className="font-mono">{u.username}</span>
                 {" — "}
                 {u.display_name || u.name || "-"}
+                {u.email ? (
+                  <>
+                    {" — "}
+                    <span>{u.email}</span>
+                  </>
+                ) : null}
               </div>
             ))}
           </div>
