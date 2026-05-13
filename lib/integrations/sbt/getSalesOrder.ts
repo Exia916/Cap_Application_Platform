@@ -212,6 +212,7 @@ export async function getSalesOrder(input: unknown): Promise<GetSalesOrderResult
       method: "GET",
       headers: {
         Accept: "application/json",
+         "x-api-key": String(process.env.WILCOM_API_KEY || "").trim(),
       },
       cache: "no-store",
     });
