@@ -4,6 +4,7 @@ import { getReportDataset } from "./reportRegistry";
 import type {
   ReportAggregation,
   ReportColumn,
+  ReportFilterLogic,
   ReportFilterValue,
   ReportOutputColumn,
   ReportRunRequest,
@@ -49,6 +50,10 @@ function normalizePageSize(value: unknown) {
   const n = Number(value);
   if (!Number.isFinite(n) || n <= 0) return 25;
   return Math.min(Math.trunc(n), 500);
+}
+
+function normalizeFilterLogic(value: unknown): ReportFilterLogic {
+  return String(value || "").toUpperCase() === "OR" ? "OR" : "AND";
 }
 
 function aggregateAlias(aggregation: ReportAggregation) {
@@ -236,7 +241,9 @@ export function buildReportQuery(request: ReportRunRequest): BuiltReportQuery {
     throw new Error("At least one column or aggregation is required.");
   }
 
-  const whereSql = where.length ? `WHERE ${where.join(" AND ")}` : "";
+  const filterLogic = normalizeFilterLogic(request.filterLogic);
+  const whereJoiner = filterLogic === "OR" ? " OR " : " AND ";
+  const whereSql = where.length ? `WHERE ${where.join(whereJoiner)}` : "";
   const groupBySql = groupByParts.length ? `GROUP BY ${groupByParts.join(", ")}` : "";
 
   const sort = request.sort ?? dataset.defaultSort;

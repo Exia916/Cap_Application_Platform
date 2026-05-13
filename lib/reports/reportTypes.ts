@@ -29,6 +29,8 @@ export type ReportFilterOperator =
   | "isTrue"
   | "isFalse";
 
+export type ReportFilterLogic = "AND" | "OR";
+
 export type ReportAggregateFunction =
   | "sum"
   | "avg"
@@ -96,6 +98,7 @@ export type ReportRunRequest = {
   datasetKey: string;
   selectedColumns?: string[];
   filters?: Record<string, ReportFilterValue>;
+  filterLogic?: ReportFilterLogic;
   sort?: ReportSortConfig | null;
   grouping?: string[];
   aggregations?: ReportAggregation[];
@@ -127,6 +130,7 @@ export type SavedReportInput = {
   sharedDepartments?: string[];
   selectedColumns: string[];
   filters: Record<string, ReportFilterValue>;
+  filterLogic?: ReportFilterLogic;
   sort: ReportSortConfig | null;
   grouping: string[];
   aggregations: ReportAggregation[];
@@ -148,6 +152,7 @@ export type SavedReportRow = {
   sharedDepartments: string[];
   selectedColumns: string[];
   filters: Record<string, ReportFilterValue>;
+  filterLogic?: ReportFilterLogic;
   sort: ReportSortConfig | null;
   grouping: string[];
   aggregations: ReportAggregation[];
