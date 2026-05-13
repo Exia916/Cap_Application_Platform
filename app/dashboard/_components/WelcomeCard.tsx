@@ -6,22 +6,12 @@ import Link from "next/link";
 type MeResponse = {
   username?: string | null;
   displayName?: string | null;
-  role?: string | null;
   department?: string | null;
 };
 
 function formatValue(value?: string | null, fallback = "Not Assigned") {
   const clean = String(value ?? "").trim();
   return clean || fallback;
-}
-
-function formatRole(role?: string | null, username?: string | null) {
-  const cleanRole = String(role ?? "").trim().toUpperCase();
-  const cleanUsername = String(username ?? "").trim().toLowerCase();
-
-  if (cleanRole === "ADMIN" || cleanUsername === "admin") return "ADMIN";
-
-  return cleanRole || "USER";
 }
 
 export default function WelcomeCard() {
@@ -57,19 +47,9 @@ export default function WelcomeCard() {
     };
   }, []);
 
-  const username = useMemo(
-    () => (me?.username ?? "").trim().toLowerCase(),
-    [me?.username]
-  );
-
   const displayName = useMemo(
     () => me?.displayName?.trim() || me?.username?.trim() || "User",
     [me?.displayName, me?.username]
-  );
-
-  const roleLabel = useMemo(
-    () => formatRole(me?.role, username),
-    [me?.role, username]
   );
 
   const departmentLabel = useMemo(
@@ -101,13 +81,6 @@ export default function WelcomeCard() {
       </div>
 
       <div className="dashboard-welcome-side">
-        <div className="dashboard-summary-card">
-          <div className="dashboard-summary-label">Role</div>
-          <div className="dashboard-summary-value">
-            {loaded ? roleLabel : "..."}
-          </div>
-        </div>
-
         <div className="dashboard-summary-card">
           <div className="dashboard-summary-label">Department</div>
           <div className="dashboard-summary-value">
@@ -159,7 +132,7 @@ export default function WelcomeCard() {
 
         .dashboard-welcome-side {
           display: grid;
-          grid-template-columns: repeat(2, minmax(0, 1fr));
+          grid-template-columns: 1fr;
           gap: 12px;
         }
 

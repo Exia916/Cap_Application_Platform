@@ -21,6 +21,33 @@ function normRole(v: any) {
   return String(v ?? "").trim().toUpperCase();
 }
 
+function normEmail(v: any): string | null {
+  const email = String(v ?? "").trim().toLowerCase();
+  return email || null;
+}
+
+function isValidEmail(email: string | null): boolean {
+  if (!email) return true;
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+}
+
+function userUniqueMessage(err: any, fallback: string) {
+  const constraint = String(err?.constraint || "").toLowerCase();
+  const message = String(err?.message || "").toLowerCase();
+
+  if (constraint.includes("email") || message.includes("email")) {
+    return "That email is already assigned to another user.";
+  }
+
+  if (message.includes("duplicate") || message.includes("unique")) {
+    return "That username already exists.";
+  }
+
+  return process.env.NODE_ENV === "production"
+    ? fallback
+    : err?.message || fallback;
+}
+
 async function requireAdmin() {
   const payload: any = await getAuth();
   if (!payload) return { ok: false as const, status: 401, error: "Unauthorized" };
@@ -40,6 +67,7 @@ export async function GET() {
       SELECT
         id,
         username,
+        email,
         display_name,
         name,
         employee_number,
@@ -68,6 +96,7 @@ export async function POST(req: Request) {
   if (!body) return bad("Invalid JSON body");
 
   const username = String(body.username ?? "").trim();
+  const email = normEmail(body.email);
   const password = String(body.password ?? "");
   const display_name = String(body.display_name ?? "").trim();
   const name = String(body.name ?? "").trim();
@@ -83,6 +112,7 @@ export async function POST(req: Request) {
   if (!username) return bad("Username is required");
   if (!password) return bad("Password is required");
   if (!role) return bad("Role is required");
+  if (!isValidEmail(email)) return bad("Email is invalid");
 
   try {
     // ✅ Validate role exists (FK will also enforce, but this gives a clean error)
@@ -94,26 +124,20 @@ export async function POST(req: Request) {
     const res = await db.query(
       `
       INSERT INTO users
-        (username, password_hash, display_name, name, employee_number, role, shift, department, is_active, created_at, updated_at)
+        (username, email, password_hash, display_name, name, employee_number, role, shift, department, is_active, created_at, updated_at)
       VALUES
-        ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW(), NOW())
+        ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW(), NOW())
       RETURNING
-        id, username, display_name, name, employee_number, role, shift, department, is_active, created_at, updated_at
+        id, username, email, display_name, name, employee_number, role, shift, department, is_active, created_at, updated_at
       `,
-      [username, password_hash, display_name || null, name || null, employee_number, role, shift, department, is_active]
+      [username, email, password_hash, display_name || null, name || null, employee_number, role, shift, department, is_active]
     );
 
     return NextResponse.json({ user: res.rows[0] });
   } catch (err: any) {
     console.error("POST /api/admin/users failed:", err);
 
-    const msg =
-      String(err?.message || "").toLowerCase().includes("duplicate") ||
-      String(err?.message || "").toLowerCase().includes("unique")
-        ? "That username already exists."
-        : process.env.NODE_ENV === "production"
-        ? "Failed to create user"
-        : err?.message || "Failed to create user";
+    const msg = userUniqueMessage(err, "Failed to create user");
 
     return NextResponse.json({ error: msg }, { status: 500 });
   }
@@ -130,6 +154,7 @@ export async function PUT(req: Request) {
   if (!id) return bad("Missing id");
 
   const username = String(body.username ?? "").trim();
+  const email = normEmail(body.email);
   const display_name = String(body.display_name ?? "").trim();
   const name = String(body.name ?? "").trim();
   const role = normRole(body.role);
@@ -145,6 +170,7 @@ export async function PUT(req: Request) {
 
   if (!username) return bad("Username is required");
   if (!role) return bad("Role is required");
+  if (!isValidEmail(email)) return bad("Email is invalid");
 
   try {
     const roleCheck = await db.query(`SELECT 1 FROM roles_lookup WHERE code = $1`, [role]);
@@ -155,6 +181,7 @@ export async function PUT(req: Request) {
     let i = 1;
 
     fields.push(`username = $${i++}`); args.push(username);
+    fields.push(`email = $${i++}`); args.push(email);
     fields.push(`display_name = $${i++}`); args.push(display_name || null);
     fields.push(`name = $${i++}`); args.push(name || null);
     fields.push(`employee_number = $${i++}`); args.push(employee_number);
@@ -177,7 +204,7 @@ export async function PUT(req: Request) {
       SET ${fields.join(", ")}
       WHERE id = $${i}
       RETURNING
-        id, username, display_name, name, employee_number, role, shift, department, is_active, created_at, updated_at
+        id, username, email, display_name, name, employee_number, role, shift, department, is_active, created_at, updated_at
       `,
       [...args, id]
     );
@@ -187,13 +214,7 @@ export async function PUT(req: Request) {
   } catch (err: any) {
     console.error("PUT /api/admin/users failed:", err);
 
-    const msg =
-      String(err?.message || "").toLowerCase().includes("duplicate") ||
-      String(err?.message || "").toLowerCase().includes("unique")
-        ? "That username already exists."
-        : process.env.NODE_ENV === "production"
-        ? "Failed to update user"
-        : err?.message || "Failed to update user";
+    const msg = userUniqueMessage(err, "Failed to update user");
 
     return NextResponse.json({ error: msg }, { status: 500 });
   }

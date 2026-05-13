@@ -3,6 +3,7 @@ import { db } from "@/lib/db";
 export type UserRow = {
   id: string;
   username: string;
+  email: string | null;
   display_name: string;
   password_hash: string;
   employee_number: number;
@@ -16,6 +17,7 @@ const baseSelect = `
   SELECT
     id,
     username,
+    email,
     display_name,
     password_hash,
     employee_number,
