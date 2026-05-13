@@ -65,20 +65,32 @@ export async function GET() {
 
     const res = await db.query(`
       SELECT
-        id,
-        username,
-        email,
-        display_name,
-        name,
-        employee_number,
-        role,               -- ✅ now text
-        is_active,
-        shift,
-        department,
-        created_at,
-        updated_at
-      FROM users
-      ORDER BY username ASC
+        u.id,
+        u.username,
+        u.email,
+        u.display_name,
+        u.name,
+        u.employee_number,
+        u.role,
+        u.is_active,
+        u.shift,
+        u.department,
+        u.created_at,
+        u.updated_at,
+
+        COALESCE(sq.question_count, 0)::int AS "securityQuestionsCount",
+        u.security_questions_enrolled_at AS "securityQuestionsEnrolledAt",
+        COALESCE(u.security_questions_required, false) AS "securityQuestionsRequired",
+        u.offsite_security_bypass_until AS "offsiteSecurityBypassUntil"
+      FROM public.users u
+      LEFT JOIN (
+        SELECT
+          user_id,
+          COUNT(*) AS question_count
+        FROM public.user_security_questions
+        GROUP BY user_id
+      ) sq ON sq.user_id = u.id
+      ORDER BY u.username ASC
     `);
 
     return NextResponse.json({ users: res.rows });
@@ -115,7 +127,6 @@ export async function POST(req: Request) {
   if (!isValidEmail(email)) return bad("Email is invalid");
 
   try {
-    // ✅ Validate role exists (FK will also enforce, but this gives a clean error)
     const roleCheck = await db.query(`SELECT 1 FROM roles_lookup WHERE code = $1`, [role]);
     if (roleCheck.rowCount === 0) return bad(`Invalid role: ${role}`, 400);
 

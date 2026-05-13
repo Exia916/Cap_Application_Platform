@@ -14,6 +14,11 @@ type UserRow = {
   is_active: boolean;
   shift: string | null;
   department: string | null;
+
+  securityQuestionsCount?: number | null;
+  securityQuestionsEnrolledAt?: string | null;
+  securityQuestionsRequired?: boolean | null;
+  offsiteSecurityBypassUntil?: string | null;
 };
 
 type RoleOption = { code: string; label: string };
@@ -135,6 +140,57 @@ export default function AdminUsersPage() {
 
   const normalizedSearch = search.trim().toLowerCase();
 
+  function fmtDateTime(v?: string | null) {
+    if (!v) return "-";
+    const d = new Date(v);
+    return Number.isNaN(d.getTime()) ? String(v) : d.toLocaleString();
+  }
+
+  function securityQuestionStatus(u: UserRow) {
+    const count = Number(u.securityQuestionsCount ?? 0);
+
+    if (count >= 3) {
+      return <span className="badge badge-success">Set Up</span>;
+    }
+
+    if (count > 0) {
+      return <span className="badge badge-warning">{count} of 3</span>;
+    }
+
+    return <span className="badge badge-danger">Not Set Up</span>;
+  }
+
+  async function resetSecurityQuestions(user: UserRow) {
+    const label = user.display_name || user.name || user.username;
+
+    if (
+      !confirm(
+        `Reset security questions for ${label}? They will need to set up all 3 questions again.`
+      )
+    ) {
+      return;
+    }
+
+    setError("");
+
+    const res = await fetch(
+      `/api/admin/users/${encodeURIComponent(user.id)}/security-questions/reset`,
+      {
+        method: "DELETE",
+        credentials: "include",
+      }
+    );
+
+    const json = await res.json().catch(() => ({}));
+
+    if (!res.ok) {
+      setError((json as any)?.error || "Failed to reset security questions.");
+      return;
+    }
+
+    await loadUsers();
+  }
+
   const matches = (u: UserRow) => {
     if (!normalizedSearch) return true;
 
@@ -147,6 +203,10 @@ export default function AdminUsersPage() {
       String(u.role ?? ""),
       u.shift ?? "",
       u.department ?? "",
+      String(u.securityQuestionsCount ?? ""),
+      u.securityQuestionsEnrolledAt ?? "",
+      u.securityQuestionsRequired ? "security required" : "",
+      u.offsiteSecurityBypassUntil ?? "",
     ]
       .join(" ")
       .toLowerCase();
@@ -307,7 +367,9 @@ export default function AdminUsersPage() {
     <div className="p-6 space-y-4">
       <div className="rounded-xl border bg-white p-4">
         <h1 className="text-xl font-semibold">Admin – Users</h1>
-        <p className="text-sm text-gray-600">Create, edit, reset passwords, and deactivate users.</p>
+        <p className="text-sm text-gray-600">
+          Create, edit, reset passwords, manage security-question setup, and deactivate users.
+        </p>
       </div>
 
       {error ? (
@@ -400,7 +462,7 @@ export default function AdminUsersPage() {
           <div className="flex items-center gap-2 w-full">
             <input
               className="input w-full"
-              placeholder="Search by name, username, email, employee #, role, shift, department…"
+              placeholder="Search by name, username, email, employee #, role, shift, department, security setup…"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
             />
@@ -439,6 +501,8 @@ export default function AdminUsersPage() {
                 <th className="py-2 pr-3">Shift</th>
                 <th className="py-2 pr-3">Department</th>
                 <th className="py-2 pr-3">Active</th>
+                <th className="py-2 pr-3">Security Questions</th>
+                <th className="py-2 pr-3">Enrolled At</th>
                 <th className="py-2 pr-3">Actions</th>
               </tr>
             </thead>
@@ -455,11 +519,28 @@ export default function AdminUsersPage() {
                     <td className="py-2 pr-3">{u.shift || "-"}</td>
                     <td className="py-2 pr-3">{u.department || "-"}</td>
                     <td className="py-2 pr-3">{u.is_active ? "Yes" : "No"}</td>
+                    <td className="py-2 pr-3">{securityQuestionStatus(u)}</td>
+                    <td className="py-2 pr-3">{fmtDateTime(u.securityQuestionsEnrolledAt)}</td>
                     <td className="py-2 pr-3">
                       <div className="flex flex-wrap gap-2">
                         <button type="button" className="rounded-full border px-3 py-1 text-xs" onClick={() => startEditing(u)}>
                           Edit
                         </button>
+
+                        <button
+                          type="button"
+                          className="rounded-full border px-3 py-1 text-xs"
+                          onClick={() => resetSecurityQuestions(u)}
+                          disabled={Number(u.securityQuestionsCount ?? 0) <= 0}
+                          title={
+                            Number(u.securityQuestionsCount ?? 0) > 0
+                              ? "Reset security questions"
+                              : "No security questions to reset"
+                          }
+                        >
+                          Reset Questions
+                        </button>
+
                         <button
                           type="button"
                           className="rounded-full bg-red-600 px-3 py-1 text-xs text-white"
@@ -473,7 +554,7 @@ export default function AdminUsersPage() {
 
                   {editingId === u.id ? (
                     <tr className="border-b">
-                      <td colSpan={9} className="py-3">
+                      <td colSpan={11} className="py-3">
                         <div className="rounded-lg border bg-gray-50 p-4">
                           <div className="mb-3 flex items-center justify-between">
                             <div className="text-sm font-semibold">
@@ -576,7 +657,7 @@ export default function AdminUsersPage() {
 
               {activeUsers.length === 0 ? (
                 <tr>
-                  <td className="py-3 text-gray-500" colSpan={9}>
+                  <td className="py-3 text-gray-500" colSpan={11}>
                     No active users.
                   </td>
                 </tr>
@@ -615,6 +696,8 @@ export default function AdminUsersPage() {
                     <span>{u.email}</span>
                   </>
                 ) : null}
+                {" — "}
+                <span>{Number(u.securityQuestionsCount ?? 0) >= 3 ? "Security questions set up" : "Security questions not set up"}</span>
               </div>
             ))}
           </div>
@@ -630,6 +713,11 @@ export default function AdminUsersPage() {
           padding: 0 10px;
           font-size: 14px;
           background: white;
+        }
+
+        button:disabled {
+          opacity: 0.5;
+          cursor: not-allowed;
         }
       `}</style>
     </div>

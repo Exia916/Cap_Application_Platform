@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { loginUser, COOKIE_NAME } from "@/lib/auth";
 import { logError, logSecurityEvent } from "@/lib/logging/logger";
+import {
+  assessNetworkAccess,
+  getOffsiteSecurityQuestionsMode,
+} from "@/lib/auth/networkAccess";
+import { getUserSecurityQuestionSummary } from "@/lib/repositories/userAccountRepo";
 
 export async function POST(req: NextRequest) {
   let username = "";
@@ -67,6 +72,47 @@ export async function POST(req: NextRequest) {
         userId: user.id,
         shift: user.shift,
         department: user.department,
+      },
+    });
+
+    const networkAccess = assessNetworkAccess(req);
+    const securityQuestionsMode = getOffsiteSecurityQuestionsMode();
+
+    const securityQuestionSummary = await getUserSecurityQuestionSummary(user.id);
+    const securityQuestionsCount = Number(
+      securityQuestionSummary?.questionCount ?? 0
+    );
+    const securityQuestionsEnrolled = securityQuestionsCount >= 3;
+
+    await logSecurityEvent({
+      req,
+      category: "SECURITY",
+      module: "AUTH",
+      eventType: "LOGIN_SECURITY_QUESTIONS_AUDIT",
+      message: "Security questions audit check completed during login",
+      username: user.username,
+      employeeNumber: user.employeeNumber,
+      role: user.role,
+      details: {
+        mode: securityQuestionsMode,
+        userId: user.id,
+        displayName: user.name,
+        department: user.department,
+        clientIp: networkAccess.clientIp,
+        accessType: networkAccess.accessType,
+        isOnsite: networkAccess.isOnsite,
+        isOffsite: networkAccess.isOffsite,
+        matchedRule: networkAccess.matchedRule,
+        networkReason: networkAccess.reason,
+        configuredRuleCount: networkAccess.configuredRules.length,
+        securityQuestionsEnrolled,
+        securityQuestionsCount,
+        securityQuestionsEnrolledAt:
+          securityQuestionSummary?.securityQuestionsEnrolledAt ?? null,
+        securityQuestionsRequired:
+          securityQuestionSummary?.securityQuestionsRequired ?? false,
+        offsiteSecurityBypassUntil:
+          securityQuestionSummary?.offsiteSecurityBypassUntil ?? null,
       },
     });
 
