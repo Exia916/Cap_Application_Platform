@@ -670,6 +670,15 @@ export default function NavBar() {
                   <div style={menuDivider} />
 
                   <Link
+                    href="/account"
+                    role="menuitem"
+                    style={menuItem}
+                    onClick={handleNavigate}
+                  >
+                    My Account
+                  </Link>
+
+                  <Link
                     href="/playbooks"
                     role="menuitem"
                     style={menuItem}
