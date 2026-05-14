@@ -40,6 +40,14 @@ function signJwt(payload: AuthUser) {
   return jwt.sign(payload, JWT_SECRET, { expiresIn: "12h" });
 }
 
+/**
+ * Public helper for issuing a normal CAP auth token after a secondary
+ * verification step, such as security questions.
+ */
+export function signAuthToken(user: AuthUser) {
+  return signJwt(user);
+}
+
 export function verifyJwt(token: string): AuthUser | null {
   try {
     return jwt.verify(token, JWT_SECRET) as AuthUser;
@@ -97,7 +105,7 @@ function getTokenFromRequest(req: NextRequest | NextApiRequest): string | null {
   if (candidate && typeof (candidate as { get?: unknown }).get === "function") {
     const getter = candidate as { get: (name: string) => { value: string } | undefined };
 
-    // ✅ Prefer auth_token, fallback to legacy token
+    // Prefer auth_token, fallback to legacy token
     return getter.get(COOKIE_NAME)?.value ?? getter.get(LEGACY_COOKIE_NAME)?.value ?? null;
   }
 
@@ -150,7 +158,7 @@ function buildClearCookie(name: string, secure: boolean) {
 export function setAuthCookie(res: NextApiResponse, token: string) {
   const secure = process.env.NODE_ENV === "production";
 
-  // ✅ Set BOTH cookies so any route expecting either name will work
+  // Set BOTH cookies so any route expecting either name will work
   res.setHeader("Set-Cookie", [
     buildCookie(COOKIE_NAME, token, secure),
     buildCookie(LEGACY_COOKIE_NAME, token, secure),
@@ -160,6 +168,6 @@ export function setAuthCookie(res: NextApiResponse, token: string) {
 export function clearAuthCookie(res: NextApiResponse) {
   const secure = process.env.NODE_ENV === "production";
 
-  // ✅ Clear BOTH cookies
+  // Clear BOTH cookies
   res.setHeader("Set-Cookie", [buildClearCookie(COOKIE_NAME, secure), buildClearCookie(LEGACY_COOKIE_NAME, secure)]);
 }

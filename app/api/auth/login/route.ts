@@ -5,7 +5,36 @@ import {
   assessNetworkAccess,
   getOffsiteSecurityQuestionsMode,
 } from "@/lib/auth/networkAccess";
-import { getUserSecurityQuestionSummary } from "@/lib/repositories/userAccountRepo";
+import {
+  getUserSecurityQuestionSummary,
+  listUserSecurityQuestions,
+} from "@/lib/repositories/userAccountRepo";
+import {
+  clearSecurityQuestionChallengeCookie,
+  createSecurityQuestionChallengeToken,
+  setSecurityQuestionChallengeCookie,
+} from "@/lib/auth/securityQuestionTokens";
+
+function hasActiveBypass(value?: string | null) {
+  if (!value) return false;
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return false;
+  return d.getTime() > Date.now();
+}
+
+function pickTwoQuestionIds(rows: Array<{ id: string }>) {
+  const shuffled = rows
+    .slice()
+    .sort(() => Math.random() - 0.5);
+
+  return shuffled.slice(0, 2).map((row) => row.id);
+}
+
+function shouldForceChallengeForTesting() {
+  return String(process.env.OFFSITE_SECURITY_QUESTIONS_FORCE_CHALLENGE ?? "")
+    .trim()
+    .toLowerCase() === "true";
+}
 
 export async function POST(req: NextRequest) {
   let username = "";
@@ -83,6 +112,10 @@ export async function POST(req: NextRequest) {
       securityQuestionSummary?.questionCount ?? 0
     );
     const securityQuestionsEnrolled = securityQuestionsCount >= 3;
+    const bypassActive = hasActiveBypass(
+      securityQuestionSummary?.offsiteSecurityBypassUntil ?? null
+    );
+    const forceChallengeForTesting = shouldForceChallengeForTesting();
 
     await logSecurityEvent({
       req,
@@ -113,10 +146,121 @@ export async function POST(req: NextRequest) {
           securityQuestionSummary?.securityQuestionsRequired ?? false,
         offsiteSecurityBypassUntil:
           securityQuestionSummary?.offsiteSecurityBypassUntil ?? null,
+        bypassActive,
+        forceChallengeForTesting,
       },
     });
 
+    const shouldChallenge =
+      securityQuestionsMode === "enforce" &&
+      !bypassActive &&
+      securityQuestionsEnrolled &&
+      (networkAccess.isOffsite || forceChallengeForTesting);
+
+    if (shouldChallenge) {
+      const questions = await listUserSecurityQuestions(user.id);
+      const questionIds = pickTwoQuestionIds(questions);
+
+      if (questionIds.length < 2) {
+        await logSecurityEvent({
+          req,
+          category: "SECURITY",
+          module: "AUTH",
+          eventType: "LOGIN_SECURITY_QUESTIONS_CHALLENGE_UNAVAILABLE",
+          message: "Security question challenge could not be created",
+          username: user.username,
+          employeeNumber: user.employeeNumber,
+          role: user.role,
+          details: {
+            userId: user.id,
+            availableQuestionCount: questions.length,
+          },
+        });
+
+        return NextResponse.json(
+          {
+            error:
+              "Offsite access requires security questions, but your questions are not fully set up. Please contact IT.",
+            requiresSecurityQuestionSetup: true,
+          },
+          { status: 403 }
+        );
+      }
+
+      const challengeToken = createSecurityQuestionChallengeToken({
+        user,
+        questionIds,
+        attemptsRemaining: 5,
+      });
+
+      await logSecurityEvent({
+        req,
+        category: "SECURITY",
+        module: "AUTH",
+        eventType: "LOGIN_SECURITY_QUESTIONS_CHALLENGE_REQUIRED",
+        message: "Security question challenge required before login completion",
+        username: user.username,
+        employeeNumber: user.employeeNumber,
+        role: user.role,
+        details: {
+          userId: user.id,
+          questionCount: questions.length,
+          selectedQuestionCount: questionIds.length,
+          clientIp: networkAccess.clientIp,
+          accessType: networkAccess.accessType,
+          forceChallengeForTesting,
+        },
+      });
+
+      const res = NextResponse.json(
+        {
+          success: false,
+          requiresSecurityQuestions: true,
+          redirectTo: "/login/security-questions",
+        },
+        { status: 200 }
+      );
+
+      setSecurityQuestionChallengeCookie(res, challengeToken);
+      return res;
+    }
+
+    if (
+      securityQuestionsMode === "enforce" &&
+      !bypassActive &&
+      !securityQuestionsEnrolled &&
+      networkAccess.isOffsite
+    ) {
+      await logSecurityEvent({
+        req,
+        category: "SECURITY",
+        module: "AUTH",
+        eventType: "LOGIN_SECURITY_QUESTIONS_NOT_ENROLLED",
+        message: "Offsite login blocked because security questions are not set up",
+        username: user.username,
+        employeeNumber: user.employeeNumber,
+        role: user.role,
+        details: {
+          userId: user.id,
+          clientIp: networkAccess.clientIp,
+          accessType: networkAccess.accessType,
+          securityQuestionsCount,
+        },
+      });
+
+      return NextResponse.json(
+        {
+          error:
+            "Offsite access requires security questions. Please sign in onsite or contact IT to complete setup.",
+          requiresSecurityQuestionSetup: true,
+        },
+        { status: 403 }
+      );
+    }
+
     const res = NextResponse.json({ success: true, user });
+
+    clearSecurityQuestionChallengeCookie(res);
 
     res.cookies.set(COOKIE_NAME, token, {
       httpOnly: true,
