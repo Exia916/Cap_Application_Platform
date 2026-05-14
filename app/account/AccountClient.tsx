@@ -103,6 +103,7 @@ export default function AccountClient() {
 
   const [error, setError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
+  const [setupRequiredFromLogin, setSetupRequiredFromLogin] = useState(false);
 
   const enrolled = useMemo(
     () => Number(summary?.questionCount ?? 0) >= 3,
@@ -165,6 +166,13 @@ export default function AccountClient() {
     load();
   }, []);
 
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const params = new URLSearchParams(window.location.search);
+    setSetupRequiredFromLogin(params.get("securitySetup") === "required");
+  }, []);
+
   function updateRow(
     order: number,
     key: "questionPrompt" | "answer",
@@ -215,6 +223,14 @@ export default function AccountClient() {
       }
 
       setSuccessMsg("Security questions saved.");
+      setSetupRequiredFromLogin(false);
+
+      if (typeof window !== "undefined") {
+        const url = new URL(window.location.href);
+        url.searchParams.delete("securitySetup");
+        window.history.replaceState({}, "", url.toString());
+      }
+
       await load();
     } catch (err: any) {
       setError(err?.message || "Failed to save security questions.");
@@ -235,6 +251,13 @@ export default function AccountClient() {
 
   return (
     <div className="section-stack">
+      {setupRequiredFromLogin && !enrolled ? (
+        <div className="alert alert-warning">
+          Offsite access will require security questions. Please set up all 3
+          questions before continuing.
+        </div>
+      ) : null}
+
       {error ? <div className="alert alert-danger">{error}</div> : null}
       {successMsg ? <div className="alert alert-success">{successMsg}</div> : null}
 

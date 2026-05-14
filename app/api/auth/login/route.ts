@@ -23,10 +23,7 @@ function hasActiveBypass(value?: string | null) {
 }
 
 function pickTwoQuestionIds(rows: Array<{ id: string }>) {
-  const shuffled = rows
-    .slice()
-    .sort(() => Math.random() - 0.5);
-
+  const shuffled = rows.slice().sort(() => Math.random() - 0.5);
   return shuffled.slice(0, 2).map((row) => row.id);
 }
 
@@ -34,6 +31,22 @@ function shouldForceChallengeForTesting() {
   return String(process.env.OFFSITE_SECURITY_QUESTIONS_FORCE_CHALLENGE ?? "")
     .trim()
     .toLowerCase() === "true";
+}
+
+function allowOffsiteSetupDuringEnforce() {
+  return String(process.env.OFFSITE_SECURITY_QUESTIONS_ALLOW_OFFSITE_SETUP ?? "")
+    .trim()
+    .toLowerCase() === "true";
+}
+
+function setNormalAuthCookie(res: NextResponse, token: string) {
+  res.cookies.set(COOKIE_NAME, token, {
+    httpOnly: true,
+    sameSite: "lax",
+    path: "/",
+    maxAge: 60 * 60 * 12,
+    secure: process.env.NODE_ENV === "production",
+  });
 }
 
 export async function POST(req: NextRequest) {
@@ -108,14 +121,22 @@ export async function POST(req: NextRequest) {
     const securityQuestionsMode = getOffsiteSecurityQuestionsMode();
 
     const securityQuestionSummary = await getUserSecurityQuestionSummary(user.id);
+
     const securityQuestionsCount = Number(
       securityQuestionSummary?.questionCount ?? 0
     );
+
     const securityQuestionsEnrolled = securityQuestionsCount >= 3;
+
     const bypassActive = hasActiveBypass(
       securityQuestionSummary?.offsiteSecurityBypassUntil ?? null
     );
+
     const forceChallengeForTesting = shouldForceChallengeForTesting();
+
+    const offsiteSetupAllowed =
+      securityQuestionsMode === "enroll" ||
+      (securityQuestionsMode === "enforce" && allowOffsiteSetupDuringEnforce());
 
     await logSecurityEvent({
       req,
@@ -148,8 +169,56 @@ export async function POST(req: NextRequest) {
           securityQuestionSummary?.offsiteSecurityBypassUntil ?? null,
         bypassActive,
         forceChallengeForTesting,
+        offsiteSetupAllowed,
       },
     });
+
+    /*
+     * Enrollment mode:
+     * Allows offsite users who have not set up security questions to sign in,
+     * then redirects them directly to My Account so they can complete setup.
+     *
+     * This is intentionally before final enforcement.
+     */
+    if (
+      !bypassActive &&
+      !securityQuestionsEnrolled &&
+      networkAccess.isOffsite &&
+      offsiteSetupAllowed
+    ) {
+      await logSecurityEvent({
+        req,
+        category: "SECURITY",
+        module: "AUTH",
+        eventType: "LOGIN_SECURITY_QUESTIONS_SETUP_ALLOWED",
+        message: "Offsite user allowed to sign in for security question setup",
+        username: user.username,
+        employeeNumber: user.employeeNumber,
+        role: user.role,
+        details: {
+          userId: user.id,
+          clientIp: networkAccess.clientIp,
+          accessType: networkAccess.accessType,
+          mode: securityQuestionsMode,
+          securityQuestionsCount,
+        },
+      });
+
+      const res = NextResponse.json(
+        {
+          success: true,
+          user,
+          securityQuestionSetupRequired: true,
+          redirectTo: "/account?securitySetup=required",
+        },
+        { status: 200 }
+      );
+
+      clearSecurityQuestionChallengeCookie(res);
+      setNormalAuthCookie(res, token);
+
+      return res;
+    }
 
     const shouldChallenge =
       securityQuestionsMode === "enforce" &&
@@ -251,7 +320,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json(
         {
           error:
-            "Offsite access requires security questions. Please sign in onsite or contact IT to complete setup.",
+            "Offsite access requires security questions. Please contact IT to complete setup.",
           requiresSecurityQuestionSetup: true,
         },
         { status: 403 }
@@ -261,14 +330,7 @@ export async function POST(req: NextRequest) {
     const res = NextResponse.json({ success: true, user });
 
     clearSecurityQuestionChallengeCookie(res);
-
-    res.cookies.set(COOKIE_NAME, token, {
-      httpOnly: true,
-      sameSite: "lax",
-      path: "/",
-      maxAge: 60 * 60 * 12, // 12 hours in seconds
-      secure: process.env.NODE_ENV === "production",
-    });
+    setNormalAuthCookie(res, token);
 
     return res;
   } catch (error) {
