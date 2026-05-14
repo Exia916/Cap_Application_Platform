@@ -394,8 +394,11 @@ function buildSearchFieldClauses(
   if (createdByClause.clause) clauses.push(createdByClause.clause);
   idx = createdByClause.nextIndex;
 
-  const digitizerClause = equalsAnyClause(
-    `COALESCE(dwr.digitizer_user_id, '')`,
+  const digitizerClause = likeAnyClause(
+    [
+      `COALESCE(dwr.digitizer_user_id, '')`,
+      `COALESCE(dwr.digitizer_name, '')`,
+    ],
     mergedDigitizerIds,
     params,
     idx
@@ -403,8 +406,11 @@ function buildSearchFieldClauses(
   if (digitizerClause.clause) clauses.push(digitizerClause.clause);
   idx = digitizerClause.nextIndex;
 
-  const designerClause = equalsAnyClause(
-    `COALESCE(dwr.designer_user_id, '')`,
+  const designerClause = likeAnyClause(
+    [
+      `COALESCE(dwr.designer_user_id, '')`,
+      `COALESCE(dwr.designer_name, '')`,
+    ],
     mergedDesignerIds,
     params,
     idx
