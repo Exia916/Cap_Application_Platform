@@ -836,7 +836,7 @@ export default function DesignWorkflowPage() {
   const [sortBy, setSortBy] = useState<SortKey>("createdAt");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
   const [pageIndex, setPageIndex] = useState(0);
-  const [pageSize, setPageSize] = useState(25);
+  const [pageSize, setPageSize] = useState(50);
   const [searchOpen, setSearchOpen] = useState(false);
   const [columnsOpen, setColumnsOpen] = useState(false);
   const [modalState, setModalState] = useState<ModalState>({ open: false });
@@ -1134,6 +1134,12 @@ export default function DesignWorkflowPage() {
       salesOrderNumber: singleValue(filters.salesOrderNumbers),
       poNumber: singleValue(filters.poNumbers),
       tapeName: singleValue(filters.tapeNames),
+
+      customerName: singleValue(filters.customerCodes),
+      createdByName: singleValue(filters.createdByNames),
+      digitizerName: singleValue(filters.digitizerUserIds),
+      designerName: singleValue(filters.designerUserIds),
+
       instructions: singleValue(filters.instructionsTerms),
       tapeNumber: singleValue(filters.tapeNumbers),
       sampleSoNumber: singleValue(filters.sampleSoNumbers),
@@ -1152,6 +1158,18 @@ export default function DesignWorkflowPage() {
         return;
       case "tapeName":
         setSingleArrayFilter("tapeNames", value);
+        return;
+      case "customerName":
+        setSingleArrayFilter("customerCodes", value);
+        return;
+      case "createdByName":
+        setSingleArrayFilter("createdByNames", value);
+        return;
+      case "digitizerName":
+        setSingleArrayFilter("digitizerUserIds", value);
+        return;
+      case "designerName":
+        setSingleArrayFilter("designerUserIds", value);
         return;
       case "instructions":
         setSingleArrayFilter("instructionsTerms", value);
@@ -1330,22 +1348,8 @@ async function duplicateSelected() {
         header: "Customer",
         sortable: true,
         width: 180,
-        filterRender: (
-          <select
-            className="select"
-            value={singleValue(filters.customerCodes)}
-            onChange={(e) =>
-              setSingleArrayFilter("customerCodes", e.target.value)
-            }
-          >
-            <option value="">All</option>
-            {customerOptions.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-        ),
+        filterable: true,
+        placeholder: "Customer",
         render: (r) => r.customerName || "",
         getSearchText: (r) => r.customerName || r.customerCode || "",
       },
@@ -1376,22 +1380,8 @@ async function duplicateSelected() {
         header: "Created By",
         sortable: true,
         width: 140,
-        filterRender: (
-          <select
-            className="select"
-            value={singleValue(filters.createdByNames)}
-            onChange={(e) =>
-              setSingleArrayFilter("createdByNames", e.target.value)
-            }
-          >
-            <option value="">All</option>
-            {createdByOptions.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-        ),
+        filterable: true,
+        placeholder: "Created By",
         render: (r) => r.createdByName || "",
         getSearchText: (r) => r.createdByName || "",
       },
@@ -1400,22 +1390,8 @@ async function duplicateSelected() {
         header: "Digitizer",
         sortable: true,
         width: 140,
-        filterRender: (
-          <select
-            className="select"
-            value={singleValue(filters.digitizerUserIds)}
-            onChange={(e) =>
-              setSingleArrayFilter("digitizerUserIds", e.target.value)
-            }
-          >
-            <option value="">All</option>
-            {digitizerOptions.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-        ),
+        filterable: true,
+        placeholder: "Digitizer",
         render: (r) => r.digitizerName || "",
         getSearchText: (r) => r.digitizerName || "",
       },
@@ -1424,22 +1400,8 @@ async function duplicateSelected() {
         header: "Designer",
         sortable: true,
         width: 140,
-        filterRender: (
-          <select
-            className="select"
-            value={singleValue(filters.designerUserIds)}
-            onChange={(e) =>
-              setSingleArrayFilter("designerUserIds", e.target.value)
-            }
-          >
-            <option value="">All</option>
-            {designerOptions.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-        ),
+        filterable: true,
+        placeholder: "Designer",
         render: (r) => r.designerName || "",
         getSearchText: (r) => r.designerName || "",
       },
@@ -1842,12 +1804,12 @@ async function duplicateSelected() {
           totalCount={totalCount}
           pageIndex={pageIndex}
           pageSize={pageSize}
-          pageSizes={[10, 25, 50, 100]}
+          pageSizes={[50, 100, 200, 500]}
           onPageIndexChange={setPageIndex}
           onPageSizeChange={setPageSize}
           toolbar={toolbar}
           rowKey={(row) => row.id}
-          emptyText="No design workflow requests found."
+          emptyText="No CAP workflow requests found."
           enableGlobalSearch={false}
           enableCsvExport={true}
           rowClickable={true}
