@@ -38,7 +38,7 @@ export default function NavBar() {
   const pathname = usePathname() || "";
   const router = useRouter();
 
-  const isLoginPage = pathname === "/login";
+  const isLoginPage = pathname === "/login" || pathname.startsWith("/login/");
 
   const [me, setMe] = useState<Me | null>(null);
   const [meLoaded, setMeLoaded] = useState(false);

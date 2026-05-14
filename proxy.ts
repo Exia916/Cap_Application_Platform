@@ -2,9 +2,15 @@ import { NextRequest, NextResponse } from "next/server";
 
 const PUBLIC_PATHS = new Set([
   "/login",
+  "/login/security-questions",
+
   "/api/auth/login",
   "/api/auth/login/me",
   "/api/auth/logout",
+
+  "/api/auth/security-questions/challenge",
+  "/api/auth/security-questions/verify",
+
   "/favicon.ico",
   "/robots.txt",
   "/sitemap.xml",
@@ -13,7 +19,7 @@ const PUBLIC_PATHS = new Set([
 function isPublicPath(pathname: string) {
   if (PUBLIC_PATHS.has(pathname)) return true;
   if (pathname.startsWith("/_next")) return true;
-  if (/\.[^/]+$/.test(pathname)) return true;
+  if (/\\.[^/]+$/.test(pathname)) return true;
   return false;
 }
 
@@ -117,14 +123,14 @@ export function proxy(request: NextRequest) {
     }
 
     const MANAGER_ACCESS_ROLES = new Set([
-  "ADMIN",
-  "MANAGER",
-  "SUPERVISOR",
-]);
+      "ADMIN",
+      "MANAGER",
+      "SUPERVISOR",
+    ]);
 
-if (!MANAGER_ACCESS_ROLES.has(role)) {
-  return NextResponse.redirect(new URL("/dashboard", request.url));
-}
+    if (!MANAGER_ACCESS_ROLES.has(role)) {
+      return NextResponse.redirect(new URL("/dashboard", request.url));
+    }
   }
 
   if (pathname.startsWith("/cmms") || pathname.startsWith("/api/cmms")) {

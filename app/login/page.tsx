@@ -22,14 +22,20 @@ export default function LoginPage() {
         body: JSON.stringify({ username, password }),
       });
 
+      const data = await res.json().catch(() => ({}));
+
       if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
         setError(
           (data as any).error ||
             (data as any).message ||
             "Login failed"
         );
         setLoading(false);
+        return;
+      }
+
+      if ((data as any)?.requiresSecurityQuestions && (data as any)?.redirectTo) {
+        window.location.assign((data as any).redirectTo);
         return;
       }
 
@@ -79,7 +85,7 @@ export default function LoginPage() {
               </h2>
 
               <p className="mt-3 max-w-sm text-sm text-white/70">
-                Capture production. Track issues. 
+                Capture production. Track issues.
                 Monitor performance—all in a unified platform.
               </p>
 
