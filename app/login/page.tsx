@@ -3,6 +3,13 @@
 import { useState } from "react";
 import Image from "next/image";
 
+function safeRedirect(value: unknown) {
+  const path = typeof value === "string" ? value : "";
+  if (!path.startsWith("/")) return "/dashboard";
+  if (path.startsWith("//")) return "/dashboard";
+  return path;
+}
+
 export default function LoginPage() {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -34,12 +41,11 @@ export default function LoginPage() {
         return;
       }
 
-      if ((data as any)?.requiresSecurityQuestions && (data as any)?.redirectTo) {
-        window.location.assign((data as any).redirectTo);
+      if ((data as any)?.redirectTo) {
+        window.location.assign(safeRedirect((data as any).redirectTo));
         return;
       }
 
-      // Hard navigation avoids first-login cookie timing issues.
       window.location.assign("/dashboard");
     } catch {
       setError("Login failed");
