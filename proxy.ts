@@ -16,10 +16,21 @@ const PUBLIC_PATHS = new Set([
   "/sitemap.xml",
 ]);
 
+const PUBLIC_FILE = /\.(?:png|jpg|jpeg|gif|webp|svg|ico|css|js|map|txt|xml|woff|woff2|ttf)$/i;
+
 function isPublicPath(pathname: string) {
   if (PUBLIC_PATHS.has(pathname)) return true;
-  if (pathname.startsWith("/_next")) return true;
-  if (/\\.[^/]+$/.test(pathname)) return true;
+
+  // Next.js internals and optimized images
+  if (pathname.startsWith("/_next/static")) return true;
+  if (pathname.startsWith("/_next/image")) return true;
+
+  // Public brand assets used on login page and NavBar
+  if (pathname.startsWith("/brand/")) return true;
+
+  // Other public/static files
+  if (PUBLIC_FILE.test(pathname)) return true;
+
   return false;
 }
 
@@ -95,11 +106,12 @@ export function proxy(request: NextRequest) {
   }
 
   const payload = decodeJwtPayload(token);
-  const role = getRole(payload);
 
   if (!payload) {
     return NextResponse.redirect(new URL("/login", request.url));
   }
+
+  const role = getRole(payload);
 
   if (pathname.startsWith("/admin") || pathname.startsWith("/api/admin")) {
     if (isGlobalSearchPath(pathname)) {
@@ -145,5 +157,7 @@ export function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: "/:path*",
+  matcher: [
+    "/((?!_next/static|_next/image|favicon.ico|robots.txt|sitemap.xml|brand/|.*\\.(?:png|jpg|jpeg|gif|webp|svg|ico|css|js|map|txt|xml|woff|woff2|ttf)$).*)",
+  ],
 };
