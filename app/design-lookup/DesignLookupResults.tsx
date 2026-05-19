@@ -106,6 +106,14 @@ function getSortValue(row: WilcomDesign, key: string): string | number {
   }
 }
 
+function safeDownloadName(row: WilcomDesign) {
+  const name = String(row.name || "wilcom-design")
+    .trim()
+    .replace(/[\\/:*?"<>|]+/g, "-");
+
+  return `${name || "wilcom-design"}.EMB`;
+}
+
 export default function DesignLookupResults({
   rows,
   loading,
@@ -261,6 +269,40 @@ export default function DesignLookupResults({
           </button>
         ),
       },
+      {
+        key: "download",
+        header: "",
+        width: 130,
+        sortable: false,
+        render: (row) =>
+          row.fileDownload ? (
+            <a
+              className="btn btn-secondary btn-sm"
+              href={row.fileDownload}
+              download={safeDownloadName(row)}
+              target="_blank"
+              rel="noreferrer"
+              onClick={(e) => {
+                e.stopPropagation();
+              }}
+              title={`Download ${safeDownloadName(row)}`}
+            >
+              Download EMB
+            </a>
+          ) : (
+            <button
+              type="button"
+              className="btn btn-secondary btn-sm"
+              disabled
+              title="No EMB download is available for this design."
+              onClick={(e) => {
+                e.stopPropagation();
+              }}
+            >
+              Download EMB
+            </button>
+          ),
+      },
     ],
     [onView]
   );
@@ -308,6 +350,7 @@ export default function DesignLookupResults({
         HeightMm: row.height,
         Modified: row.dateModified,
         FileType: row.fileExtension,
+        FileDownload: row.fileDownload,
       })}
       rowClickable
       onRowDoubleClick={onView}
