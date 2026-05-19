@@ -106,12 +106,12 @@ function getSortValue(row: WilcomDesign, key: string): string | number {
   }
 }
 
-function safeDownloadName(row: WilcomDesign) {
+function safeDownloadName(row: WilcomDesign, extension: "EMB" | "DST") {
   const name = String(row.name || "wilcom-design")
     .trim()
     .replace(/[\\/:*?"<>|]+/g, "-");
 
-  return `${name || "wilcom-design"}.EMB`;
+  return `${name || "wilcom-design"}.${extension}`;
 }
 
 export default function DesignLookupResults({
@@ -270,7 +270,7 @@ export default function DesignLookupResults({
         ),
       },
       {
-        key: "download",
+        key: "downloadEmb",
         header: "",
         width: 130,
         sortable: false,
@@ -279,13 +279,13 @@ export default function DesignLookupResults({
             <a
               className="btn btn-secondary btn-sm"
               href={row.fileDownload}
-              download={safeDownloadName(row)}
+              download={safeDownloadName(row, "EMB")}
               target="_blank"
               rel="noreferrer"
               onClick={(e) => {
                 e.stopPropagation();
               }}
-              title={`Download ${safeDownloadName(row)}`}
+              title={`Download ${safeDownloadName(row, "EMB")}`}
             >
               Download EMB
             </a>
@@ -300,6 +300,40 @@ export default function DesignLookupResults({
               }}
             >
               Download EMB
+            </button>
+          ),
+      },
+      {
+        key: "downloadDst",
+        header: "",
+        width: 130,
+        sortable: false,
+        render: (row) =>
+          row.dstDownload ? (
+            <a
+              className="btn btn-secondary btn-sm"
+              href={row.dstDownload}
+              download={safeDownloadName(row, "DST")}
+              target="_blank"
+              rel="noreferrer"
+              onClick={(e) => {
+                e.stopPropagation();
+              }}
+              title={`Download ${safeDownloadName(row, "DST")}`}
+            >
+              Download DST
+            </a>
+          ) : (
+            <button
+              type="button"
+              className="btn btn-secondary btn-sm"
+              disabled
+              title="No DST download is available for this design."
+              onClick={(e) => {
+                e.stopPropagation();
+              }}
+            >
+              Download DST
             </button>
           ),
       },
@@ -351,6 +385,7 @@ export default function DesignLookupResults({
         Modified: row.dateModified,
         FileType: row.fileExtension,
         FileDownload: row.fileDownload,
+        DstDownload: row.dstDownload,
       })}
       rowClickable
       onRowDoubleClick={onView}
