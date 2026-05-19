@@ -47,6 +47,7 @@ export type WilcomDesign = {
   fileLocation: string | null;
   fileExtension: string | null;
   fileDownload: string | null;
+  dstDownload: string | null;
   thumbnail: string | null;
   trueView: string | null;
   stitchOut: string | null;
