@@ -7,13 +7,22 @@ type UserRow = {
   id: string;
   username: string;
   email: string | null;
-  display_name: string;
+  display_name: string | null;
   name: string | null;
   employee_number: number | null;
   role: string;
   is_active: boolean;
   shift: string | null;
   department: string | null;
+
+  emailNotificationsEnabled?: boolean | null;
+  inAppNotificationsEnabled?: boolean | null;
+  managerUserId?: string | null;
+  managerDisplayName?: string | null;
+  managerUsername?: string | null;
+  lastLoginAt?: string | null;
+  updatedBy?: string | null;
+  updatedByDisplayName?: string | null;
 
   securityQuestionsCount?: number | null;
   securityQuestionsEnrolledAt?: string | null;
@@ -27,60 +36,112 @@ type DepartmentOption = { code: string; name?: string; label?: string };
 
 type GenericOption = { value: string; label: string };
 
-export default function AdminUsersPage() {
-  const [users, setUsers] = useState<UserRow[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string>("");
+type NewUserForm = {
+  username: string;
+  email: string;
+  password: string;
+  display_name: string;
+  name: string;
+  employee_number: string;
+  role: string;
+  shift: string;
+  department: string;
+  is_active: boolean;
+  email_notifications_enabled: boolean;
+  in_app_notifications_enabled: boolean;
+  manager_user_id: string;
+};
 
-  // lookups
-  const [roleOptions, setRoleOptions] = useState<RoleOption[]>([]);
-  const [shiftOptions, setShiftOptions] = useState<ShiftOption[]>([]);
-  const [deptOptions, setDeptOptions] = useState<DepartmentOption[]>([]);
+type EditUserForm = Omit<NewUserForm, "password"> & {
+  id: string;
+  new_password: string;
+};
 
-  // search
-  const [search, setSearch] = useState("");
-
-  const [newUser, setNewUser] = useState({
+function emptyNewUser(role = "USER"): NewUserForm {
+  return {
     username: "",
     email: "",
     password: "",
     display_name: "",
     name: "",
     employee_number: "",
-    role: "",
+    role,
     shift: "",
     department: "",
     is_active: true,
-  });
+    email_notifications_enabled: true,
+    in_app_notifications_enabled: true,
+    manager_user_id: "",
+  };
+}
 
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [editForm, setEditForm] = useState({
+function emptyEditForm(role = "USER"): EditUserForm {
+  return {
     id: "",
     username: "",
     email: "",
     display_name: "",
     name: "",
     employee_number: "",
-    role: "",
+    role,
     shift: "",
     department: "",
     is_active: true,
+    email_notifications_enabled: true,
+    in_app_notifications_enabled: true,
+    manager_user_id: "",
     new_password: "",
-  });
+  };
+}
+
+function fmtDateTime(v?: string | null) {
+  if (!v) return "-";
+  const d = new Date(v);
+  return Number.isNaN(d.getTime()) ? String(v) : d.toLocaleString();
+}
+
+function boolBadge(v: boolean | null | undefined) {
+  const enabled = v !== false;
+  return (
+    <span className={enabled ? "badge badge-success" : "badge badge-neutral"}>
+      {enabled ? "Enabled" : "Disabled"}
+    </span>
+  );
+}
+
+function displayUserName(u: UserRow) {
+  return u.display_name || u.name || u.username || "-";
+}
+
+export default function AdminUsersPage() {
+  const [users, setUsers] = useState<UserRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  const [roleOptions, setRoleOptions] = useState<RoleOption[]>([]);
+  const [shiftOptions, setShiftOptions] = useState<ShiftOption[]>([]);
+  const [deptOptions, setDeptOptions] = useState<DepartmentOption[]>([]);
+
+  const [search, setSearch] = useState("");
+
+  const [newUser, setNewUser] = useState<NewUserForm>(() => emptyNewUser());
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editForm, setEditForm] = useState<EditUserForm>(() => emptyEditForm());
 
   async function loadUsers() {
     setError("");
-    const res = await fetch("/api/admin/users", { cache: "no-store", credentials: "include" });
+    const res = await fetch("/api/admin/users", {
+      cache: "no-store",
+      credentials: "include",
+    });
+
     const json = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error((json as any)?.error || "Failed to load users");
+
     setUsers(((json as any).users || []) as UserRow[]);
   }
 
   function normalizeRolesPayload(payload: any): RoleOption[] {
-    // supports:
-    // 1) { roles: [{code,label}...] }
-    // 2) { options: [{value,label}...] }
-    // 3) { rows: [{code,label}...] }
     const roles = (payload?.roles || payload?.rows || []) as any[];
     const options = (payload?.options || []) as GenericOption[];
 
@@ -102,18 +163,24 @@ export default function AdminUsersPage() {
   }
 
   async function loadLookups() {
-    // roles
-    const rr = await fetch("/api/lookups/roles", { cache: "no-store", credentials: "include" });
+    const rr = await fetch("/api/lookups/roles", {
+      cache: "no-store",
+      credentials: "include",
+    });
     const rj = await rr.json().catch(() => ({}));
     if (rr.ok) setRoleOptions(normalizeRolesPayload(rj));
 
-    // shifts
-    const sr = await fetch("/api/lookups/shifts", { cache: "no-store", credentials: "include" });
+    const sr = await fetch("/api/lookups/shifts", {
+      cache: "no-store",
+      credentials: "include",
+    });
     const sj = await sr.json().catch(() => ({}));
     if (sr.ok) setShiftOptions((sj as any).shifts || (sj as any).rows || []);
 
-    // departments
-    const dr = await fetch("/api/lookups/departments", { cache: "no-store", credentials: "include" });
+    const dr = await fetch("/api/lookups/departments", {
+      cache: "no-store",
+      credentials: "include",
+    });
     const dj = await dr.json().catch(() => ({}));
     if (dr.ok) setDeptOptions((dj as any).departments || (dj as any).rows || []);
   }
@@ -128,10 +195,8 @@ export default function AdminUsersPage() {
         setLoading(false);
       }
     })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // default role after roles load
   useEffect(() => {
     if (!roleOptions.length) return;
     setNewUser((p) => ({ ...p, role: p.role || roleOptions[0]?.code || "USER" }));
@@ -140,11 +205,16 @@ export default function AdminUsersPage() {
 
   const normalizedSearch = search.trim().toLowerCase();
 
-  function fmtDateTime(v?: string | null) {
-    if (!v) return "-";
-    const d = new Date(v);
-    return Number.isNaN(d.getTime()) ? String(v) : d.toLocaleString();
-  }
+  const managerOptions = useMemo(
+    () =>
+      users
+        .filter((u) => u.is_active)
+        .map((u) => ({
+          id: u.id,
+          label: displayUserName(u),
+        })),
+    [users]
+  );
 
   function securityQuestionStatus(u: UserRow) {
     const count = Number(u.securityQuestionsCount ?? 0);
@@ -161,7 +231,7 @@ export default function AdminUsersPage() {
   }
 
   async function resetSecurityQuestions(user: UserRow) {
-    const label = user.display_name || user.name || user.username;
+    const label = displayUserName(user);
 
     if (
       !confirm(
@@ -197,12 +267,17 @@ export default function AdminUsersPage() {
     const haystack = [
       u.username,
       u.email ?? "",
-      u.display_name,
+      u.display_name ?? "",
       u.name ?? "",
       String(u.employee_number ?? ""),
       String(u.role ?? ""),
       u.shift ?? "",
       u.department ?? "",
+      u.managerDisplayName ?? "",
+      u.managerUsername ?? "",
+      u.emailNotificationsEnabled === false ? "email notifications disabled" : "email notifications enabled",
+      u.inAppNotificationsEnabled === false ? "in app notifications disabled" : "in app notifications enabled",
+      u.lastLoginAt ?? "",
       String(u.securityQuestionsCount ?? ""),
       u.securityQuestionsEnrolledAt ?? "",
       u.securityQuestionsRequired ? "security required" : "",
@@ -214,11 +289,20 @@ export default function AdminUsersPage() {
     return haystack.includes(normalizedSearch);
   };
 
-  const totalActiveCount = useMemo(() => users.filter((u) => u.is_active).length, [users]);
+  const totalActiveCount = useMemo(
+    () => users.filter((u) => u.is_active).length,
+    [users]
+  );
 
-  const activeUsers = useMemo(() => users.filter((u) => u.is_active).filter(matches), [users, normalizedSearch]);
+  const activeUsers = useMemo(
+    () => users.filter((u) => u.is_active).filter(matches),
+    [users, normalizedSearch]
+  );
 
-  const inactiveUsers = useMemo(() => users.filter((u) => !u.is_active).filter(matches), [users, normalizedSearch]);
+  const inactiveUsers = useMemo(
+    () => users.filter((u) => !u.is_active).filter(matches),
+    [users, normalizedSearch]
+  );
 
   const onNewChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value, type } = e.target as HTMLInputElement;
@@ -252,6 +336,7 @@ export default function AdminUsersPage() {
         employee_number: newUser.employee_number ? Number(newUser.employee_number) : null,
         shift: newUser.shift || null,
         department: newUser.department || null,
+        manager_user_id: newUser.manager_user_id || null,
       }),
     });
 
@@ -261,19 +346,7 @@ export default function AdminUsersPage() {
       return;
     }
 
-    setNewUser({
-      username: "",
-      email: "",
-      password: "",
-      display_name: "",
-      name: "",
-      employee_number: "",
-      role: roleOptions[0]?.code || "USER",
-      shift: "",
-      department: "",
-      is_active: true,
-    });
-
+    setNewUser(emptyNewUser(roleOptions[0]?.code || "USER"));
     await loadUsers();
   };
 
@@ -292,25 +365,16 @@ export default function AdminUsersPage() {
       shift: u.shift || "",
       department: u.department || "",
       is_active: u.is_active,
+      email_notifications_enabled: u.emailNotificationsEnabled !== false,
+      in_app_notifications_enabled: u.inAppNotificationsEnabled !== false,
+      manager_user_id: u.managerUserId || "",
       new_password: "",
     });
   };
 
   const cancelEditing = () => {
     setEditingId(null);
-    setEditForm({
-      id: "",
-      username: "",
-      email: "",
-      display_name: "",
-      name: "",
-      employee_number: "",
-      role: roleOptions[0]?.code || "USER",
-      shift: "",
-      department: "",
-      is_active: true,
-      new_password: "",
-    });
+    setEditForm(emptyEditForm(roleOptions[0]?.code || "USER"));
   };
 
   const saveEdit = async (e: React.FormEvent) => {
@@ -328,6 +392,7 @@ export default function AdminUsersPage() {
         employee_number: editForm.employee_number ? Number(editForm.employee_number) : null,
         shift: editForm.shift || null,
         department: editForm.department || null,
+        manager_user_id: editForm.manager_user_id || null,
       }),
     });
 
@@ -361,25 +426,35 @@ export default function AdminUsersPage() {
     await loadUsers();
   };
 
-  if (loading) return <div className="p-6">Loading admin users…</div>;
+  if (loading) {
+    return (
+      <div className="page-shell">
+        <div className="card">
+          <div className="text-muted">Loading admin users…</div>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div className="p-6 space-y-4">
-      <div className="rounded-xl border bg-white p-4">
-        <h1 className="text-xl font-semibold">Admin – Users</h1>
-        <p className="text-sm text-gray-600">
-          Create, edit, reset passwords, manage security-question setup, and deactivate users.
-        </p>
+    <div className="page-shell-wide section-stack">
+      <div className="page-header">
+        <div className="page-header-title-wrap">
+          <h1 className="page-title">Admin – Users</h1>
+          <p className="page-subtitle">
+            Create, edit, reset passwords, manage security-question setup, configure notification preferences, and deactivate users.
+          </p>
+        </div>
       </div>
 
-      {error ? (
-        <div className="rounded-md border border-red-300 bg-red-50 p-3 text-sm text-red-700">{error}</div>
-      ) : null}
+      {error ? <div className="alert alert-danger">{error}</div> : null}
 
-      {/* Add User */}
-      <div className="rounded-xl border bg-white p-4">
-        <h2 className="text-base font-semibold mb-3">Add User</h2>
-        <form onSubmit={createUser} className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+      <div className="card">
+        <div className="section-card-header">
+          <h2 style={{ margin: 0 }}>Add User</h2>
+        </div>
+
+        <form onSubmit={createUser} className="form-grid">
           <Field label="Name">
             <input className="input" name="name" value={newUser.name} onChange={onNewChange} />
           </Field>
@@ -408,7 +483,7 @@ export default function AdminUsersPage() {
           </Field>
 
           <Field label="Role *">
-            <select className="input" name="role" value={newUser.role} onChange={onNewChange}>
+            <select className="select" name="role" value={newUser.role} onChange={onNewChange}>
               {roleOptions.map((r) => (
                 <option key={r.code} value={r.code}>
                   {r.label}
@@ -421,8 +496,8 @@ export default function AdminUsersPage() {
             <input className="input" type="password" name="password" value={newUser.password} onChange={onNewChange} />
           </Field>
 
-          <Field label="Shift (code)">
-            <select className="input" name="shift" value={newUser.shift} onChange={onNewChange}>
+          <Field label="Shift">
+            <select className="select" name="shift" value={newUser.shift} onChange={onNewChange}>
               <option value="">— Select —</option>
               {shiftOptions.map((s) => (
                 <option key={s.code} value={s.code}>
@@ -432,8 +507,8 @@ export default function AdminUsersPage() {
             </select>
           </Field>
 
-          <Field label="Department (code)">
-            <select className="input" name="department" value={newUser.department} onChange={onNewChange}>
+          <Field label="Department">
+            <select className="select" name="department" value={newUser.department} onChange={onNewChange}>
               <option value="">— Select —</option>
               {deptOptions.map((d) => (
                 <option key={d.code} value={d.code}>
@@ -443,33 +518,77 @@ export default function AdminUsersPage() {
             </select>
           </Field>
 
-          <div className="flex items-end gap-3">
-            <label className="flex items-center gap-2 text-sm text-gray-700">
+          <Field label="Manager">
+            <select
+              className="select"
+              name="manager_user_id"
+              value={newUser.manager_user_id}
+              onChange={onNewChange}
+            >
+              <option value="">— None —</option>
+              {managerOptions.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.label}
+                </option>
+              ))}
+            </select>
+          </Field>
+
+          <Field label="Notification Preferences">
+            <div className="muted-box" style={{ display: "grid", gap: 8, minHeight: 42 }}>
+              <label className="master-checkbox-row">
+                <input
+                  type="checkbox"
+                  name="email_notifications_enabled"
+                  checked={newUser.email_notifications_enabled}
+                  onChange={onNewChange}
+                />
+                Email notifications
+              </label>
+
+              <label className="master-checkbox-row">
+                <input
+                  type="checkbox"
+                  name="in_app_notifications_enabled"
+                  checked={newUser.in_app_notifications_enabled}
+                  onChange={onNewChange}
+                />
+                In-app notifications
+              </label>
+            </div>
+          </Field>
+
+          <div className="master-form-actions">
+            <label className="master-checkbox-row">
               <input type="checkbox" name="is_active" checked={newUser.is_active} onChange={onNewChange} />
               Active
             </label>
 
-            <button className="rounded-full bg-blue-600 px-4 py-2 text-sm font-semibold text-white">Add User</button>
+            <button className="btn btn-primary" type="submit">
+              Add User
+            </button>
           </div>
         </form>
       </div>
 
-      {/* Active Users */}
-      <div className="rounded-xl border bg-white p-4">
-        <h2 className="text-base font-semibold mb-3">Active Users</h2>
+      <div className="card">
+        <div className="section-card-header">
+          <h2 style={{ margin: 0 }}>Active Users</h2>
+        </div>
 
-        <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-center gap-2 w-full">
+        <div className="master-search-bar">
+          <div className="master-search-left">
             <input
-              className="input w-full"
-              placeholder="Search by name, username, email, employee #, role, shift, department, security setup…"
+              className="input"
+              placeholder="Search by name, username, email, employee #, role, shift, department, manager, notifications, security setup…"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
             />
+
             {search ? (
               <button
                 type="button"
-                className="rounded-full border px-3 py-2 text-sm whitespace-nowrap"
+                className="btn btn-secondary btn-sm"
                 onClick={() => setSearch("")}
                 title="Clear search"
               >
@@ -478,58 +597,66 @@ export default function AdminUsersPage() {
             ) : null}
           </div>
 
-          <div className="text-sm text-gray-600 whitespace-nowrap">
+          <div className="master-search-meta">
             Showing <strong>{activeUsers.length}</strong> active
             {search ? (
               <>
                 {" "}
-                (filtered from <strong>{totalActiveCount}</strong>)
+                filtered from <strong>{totalActiveCount}</strong>
               </>
             ) : null}
           </div>
         </div>
 
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead className="text-left text-gray-600">
-              <tr className="border-b">
-                <th className="py-2 pr-3">Name</th>
-                <th className="py-2 pr-3">Username</th>
-                <th className="py-2 pr-3">Email</th>
-                <th className="py-2 pr-3">Employee #</th>
-                <th className="py-2 pr-3">Role</th>
-                <th className="py-2 pr-3">Shift</th>
-                <th className="py-2 pr-3">Department</th>
-                <th className="py-2 pr-3">Active</th>
-                <th className="py-2 pr-3">Security Questions</th>
-                <th className="py-2 pr-3">Enrolled At</th>
-                <th className="py-2 pr-3">Actions</th>
+        <div className="table-scroll">
+          <table className="table-clean table-lines-strong">
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Username</th>
+                <th>Email</th>
+                <th>Employee #</th>
+                <th>Role</th>
+                <th>Shift</th>
+                <th>Department</th>
+                <th>Manager</th>
+                <th>Email Notices</th>
+                <th>In-App Notices</th>
+                <th>Last Login</th>
+                <th>Active</th>
+                <th>Security Questions</th>
+                <th>Enrolled At</th>
+                <th>Actions</th>
               </tr>
             </thead>
 
             <tbody>
               {activeUsers.map((u) => (
                 <Fragment key={u.id}>
-                  <tr className="border-b">
-                    <td className="py-2 pr-3">{u.display_name || u.name || "-"}</td>
-                    <td className="py-2 pr-3">{u.username}</td>
-                    <td className="py-2 pr-3">{u.email || "-"}</td>
-                    <td className="py-2 pr-3">{u.employee_number ?? "-"}</td>
-                    <td className="py-2 pr-3">{String(u.role).toUpperCase()}</td>
-                    <td className="py-2 pr-3">{u.shift || "-"}</td>
-                    <td className="py-2 pr-3">{u.department || "-"}</td>
-                    <td className="py-2 pr-3">{u.is_active ? "Yes" : "No"}</td>
-                    <td className="py-2 pr-3">{securityQuestionStatus(u)}</td>
-                    <td className="py-2 pr-3">{fmtDateTime(u.securityQuestionsEnrolledAt)}</td>
-                    <td className="py-2 pr-3">
-                      <div className="flex flex-wrap gap-2">
-                        <button type="button" className="rounded-full border px-3 py-1 text-xs" onClick={() => startEditing(u)}>
+                  <tr>
+                    <td>{displayUserName(u)}</td>
+                    <td>{u.username}</td>
+                    <td>{u.email || "-"}</td>
+                    <td>{u.employee_number ?? "-"}</td>
+                    <td>{String(u.role).toUpperCase()}</td>
+                    <td>{u.shift || "-"}</td>
+                    <td>{u.department || "-"}</td>
+                    <td>{u.managerDisplayName || u.managerUsername || "-"}</td>
+                    <td>{boolBadge(u.emailNotificationsEnabled)}</td>
+                    <td>{boolBadge(u.inAppNotificationsEnabled)}</td>
+                    <td>{fmtDateTime(u.lastLoginAt)}</td>
+                    <td>{u.is_active ? "Yes" : "No"}</td>
+                    <td>{securityQuestionStatus(u)}</td>
+                    <td>{fmtDateTime(u.securityQuestionsEnrolledAt)}</td>
+                    <td>
+                      <div className="master-row-actions">
+                        <button type="button" className="btn btn-secondary btn-sm" onClick={() => startEditing(u)}>
                           Edit
                         </button>
 
                         <button
                           type="button"
-                          className="rounded-full border px-3 py-1 text-xs"
+                          className="btn btn-secondary btn-sm"
                           onClick={() => resetSecurityQuestions(u)}
                           disabled={Number(u.securityQuestionsCount ?? 0) <= 0}
                           title={
@@ -543,7 +670,7 @@ export default function AdminUsersPage() {
 
                         <button
                           type="button"
-                          className="rounded-full bg-red-600 px-3 py-1 text-xs text-white"
+                          className="btn btn-danger btn-sm"
                           onClick={() => deactivateUser(u.id)}
                         >
                           Deactivate
@@ -553,19 +680,19 @@ export default function AdminUsersPage() {
                   </tr>
 
                   {editingId === u.id ? (
-                    <tr className="border-b">
-                      <td colSpan={11} className="py-3">
-                        <div className="rounded-lg border bg-gray-50 p-4">
-                          <div className="mb-3 flex items-center justify-between">
-                            <div className="text-sm font-semibold">
-                              Edit User: <span className="font-mono">{u.username}</span>
+                    <tr>
+                      <td colSpan={15} className="master-edit-cell">
+                        <div className="section-card">
+                          <div className="master-inline-edit-header">
+                            <div className="master-inline-edit-title">
+                              Edit User: <span style={{ fontFamily: "monospace" }}>{u.username}</span>
                             </div>
-                            <button type="button" className="rounded-full border px-3 py-1 text-xs" onClick={cancelEditing}>
+                            <button type="button" className="btn btn-secondary btn-sm" onClick={cancelEditing}>
                               Close
                             </button>
                           </div>
 
-                          <form onSubmit={saveEdit} className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                          <form onSubmit={saveEdit} className="form-grid">
                             <Field label="Username">
                               <input className="input" name="username" value={editForm.username} onChange={onEditChange} />
                             </Field>
@@ -594,7 +721,7 @@ export default function AdminUsersPage() {
                             </Field>
 
                             <Field label="Role">
-                              <select className="input" name="role" value={editForm.role} onChange={onEditChange}>
+                              <select className="select" name="role" value={editForm.role} onChange={onEditChange}>
                                 {roleOptions.map((r) => (
                                   <option key={r.code} value={r.code}>
                                     {r.label}
@@ -603,8 +730,8 @@ export default function AdminUsersPage() {
                               </select>
                             </Field>
 
-                            <Field label="Shift (code)">
-                              <select className="input" name="shift" value={editForm.shift} onChange={onEditChange}>
+                            <Field label="Shift">
+                              <select className="select" name="shift" value={editForm.shift} onChange={onEditChange}>
                                 <option value="">— Select —</option>
                                 {shiftOptions.map((s) => (
                                   <option key={s.code} value={s.code}>
@@ -614,8 +741,8 @@ export default function AdminUsersPage() {
                               </select>
                             </Field>
 
-                            <Field label="Department (code)">
-                              <select className="input" name="department" value={editForm.department} onChange={onEditChange}>
+                            <Field label="Department">
+                              <select className="select" name="department" value={editForm.department} onChange={onEditChange}>
                                 <option value="">— Select —</option>
                                 {deptOptions.map((d) => (
                                   <option key={d.code} value={d.code}>
@@ -625,25 +752,81 @@ export default function AdminUsersPage() {
                               </select>
                             </Field>
 
-                            <Field label="New Password (optional)">
+                            <Field label="Manager">
+                              <select
+                                className="select"
+                                name="manager_user_id"
+                                value={editForm.manager_user_id}
+                                onChange={onEditChange}
+                              >
+                                <option value="">— None —</option>
+                                {managerOptions
+                                  .filter((m) => m.id !== editForm.id)
+                                  .map((m) => (
+                                    <option key={m.id} value={m.id}>
+                                      {m.label}
+                                    </option>
+                                  ))}
+                              </select>
+                            </Field>
+
+                            <Field label="New Password">
                               <input
                                 className="input"
                                 type="password"
                                 name="new_password"
                                 value={editForm.new_password}
                                 onChange={onEditChange}
+                                placeholder="Optional"
                               />
                             </Field>
 
-                            <div className="flex items-end gap-2">
-                              <label className="flex items-center gap-2 text-sm text-gray-700">
+                            <Field label="Notification Preferences">
+                              <div className="muted-box" style={{ display: "grid", gap: 8, minHeight: 42 }}>
+                                <label className="master-checkbox-row">
+                                  <input
+                                    type="checkbox"
+                                    name="email_notifications_enabled"
+                                    checked={editForm.email_notifications_enabled}
+                                    onChange={onEditChange}
+                                  />
+                                  Email notifications
+                                </label>
+
+                                <label className="master-checkbox-row">
+                                  <input
+                                    type="checkbox"
+                                    name="in_app_notifications_enabled"
+                                    checked={editForm.in_app_notifications_enabled}
+                                    onChange={onEditChange}
+                                  />
+                                  In-app notifications
+                                </label>
+                              </div>
+                            </Field>
+
+                            <Field label="Read Only">
+                              <div className="muted-box" style={{ minHeight: 42 }}>
+                                <div className="text-soft">
+                                  <strong>Last Login:</strong> {fmtDateTime(u.lastLoginAt)}
+                                </div>
+                                <div className="text-soft">
+                                  <strong>Updated By:</strong> {u.updatedByDisplayName || "-"}
+                                </div>
+                              </div>
+                            </Field>
+
+                            <div className="master-form-actions">
+                              <label className="master-checkbox-row">
                                 <input type="checkbox" name="is_active" checked={editForm.is_active} onChange={onEditChange} />
                                 Active
                               </label>
 
-                              <button className="rounded-full bg-green-600 px-4 py-2 text-sm font-semibold text-white">Save</button>
+                              <button className="btn btn-primary" type="submit">
+                                Save
+                              </button>
 
-                              <button type="button" className="rounded-full border px-4 py-2 text-sm" onClick={cancelEditing}>
+                              <button type="button" className="btn btn-secondary" onClick={cancelEditing}>
                                 Cancel
                               </button>
                             </div>
@@ -657,7 +840,7 @@ export default function AdminUsersPage() {
 
               {activeUsers.length === 0 ? (
                 <tr>
-                  <td className="py-3 text-gray-500" colSpan={11}>
+                  <td className="text-muted" colSpan={15}>
                     No active users.
                   </td>
                 </tr>
@@ -667,15 +850,16 @@ export default function AdminUsersPage() {
         </div>
       </div>
 
-      {/* Inactive Users */}
       {inactiveUsers.length ? (
-        <div className="rounded-xl border bg-white p-4">
-          <h2 className="text-base font-semibold mb-3">Inactive Users</h2>
+        <div className="card">
+          <div className="section-card-header">
+            <h2 style={{ margin: 0 }}>Inactive Users</h2>
+          </div>
 
-          <div className="text-sm text-gray-600 mb-2">
+          <div className="text-muted" style={{ marginBottom: 12 }}>
             {search ? (
               <>
-                Showing <strong>{inactiveUsers.length}</strong> inactive (filtered)
+                Showing <strong>{inactiveUsers.length}</strong> inactive filtered
               </>
             ) : (
               <>
@@ -684,12 +868,12 @@ export default function AdminUsersPage() {
             )}
           </div>
 
-          <div className="text-sm text-gray-700 space-y-1">
+          <div className="section-stack">
             {inactiveUsers.map((u) => (
-              <div key={u.id}>
-                <span className="font-mono">{u.username}</span>
+              <div key={u.id} className="muted-box">
+                <span style={{ fontFamily: "monospace" }}>{u.username}</span>
                 {" — "}
-                {u.display_name || u.name || "-"}
+                {displayUserName(u)}
                 {u.email ? (
                   <>
                     {" — "}
@@ -703,31 +887,14 @@ export default function AdminUsersPage() {
           </div>
         </div>
       ) : null}
-
-      <style jsx global>{`
-        .input {
-          width: 100%;
-          height: 36px;
-          border: 1px solid #d1d5db;
-          border-radius: 8px;
-          padding: 0 10px;
-          font-size: 14px;
-          background: white;
-        }
-
-        button:disabled {
-          opacity: 0.5;
-          cursor: not-allowed;
-        }
-      `}</style>
     </div>
   );
 }
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div className="flex flex-col gap-1">
-      <label className="text-sm font-medium text-gray-700">{label}</label>
+    <div>
+      <label className="field-label">{label}</label>
       {children}
     </div>
   );

@@ -7,7 +7,7 @@ export default function AccountPage() {
         <div className="page-header-title-wrap">
           <h1 className="page-title">My Account</h1>
           <p className="page-subtitle">
-            Manage your CAP account settings and security setup.
+            Manage your CAP account settings, notification preferences, and security setup.
           </p>
         </div>
       </div>

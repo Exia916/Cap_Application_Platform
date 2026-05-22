@@ -26,6 +26,18 @@ function normEmail(v: any): string | null {
   return email || null;
 }
 
+function normNullableUuid(v: any): string | null {
+  const value = String(v ?? "").trim();
+  return value || null;
+}
+
+function normBool(v: any, fallback = true): boolean {
+  if (typeof v === "boolean") return v;
+  if (v === "true" || v === "1" || v === 1) return true;
+  if (v === "false" || v === "0" || v === 0) return false;
+  return fallback;
+}
+
 function isValidEmail(email: string | null): boolean {
   if (!email) return true;
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
@@ -58,6 +70,31 @@ async function requireAdmin() {
   return { ok: true as const, payload };
 }
 
+async function validateManagerUser(managerUserId: string | null, selfUserId?: string) {
+  if (!managerUserId) return null;
+
+  if (selfUserId && managerUserId === selfUserId) {
+    return "A user cannot be assigned as their own manager.";
+  }
+
+  const check = await db.query(
+    `
+    SELECT 1
+    FROM public.users
+    WHERE id = $1
+      AND is_active = true
+    LIMIT 1
+    `,
+    [managerUserId]
+  );
+
+  if (check.rowCount === 0) {
+    return "Selected manager was not found or is inactive.";
+  }
+
+  return null;
+}
+
 export async function GET() {
   try {
     const auth = await requireAdmin();
@@ -78,11 +115,22 @@ export async function GET() {
         u.created_at,
         u.updated_at,
 
+        COALESCE(u.email_notifications_enabled, true) AS "emailNotificationsEnabled",
+        COALESCE(u.in_app_notifications_enabled, true) AS "inAppNotificationsEnabled",
+        u.manager_user_id AS "managerUserId",
+        mgr.display_name AS "managerDisplayName",
+        mgr.username AS "managerUsername",
+        u.last_login_at AS "lastLoginAt",
+        u.updated_by AS "updatedBy",
+        ub.display_name AS "updatedByDisplayName",
+
         COALESCE(sq.question_count, 0)::int AS "securityQuestionsCount",
         u.security_questions_enrolled_at AS "securityQuestionsEnrolledAt",
         COALESCE(u.security_questions_required, false) AS "securityQuestionsRequired",
         u.offsite_security_bypass_until AS "offsiteSecurityBypassUntil"
       FROM public.users u
+      LEFT JOIN public.users mgr ON mgr.id = u.manager_user_id
+      LEFT JOIN public.users ub ON ub.id = u.updated_by
       LEFT JOIN (
         SELECT
           user_id,
@@ -116,6 +164,11 @@ export async function POST(req: Request) {
   const shift = String(body.shift ?? "").trim() || null;
   const department = String(body.department ?? "").trim() || null;
   const is_active = body.is_active === false ? false : true;
+
+  const email_notifications_enabled = normBool(body.email_notifications_enabled, true);
+  const in_app_notifications_enabled = normBool(body.in_app_notifications_enabled, true);
+  const manager_user_id = normNullableUuid(body.manager_user_id);
+
   const employee_number =
     body.employee_number === null || body.employee_number === undefined || body.employee_number === ""
       ? null
@@ -126,22 +179,78 @@ export async function POST(req: Request) {
   if (!role) return bad("Role is required");
   if (!isValidEmail(email)) return bad("Email is invalid");
 
+  if (employee_number !== null && !Number.isFinite(employee_number)) {
+    return bad("Employee # must be a number");
+  }
+
   try {
-    const roleCheck = await db.query(`SELECT 1 FROM roles_lookup WHERE code = $1`, [role]);
+    const roleCheck = await db.query(`SELECT 1 FROM public.roles_lookup WHERE code = $1`, [role]);
     if (roleCheck.rowCount === 0) return bad(`Invalid role: ${role}`, 400);
+
+    const managerError = await validateManagerUser(manager_user_id);
+    if (managerError) return bad(managerError);
 
     const password_hash = await bcrypt.hash(password, 10);
 
     const res = await db.query(
       `
-      INSERT INTO users
-        (username, email, password_hash, display_name, name, employee_number, role, shift, department, is_active, created_at, updated_at)
-      VALUES
-        ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW(), NOW())
+      INSERT INTO public.users (
+        username,
+        email,
+        password_hash,
+        display_name,
+        name,
+        employee_number,
+        role,
+        shift,
+        department,
+        is_active,
+        email_notifications_enabled,
+        in_app_notifications_enabled,
+        manager_user_id,
+        updated_by,
+        created_at,
+        updated_at
+      )
+      VALUES (
+        $1, $2, $3, $4, $5, $6, $7, $8,
+        $9, $10, $11, $12, $13, $14,
+        NOW(), NOW()
+      )
       RETURNING
-        id, username, email, display_name, name, employee_number, role, shift, department, is_active, created_at, updated_at
+        id,
+        username,
+        email,
+        display_name,
+        name,
+        employee_number,
+        role,
+        shift,
+        department,
+        is_active,
+        email_notifications_enabled AS "emailNotificationsEnabled",
+        in_app_notifications_enabled AS "inAppNotificationsEnabled",
+        manager_user_id AS "managerUserId",
+        last_login_at AS "lastLoginAt",
+        created_at,
+        updated_at
       `,
-      [username, email, password_hash, display_name || null, name || null, employee_number, role, shift, department, is_active]
+      [
+        username,
+        email,
+        password_hash,
+        display_name || null,
+        name || null,
+        employee_number,
+        role,
+        shift,
+        department,
+        is_active,
+        email_notifications_enabled,
+        in_app_notifications_enabled,
+        manager_user_id,
+        (auth.payload as any).id ?? null,
+      ]
     );
 
     return NextResponse.json({ user: res.rows[0] });
@@ -172,6 +281,11 @@ export async function PUT(req: Request) {
   const shift = String(body.shift ?? "").trim() || null;
   const department = String(body.department ?? "").trim() || null;
   const is_active = body.is_active === false ? false : true;
+
+  const email_notifications_enabled = normBool(body.email_notifications_enabled, true);
+  const in_app_notifications_enabled = normBool(body.in_app_notifications_enabled, true);
+  const manager_user_id = normNullableUuid(body.manager_user_id);
+
   const employee_number =
     body.employee_number === null || body.employee_number === undefined || body.employee_number === ""
       ? null
@@ -183,9 +297,16 @@ export async function PUT(req: Request) {
   if (!role) return bad("Role is required");
   if (!isValidEmail(email)) return bad("Email is invalid");
 
+  if (employee_number !== null && !Number.isFinite(employee_number)) {
+    return bad("Employee # must be a number");
+  }
+
   try {
-    const roleCheck = await db.query(`SELECT 1 FROM roles_lookup WHERE code = $1`, [role]);
+    const roleCheck = await db.query(`SELECT 1 FROM public.roles_lookup WHERE code = $1`, [role]);
     if (roleCheck.rowCount === 0) return bad(`Invalid role: ${role}`, 400);
+
+    const managerError = await validateManagerUser(manager_user_id, id);
+    if (managerError) return bad(managerError);
 
     const fields: string[] = [];
     const args: any[] = [];
@@ -200,6 +321,10 @@ export async function PUT(req: Request) {
     fields.push(`shift = $${i++}`); args.push(shift);
     fields.push(`department = $${i++}`); args.push(department);
     fields.push(`is_active = $${i++}`); args.push(is_active);
+    fields.push(`email_notifications_enabled = $${i++}`); args.push(email_notifications_enabled);
+    fields.push(`in_app_notifications_enabled = $${i++}`); args.push(in_app_notifications_enabled);
+    fields.push(`manager_user_id = $${i++}`); args.push(manager_user_id);
+    fields.push(`updated_by = $${i++}`); args.push((auth.payload as any).id ?? null);
 
     if (new_password) {
       const password_hash = await bcrypt.hash(new_password, 10);
@@ -211,16 +336,32 @@ export async function PUT(req: Request) {
 
     const res = await db.query(
       `
-      UPDATE users
+      UPDATE public.users
       SET ${fields.join(", ")}
       WHERE id = $${i}
       RETURNING
-        id, username, email, display_name, name, employee_number, role, shift, department, is_active, created_at, updated_at
+        id,
+        username,
+        email,
+        display_name,
+        name,
+        employee_number,
+        role,
+        shift,
+        department,
+        is_active,
+        email_notifications_enabled AS "emailNotificationsEnabled",
+        in_app_notifications_enabled AS "inAppNotificationsEnabled",
+        manager_user_id AS "managerUserId",
+        last_login_at AS "lastLoginAt",
+        created_at,
+        updated_at
       `,
       [...args, id]
     );
 
     if (res.rowCount === 0) return bad("User not found", 404);
+
     return NextResponse.json({ user: res.rows[0] });
   } catch (err: any) {
     console.error("PUT /api/admin/users failed:", err);
