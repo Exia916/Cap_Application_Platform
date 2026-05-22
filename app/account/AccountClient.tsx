@@ -26,9 +26,22 @@ type QuestionFormRow = {
   answer: string;
 };
 
-type ApiResponse = {
+type SecurityApiResponse = {
   summary?: SecuritySummary | null;
   questions?: SecurityQuestionRow[];
+  error?: string;
+};
+
+type NotificationPreferences = {
+  userId: string;
+  email: string | null;
+  emailNotificationsEnabled: boolean;
+  inAppNotificationsEnabled: boolean;
+  updatedAt: string | null;
+};
+
+type NotificationPreferencesApiResponse = {
+  preferences?: NotificationPreferences | null;
   error?: string;
 };
 
@@ -98,8 +111,15 @@ export default function AccountClient() {
   const [rows, setRows] = useState<QuestionFormRow[]>(emptyRows());
   const [summary, setSummary] = useState<SecuritySummary | null>(null);
 
+  const [notificationPrefs, setNotificationPrefs] =
+    useState<NotificationPreferences | null>(null);
+
+  const [emailNotificationsEnabled, setEmailNotificationsEnabled] = useState(true);
+  const [inAppNotificationsEnabled, setInAppNotificationsEnabled] = useState(true);
+
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
+  const [savingQuestions, setSavingQuestions] = useState(false);
+  const [savingPreferences, setSavingPreferences] = useState(false);
 
   const [error, setError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
@@ -110,53 +130,81 @@ export default function AccountClient() {
     [summary?.questionCount]
   );
 
+  async function loadSecurityQuestions() {
+    const res = await fetch("/api/account/security-questions", {
+      cache: "no-store",
+      credentials: "include",
+    });
+
+    const data = (await res.json().catch(() => ({}))) as SecurityApiResponse;
+
+    if (res.status === 401) {
+      throw new Error("You are not currently signed in.");
+    }
+
+    if (!res.ok) {
+      throw new Error(data?.error || "Failed to load account settings.");
+    }
+
+    setSummary(data.summary ?? null);
+
+    const questions = Array.isArray(data.questions) ? data.questions : [];
+
+    if (questions.length > 0) {
+      setRows(
+        [1, 2, 3].map((order) => {
+          const found = questions.find((q) => Number(q.questionOrder) === order);
+
+          return {
+            questionOrder: order,
+            questionPrompt: found?.questionPrompt ?? "",
+            answer: "",
+          };
+        })
+      );
+    } else {
+      setRows(emptyRows());
+    }
+  }
+
+  async function loadNotificationPreferences() {
+    const res = await fetch("/api/account/notification-preferences", {
+      cache: "no-store",
+      credentials: "include",
+    });
+
+    const data = (await res.json().catch(() => ({}))) as NotificationPreferencesApiResponse;
+
+    if (res.status === 401) {
+      throw new Error("You are not currently signed in.");
+    }
+
+    if (!res.ok) {
+      throw new Error(data?.error || "Failed to load notification preferences.");
+    }
+
+    const prefs = data.preferences ?? null;
+
+    setNotificationPrefs(prefs);
+    setEmailNotificationsEnabled(prefs?.emailNotificationsEnabled ?? true);
+    setInAppNotificationsEnabled(prefs?.inAppNotificationsEnabled ?? true);
+  }
+
   async function load() {
     try {
       setLoading(true);
       setError(null);
       setSuccessMsg(null);
 
-      const res = await fetch("/api/account/security-questions", {
-        cache: "no-store",
-        credentials: "include",
-      });
-
-      const data = (await res.json().catch(() => ({}))) as ApiResponse;
-
-      if (res.status === 401) {
-        setError("You are not currently signed in.");
-        setRows(emptyRows());
-        setSummary(null);
-        return;
-      }
-
-      if (!res.ok) {
-        throw new Error(data?.error || "Failed to load account settings.");
-      }
-
-      setSummary(data.summary ?? null);
-
-      const questions = Array.isArray(data.questions) ? data.questions : [];
-
-      if (questions.length > 0) {
-        setRows(
-          [1, 2, 3].map((order) => {
-            const found = questions.find((q) => Number(q.questionOrder) === order);
-
-            return {
-              questionOrder: order,
-              questionPrompt: found?.questionPrompt ?? "",
-              answer: "",
-            };
-          })
-        );
-      } else {
-        setRows(emptyRows());
-      }
+      await Promise.all([
+        loadSecurityQuestions(),
+        loadNotificationPreferences(),
+      ]);
     } catch (err: any) {
       setError(err?.message || "Failed to load account settings.");
       setRows(emptyRows());
       setSummary(null);
+      setNotificationPrefs(null);
     } finally {
       setLoading(false);
     }
@@ -188,7 +236,46 @@ export default function AccountClient() {
     setSuccessMsg(null);
   }
 
-  async function onSubmit(e: React.FormEvent) {
+  async function onSaveNotificationPreferences(e: React.FormEvent) {
+    e.preventDefault();
+
+    setError(null);
+    setSuccessMsg(null);
+
+    try {
+      setSavingPreferences(true);
+
+      const res = await fetch("/api/account/notification-preferences", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          emailNotificationsEnabled,
+          inAppNotificationsEnabled,
+        }),
+      });
+
+      const data = (await res.json().catch(() => ({}))) as NotificationPreferencesApiResponse;
+
+      if (!res.ok) {
+        throw new Error(data?.error || "Failed to save notification preferences.");
+      }
+
+      const prefs = data.preferences ?? null;
+
+      setNotificationPrefs(prefs);
+      setEmailNotificationsEnabled(prefs?.emailNotificationsEnabled ?? true);
+      setInAppNotificationsEnabled(prefs?.inAppNotificationsEnabled ?? true);
+
+      setSuccessMsg("Notification preferences saved.");
+    } catch (err: any) {
+      setError(err?.message || "Failed to save notification preferences.");
+    } finally {
+      setSavingPreferences(false);
+    }
+  }
+
+  async function onSubmitSecurityQuestions(e: React.FormEvent) {
     e.preventDefault();
 
     setError(null);
@@ -201,7 +288,7 @@ export default function AccountClient() {
     }
 
     try {
-      setSaving(true);
+      setSavingQuestions(true);
 
       const res = await fetch("/api/account/security-questions", {
         method: "POST",
@@ -216,7 +303,7 @@ export default function AccountClient() {
         }),
       });
 
-      const data = (await res.json().catch(() => ({}))) as ApiResponse;
+      const data = (await res.json().catch(() => ({}))) as SecurityApiResponse;
 
       if (!res.ok) {
         throw new Error(data?.error || "Failed to save security questions.");
@@ -231,11 +318,11 @@ export default function AccountClient() {
         window.history.replaceState({}, "", url.toString());
       }
 
-      await load();
+      await loadSecurityQuestions();
     } catch (err: any) {
       setError(err?.message || "Failed to save security questions.");
     } finally {
-      setSaving(false);
+      setSavingQuestions(false);
     }
   }
 
@@ -249,6 +336,8 @@ export default function AccountClient() {
     );
   }
 
+  const emailConfigured = Boolean(notificationPrefs?.email);
+
   return (
     <div className="section-stack">
       {setupRequiredFromLogin && !enrolled ? (
@@ -260,6 +349,112 @@ export default function AccountClient() {
 
       {error ? <div className="alert alert-danger">{error}</div> : null}
       {successMsg ? <div className="alert alert-success">{successMsg}</div> : null}
+
+      <div className="card">
+        <div className="section-card-header">
+          <div>
+            <h2 style={{ marginBottom: 4 }}>Notification Preferences</h2>
+            <p className="page-subtitle">
+              Choose how CAP should contact you when future task, workflow, shipment,
+              or compliance notifications are enabled.
+            </p>
+          </div>
+
+          <span className="badge badge-brand-blue">Foundation</span>
+        </div>
+
+        <div className="record-meta-grid" style={{ marginBottom: 16 }}>
+          <div className="record-meta-item">
+            <div className="record-meta-label">Email on File</div>
+            <div className="record-meta-value">
+              {notificationPrefs?.email || "No email assigned"}
+            </div>
+          </div>
+
+          <div className="record-meta-item">
+            <div className="record-meta-label">Last Updated</div>
+            <div className="record-meta-value">
+              {fmtDateTime(notificationPrefs?.updatedAt)}
+            </div>
+          </div>
+        </div>
+
+        {!emailConfigured ? (
+          <div className="alert alert-warning" style={{ marginBottom: 16 }}>
+            No email is currently assigned to your account. Email notifications can
+            be enabled here, but they will not be deliverable until an admin adds
+            your email address.
+          </div>
+        ) : null}
+
+        <form onSubmit={onSaveNotificationPreferences} className="section-stack">
+          <div className="section-card" style={{ padding: 16 }}>
+            <div className="form-grid">
+              <div style={{ gridColumn: "1 / -1" }}>
+                <label className="field-label">Notification Channels</label>
+
+                <div className="muted-box" style={{ display: "grid", gap: 10 }}>
+                  <label className="master-checkbox-row">
+                    <input
+                      type="checkbox"
+                      checked={emailNotificationsEnabled}
+                      onChange={(e) => {
+                        setEmailNotificationsEnabled(e.target.checked);
+                        setError(null);
+                        setSuccessMsg(null);
+                      }}
+                      disabled={savingPreferences}
+                    />
+                    Email notifications
+                  </label>
+
+                  <div className="field-help" style={{ marginTop: -4 }}>
+                    Used later for task assignments, overdue items, workflow changes,
+                    shipment follow-ups, and escalation notices.
+                  </div>
+
+                  <label className="master-checkbox-row">
+                    <input
+                      type="checkbox"
+                      checked={inAppNotificationsEnabled}
+                      onChange={(e) => {
+                        setInAppNotificationsEnabled(e.target.checked);
+                        setError(null);
+                        setSuccessMsg(null);
+                      }}
+                      disabled={savingPreferences}
+                    />
+                    In-app notifications
+                  </label>
+
+                  <div className="field-help" style={{ marginTop: -4 }}>
+                    Used later for CAP notification center alerts and My Work items.
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={loadNotificationPreferences}
+              disabled={savingPreferences}
+            >
+              Reset Preferences
+            </button>
+
+            <button
+              type="submit"
+              className="btn btn-primary"
+              disabled={savingPreferences}
+            >
+              {savingPreferences ? "Saving..." : "Save Preferences"}
+            </button>
+          </div>
+        </form>
+      </div>
 
       <div className="card">
         <div className="section-card-header">
@@ -297,7 +492,7 @@ export default function AccountClient() {
           enter all 3 questions and answers again.
         </div>
 
-        <form onSubmit={onSubmit} className="section-stack">
+        <form onSubmit={onSubmitSecurityQuestions} className="section-stack">
           {rows.map((row) => (
             <div key={row.questionOrder} className="section-card" style={{ padding: 16 }}>
               <div className="section-card-header">
@@ -318,7 +513,7 @@ export default function AccountClient() {
                       updateRow(row.questionOrder, "questionPrompt", e.target.value)
                     }
                     placeholder="Select or type a question..."
-                    disabled={saving}
+                    disabled={savingQuestions}
                     autoComplete="off"
                   />
 
@@ -346,7 +541,7 @@ export default function AccountClient() {
                       updateRow(row.questionOrder, "answer", e.target.value)
                     }
                     placeholder="Enter answer..."
-                    disabled={saving}
+                    disabled={savingQuestions}
                     autoComplete="new-password"
                   />
 
@@ -363,14 +558,14 @@ export default function AccountClient() {
               <button
                 type="button"
                 className="btn btn-secondary"
-                onClick={load}
-                disabled={saving}
+                onClick={loadSecurityQuestions}
+                disabled={savingQuestions}
               >
                 Reset
               </button>
 
-              <button type="submit" className="btn btn-primary" disabled={saving}>
-                {saving ? "Saving..." : "Save Security Questions"}
+              <button type="submit" className="btn btn-primary" disabled={savingQuestions}>
+                {savingQuestions ? "Saving..." : "Save Security Questions"}
               </button>
             </div>
           </div>

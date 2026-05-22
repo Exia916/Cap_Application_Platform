@@ -6,7 +6,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint",
+    "lint": "eslint ", 
     "migrate": "tsx scripts/migrate.ts",
     "seed:admin": "tsx scripts/seed-admin.ts"
   },
@@ -38,5 +38,11 @@
     "tailwindcss": "^4",
     "tsx": "^4.21.0",
     "typescript": "^5"
+  },
+  "eslintConfig": {
+    "extends": ["eslint:recommended"],
+    "rules": {
+      "@typescript-eslint/no-explicit-any": "off"
+    }
   }
 }

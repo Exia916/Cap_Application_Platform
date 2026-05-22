@@ -37,10 +37,15 @@ export async function DELETE(
 
   try {
     await db.query(
-      `UPDATE users
-       SET is_active = false, updated_at = NOW()
-       WHERE id = $1`,
-      [id]
+      `
+      UPDATE public.users
+      SET
+        is_active = false,
+        updated_at = NOW(),
+        updated_by = $2
+      WHERE id = $1
+      `,
+      [id, (auth.payload as any).id ?? null]
     );
 
     return NextResponse.json({ success: true });

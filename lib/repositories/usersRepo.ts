@@ -11,6 +11,11 @@ export type UserRow = {
   shift: string;
   department: string;
   is_active: boolean;
+
+  email_notifications_enabled: boolean;
+  in_app_notifications_enabled: boolean;
+  manager_user_id: string | null;
+  last_login_at: string | null;
 };
 
 const baseSelect = `
@@ -24,8 +29,12 @@ const baseSelect = `
     role,
     shift,
     department,
-    is_active
-  FROM users
+    is_active,
+    COALESCE(email_notifications_enabled, true) AS email_notifications_enabled,
+    COALESCE(in_app_notifications_enabled, true) AS in_app_notifications_enabled,
+    manager_user_id,
+    last_login_at
+  FROM public.users
 `;
 
 export async function getUserByUsername(username: string): Promise<UserRow | null> {
@@ -67,4 +76,25 @@ export async function getUserById(id: string): Promise<UserRow | null> {
   );
 
   return rows[0] ?? null;
+}
+
+/**
+ * Phase 1 notification plumbing:
+ * Tracks the last successful username/password authentication.
+ *
+ * Note:
+ * For offsite security-question enforcement, this marks successful primary
+ * authentication. If you later want last_login_at to mean "fully completed
+ * post-security-question login", also call this helper after the security
+ * question challenge succeeds.
+ */
+export async function markUserLoginSuccess(userId: string): Promise<void> {
+  await db.query(
+    `
+    UPDATE public.users
+    SET last_login_at = NOW()
+    WHERE id = $1
+    `,
+    [userId]
+  );
 }

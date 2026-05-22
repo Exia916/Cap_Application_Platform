@@ -82,3 +82,5 @@ USER
 Prefer global CSS for shared styles.
 
 Avoid excessive inline styling.
+
+future assignment fields should use public.users.id as the stable key. That can wait.

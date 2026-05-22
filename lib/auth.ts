@@ -3,7 +3,10 @@ import jwt from "jsonwebtoken";
 import bcrypt from "bcryptjs";
 import type { NextRequest } from "next/server";
 import type { NextApiRequest, NextApiResponse } from "next";
-import { getUserByUsername } from "@/lib/repositories/usersRepo";
+import {
+  getUserByUsername,
+  markUserLoginSuccess,
+} from "@/lib/repositories/usersRepo";
 
 export const COOKIE_NAME = "auth_token";
 const LEGACY_COOKIE_NAME = "token";
@@ -79,6 +82,8 @@ export async function loginUser(username: string, password: string) {
   if (!valid) {
     return { error: "Invalid credentials." };
   }
+
+  await markUserLoginSuccess(user.id);
 
   const authUser: AuthUser = {
     id: user.id,
@@ -169,5 +174,8 @@ export function clearAuthCookie(res: NextApiResponse) {
   const secure = process.env.NODE_ENV === "production";
 
   // Clear BOTH cookies
-  res.setHeader("Set-Cookie", [buildClearCookie(COOKIE_NAME, secure), buildClearCookie(LEGACY_COOKIE_NAME, secure)]);
+  res.setHeader("Set-Cookie", [
+    buildClearCookie(COOKIE_NAME, secure),
+    buildClearCookie(LEGACY_COOKIE_NAME, secure),
+  ]);
 }
