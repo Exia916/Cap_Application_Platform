@@ -67,7 +67,7 @@ type UserLookupRow = {
 };
 
 type BinLookupRow = {
-  id: number;
+  id: string | number;
   code: string;
   description: string | null;
 };
@@ -514,6 +514,31 @@ export default function DesignRequestWindow({
     const id = Number(form.statusId);
     return statuses.find((s) => s.id === id)?.label || "";
   }, [form.statusId, statuses]);
+
+  const binSelectRows = useMemo(() => {
+    const currentValue = String(form.binCode || "").trim();
+    const byCode = new Map<string, BinLookupRow>();
+
+    for (const row of bins) {
+      const code = String(row.code || "").trim();
+      if (!code) continue;
+
+      byCode.set(code.toLowerCase(), {
+        ...row,
+        code,
+      });
+    }
+
+    if (currentValue && !byCode.has(currentValue.toLowerCase())) {
+      byCode.set(currentValue.toLowerCase(), {
+        id: `current-${currentValue}`,
+        code: currentValue,
+        description: "Current saved value",
+      });
+    }
+
+    return Array.from(byCode.values());
+  }, [bins, form.binCode]);
 
   useEffect(() => {
     let alive = true;
@@ -1068,7 +1093,7 @@ export default function DesignRequestWindow({
                     disabled={readOnly || !!record?.isVoided}
                   >
                     <option value="">(Select)</option>
-                    {bins.map((b) => (
+                    {binSelectRows.map((b) => (
                       <option key={b.id} value={b.code}>
                         {b.code}
                       </option>
