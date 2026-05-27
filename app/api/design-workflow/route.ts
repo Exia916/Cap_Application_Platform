@@ -7,6 +7,7 @@ import {
   createRequest,
   type ListRequestOptions,
 } from "@/lib/repositories/designWorkflowRepo";
+import { syncWorkflowTasksForRequest } from "@/lib/services/workflowTaskSyncService";
 
 const dbQuery = db.query.bind(db);
 
@@ -122,6 +123,20 @@ export async function POST(req: NextRequest) {
       art_proof: !!(body.artProof ?? body.art_proof),
       created_by: user.name ?? null,
     });
+
+    try {
+      await syncWorkflowTasksForRequest({
+        requestId: created.id,
+        actor: {
+          userId: user.id ?? null,
+          name: user.name ?? null,
+          role: user.role ?? null,
+          department: user.department ?? null,
+        },
+      });
+    } catch (syncErr) {
+      console.error("Workflow task sync failed after create:", syncErr);
+    }
 
     return NextResponse.json(created, { status: 201 });
   } catch (err: any) {

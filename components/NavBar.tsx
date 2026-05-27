@@ -309,6 +309,7 @@ export default function NavBar() {
   { kind: "section" as const, label: "Manager Tools", show: meLoaded && isManager },
   { href: "/manager", label: "Manager Home", show: meLoaded && isManager },
   { href: "/reports", label: "Reports", show: canSeeReports },
+  { href: "/manager/tasks", label: "Task Oversight", show: meLoaded && isManager },
 ].filter((x) => x.show !== false);
 
   const adminItems: MenuItem[] = [
@@ -685,6 +686,15 @@ export default function NavBar() {
                     onClick={handleNavigate}
                   >
                     Playbooks
+                  </Link>
+
+                  <Link
+                    href="/my-work"
+                    role="menuitem"
+                    style={menuItem}
+                    onClick={handleNavigate}
+                  >
+                    My Work
                   </Link>
 
                   <div style={menuDivider} />
