@@ -6,6 +6,7 @@ import {
   updateRequest,
   type UpdateRequestInput,
 } from "@/lib/repositories/designWorkflowRepo";
+import { syncWorkflowTasksForRequest } from "@/lib/services/workflowTaskSyncService";
 
 const dbQuery = db.query.bind(db);
 
@@ -301,6 +302,25 @@ export async function PUT(
         employeeNumber,
         salesOrder: salesOrderForHistory,
       });
+    }
+
+    try {
+      await syncWorkflowTasksForRequest({
+        requestId: id,
+        before,
+        actor: {
+          userId: (user as any)?.id ?? null,
+          name:
+            (user as any)?.name ??
+            (user as any)?.displayName ??
+            (user as any)?.username ??
+            null,
+          role: (user as any)?.role ?? null,
+          department: (user as any)?.department ?? null,
+        },
+      });
+    } catch (syncErr) {
+      console.error("Workflow task sync failed after update:", syncErr);
     }
 
     return NextResponse.json(mapRequestRow(updated));

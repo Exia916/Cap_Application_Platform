@@ -1,7 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getAuthFromRequest } from "@/lib/auth";
-import { changeStatus } from "@/lib/repositories/designWorkflowRepo";
+import {
+  changeStatus,
+  getRequestById,
+} from "@/lib/repositories/designWorkflowRepo";
+import { syncWorkflowTasksForRequest } from "@/lib/services/workflowTaskSyncService";
 
 const dbQuery = db.query.bind(db);
 
@@ -94,12 +98,29 @@ export async function POST(
   }
 
   try {
+    const before = await getRequestById(dbQuery, id, { includeVoided: true });
+
     const updated = await changeStatus(dbQuery, {
       requestId: id,
       newStatusId,
       changedByUserId: user.id ?? null,
       changedByName: user.name ?? null,
     });
+
+    try {
+      await syncWorkflowTasksForRequest({
+        requestId: id,
+        before,
+        actor: {
+          userId: user.id ?? null,
+          name: user.name ?? null,
+          role: user.role ?? null,
+          department: user.department ?? null,
+        },
+      });
+    } catch (syncErr) {
+      console.error("Workflow task sync failed after status change:", syncErr);
+    }
 
     return NextResponse.json(mapRequestRow(updated));
   } catch (err: any) {
