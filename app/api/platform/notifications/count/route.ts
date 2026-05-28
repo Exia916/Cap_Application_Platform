@@ -1,14 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAuthFromRequest } from "@/lib/auth";
-import { markNotificationRead } from "@/lib/repositories/notificationEventsRepo";
+import { countUnreadNotificationsForUser } from "@/lib/repositories/notificationEventsRepo";
 import { resolveCurrentUserIdentity } from "@/lib/services/currentUserIdentityService";
 
 export const runtime = "nodejs";
 
-export async function POST(
-  req: NextRequest,
-  context: { params: Promise<{ id: string }> },
-) {
+export async function GET(req: NextRequest) {
   const auth = getAuthFromRequest(req);
 
   if (!auth) {
@@ -24,19 +21,7 @@ export async function POST(
     );
   }
 
-  const { id } = await context.params;
+  const unreadCount = await countUnreadNotificationsForUser(identity.publicUserId);
 
-  const row = await markNotificationRead({
-    deliveryId: id,
-    userId: identity.publicUserId,
-  });
-
-  if (!row) {
-    return NextResponse.json(
-      { error: "Notification was not found." },
-      { status: 404 },
-    );
-  }
-
-  return NextResponse.json({ row });
+  return NextResponse.json({ unreadCount });
 }

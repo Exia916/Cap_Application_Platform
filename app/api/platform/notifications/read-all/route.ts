@@ -1,56 +1,29 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAuthFromRequest } from "@/lib/auth";
-import {
-  countUnreadNotificationsForUser,
-  markAllNotificationsRead,
-} from "@/lib/repositories/notificationEventsRepo";
+import { markAllNotificationsRead } from "@/lib/repositories/notificationEventsRepo";
+import { resolveCurrentUserIdentity } from "@/lib/services/currentUserIdentityService";
 
 export const runtime = "nodejs";
 
-function getAuthUserId(auth: any): string | null {
-  const id = auth?.id;
-  return id != null && String(id).trim() ? String(id).trim() : null;
-}
-
-export async function PATCH(req: NextRequest) {
-  const auth = getAuthFromRequest(req as any);
+export async function POST(req: NextRequest) {
+  const auth = getAuthFromRequest(req);
 
   if (!auth) {
-    return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const userId = getAuthUserId(auth);
+  const identity = await resolveCurrentUserIdentity(auth);
 
-  if (!userId) {
+  if (!identity.publicUserId) {
     return NextResponse.json(
-      { error: "Unable to identify authenticated user." },
-      { status: 400 }
+      { error: "Authenticated user could not be resolved." },
+      { status: 400 },
     );
   }
 
-  try {
-    const result = await markAllNotificationsRead({ userId });
-    const unreadCount = await countUnreadNotificationsForUser(userId);
+  const result = await markAllNotificationsRead({
+    userId: identity.publicUserId,
+  });
 
-    return NextResponse.json(
-      {
-        success: true,
-        updatedCount: result.updatedCount,
-        unreadCount,
-      },
-      { status: 200 }
-    );
-  } catch (err: any) {
-    console.error("PATCH /api/platform/notifications/read-all failed:", err);
-
-    return NextResponse.json(
-      {
-        error:
-          process.env.NODE_ENV === "production"
-            ? "Failed to mark notifications as read."
-            : err?.message || "Failed to mark notifications as read.",
-      },
-      { status: 500 }
-    );
-  }
+  return NextResponse.json(result);
 }

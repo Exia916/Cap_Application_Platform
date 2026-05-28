@@ -9,6 +9,7 @@ import {
   completePlatformTask,
   createPlatformTask,
   findOpenSourceTasks,
+  updateTask,
   type TaskActor,
 } from "@/lib/services/platformTaskService";
 
@@ -37,17 +38,33 @@ function isUuid(value?: string | null) {
   );
 }
 
+function ymdChicagoFromDate(d: Date): string {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Chicago",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(d);
+
+  const yyyy = parts.find((p) => p.type === "year")?.value ?? "1970";
+  const mm = parts.find((p) => p.type === "month")?.value ?? "01";
+  const dd = parts.find((p) => p.type === "day")?.value ?? "01";
+
+  return `${yyyy}-${mm}-${dd}`;
+}
+
 function extractDatePart(value: unknown): string | null {
   if (!value) return null;
 
   if (value instanceof Date) {
     if (Number.isNaN(value.getTime())) return null;
 
-    const yyyy = value.getFullYear();
-    const mm = String(value.getMonth() + 1).padStart(2, "0");
-    const dd = String(value.getDate()).padStart(2, "0");
+    // For DATE columns, preserve the stored calendar date instead of using
+    // Date.toString(), which can introduce timezone names/Postgres parsing issues.
+    const iso = value.toISOString();
+    if (/^\d{4}-\d{2}-\d{2}/.test(iso)) return iso.slice(0, 10);
 
-    return `${yyyy}-${mm}-${dd}`;
+    return ymdChicagoFromDate(value);
   }
 
   const s = String(value).trim();
@@ -59,11 +76,7 @@ function extractDatePart(value: unknown): string | null {
   const parsed = new Date(s);
   if (Number.isNaN(parsed.getTime())) return null;
 
-  const yyyy = parsed.getFullYear();
-  const mm = String(parsed.getMonth() + 1).padStart(2, "0");
-  const dd = String(parsed.getDate()).padStart(2, "0");
-
-  return `${yyyy}-${mm}-${dd}`;
+  return ymdChicagoFromDate(parsed);
 }
 
 async function getTaskAssignmentStage(
@@ -105,8 +118,6 @@ function dueAtFromWorkflowDueDate(row: DesignWorkflowRequest) {
 
   if (!datePart) return null;
 
-  // Keep this as a clean PostgreSQL-friendly timestamptz string.
-  // Do not pass JavaScript Date.toString(), because it may include GMT-0500.
   return `${datePart} 17:00:00 America/Chicago`;
 }
 
@@ -169,6 +180,40 @@ async function previousStageWasActive(
   return previousStage === "design";
 }
 
+async function refreshOpenTaskFromWorkflow(input: {
+  taskId: string;
+  after: DesignWorkflowRequest;
+  config: AssignmentConfig;
+  actor?: TaskActor | null;
+}) {
+  const { taskId, after, config, actor } = input;
+
+  await updateTask(
+    taskId,
+    {
+      title: `${config.titlePrefix}: ${recordLabel(after)}`,
+      description: after.instructions ?? null,
+      priority: after.rush ? "high" : "normal",
+      dueAt: dueAtFromWorkflowDueDate(after),
+      metadata: taskMetadata(after, config.kind),
+    },
+    actor?.userId ?? null,
+  );
+}
+
+async function cancelExtraOpenTasks(input: {
+  openTasks: Array<{ id: string }>;
+  keepTaskId: string;
+  actor?: TaskActor | null;
+  message: string;
+}) {
+  for (const task of input.openTasks) {
+    if (task.id === input.keepTaskId) continue;
+
+    await cancelPlatformTask(task.id, input.actor, input.message);
+  }
+}
+
 async function syncOneAssignment(input: {
   before?: DesignWorkflowRequest | null;
   after: DesignWorkflowRequest;
@@ -182,28 +227,6 @@ async function syncOneAssignment(input: {
     entityType: ENTITY_TYPE,
     entityId: after.id,
     taskType: config.taskType,
-  });
-
-  const sameAssigneeTask = openTasks.find(
-    (t) => t.assignedToUserId === config.userId,
-  );
-
-  const otherOpenTask = openTasks.find(
-    (t) => t.assignedToUserId !== config.userId,
-  );
-
-  console.log("Workflow task sync assignment check:", {
-    requestId: after.id,
-    salesOrderNumber: after.sales_order_number,
-    statusCode: after.status_code,
-    statusLabel: after.status_label,
-    taskType: config.taskType,
-    stageActive: config.stageActive,
-    assignedUserId: config.userId,
-    assignedDisplayName: config.displayName,
-    dueDateRaw: (after as any).due_date,
-    dueAt: dueAtFromWorkflowDueDate(after),
-    openTaskCount: openTasks.length,
   });
 
   if (after.is_voided) {
@@ -236,16 +259,6 @@ async function syncOneAssignment(input: {
   }
 
   if (!config.userId) {
-    console.log(
-      "Workflow task sync skipped because assignment user id is missing or not a UUID:",
-      {
-        requestId: after.id,
-        taskType: config.taskType,
-        rawDigitizerUserId: after.digitizer_user_id,
-        rawDesignerUserId: after.designer_user_id,
-      },
-    );
-
     for (const task of openTasks) {
       await cancelPlatformTask(
         task.id,
@@ -257,22 +270,52 @@ async function syncOneAssignment(input: {
     return;
   }
 
+  const sameAssigneeTask = openTasks.find(
+    (t) => t.assignedToUserId === config.userId,
+  );
+
   if (sameAssigneeTask) {
-    console.log("Workflow task sync found existing matching open task:", {
-      requestId: after.id,
+    await refreshOpenTaskFromWorkflow({
       taskId: sameAssigneeTask.id,
-      taskType: config.taskType,
-      assignedUserId: config.userId,
+      after,
+      config,
+      actor,
     });
+
+    await cancelExtraOpenTasks({
+      openTasks,
+      keepTaskId: sameAssigneeTask.id,
+      actor,
+      message: "Duplicate open Workflow task was canceled during sync.",
+    });
+
     return;
   }
+
+  const otherOpenTask = openTasks[0] ?? null;
 
   if (otherOpenTask) {
     await assignPlatformTask({
       taskId: otherOpenTask.id,
       assignedToUserId: config.userId,
       assignedToDisplayName: config.displayName,
+      assignedToRole: null,
+      assignedToDepartment: null,
       actor,
+    });
+
+    await refreshOpenTaskFromWorkflow({
+      taskId: otherOpenTask.id,
+      after,
+      config,
+      actor,
+    });
+
+    await cancelExtraOpenTasks({
+      openTasks,
+      keepTaskId: otherOpenTask.id,
+      actor,
+      message: "Duplicate open Workflow task was canceled during reassignment sync.",
     });
 
     return;
@@ -295,13 +338,6 @@ async function syncOneAssignment(input: {
     },
     actor,
   );
-
-  console.log("Workflow task sync created task:", {
-    requestId: after.id,
-    taskType: config.taskType,
-    assignedUserId: config.userId,
-    assignedDisplayName: config.displayName,
-  });
 }
 
 export async function syncWorkflowTasksForRequest(input: {
@@ -313,32 +349,9 @@ export async function syncWorkflowTasksForRequest(input: {
     includeVoided: true,
   });
 
-  if (!after) {
-    console.log("Workflow task sync skipped because request was not found:", {
-      requestId: input.requestId,
-    });
-    return;
-  }
+  if (!after) return;
 
   const stage = await getTaskAssignmentStage(after.status_id);
-
-  console.log("Workflow task sync input:", {
-    requestId: after.id,
-    requestNumber: after.request_number,
-    salesOrderNumber: after.sales_order_number,
-    salesOrderBase: after.sales_order_base,
-    statusId: after.status_id,
-    statusCode: after.status_code,
-    statusLabel: after.status_label,
-    taskAssignmentStage: stage,
-    digitizerUserId: after.digitizer_user_id,
-    digitizerName: after.digitizer_name,
-    designerUserId: after.designer_user_id,
-    designerName: after.designer_name,
-    binCode: after.bin_code,
-    dueDateRaw: (after as any).due_date,
-    dueAt: dueAtFromWorkflowDueDate(after),
-  });
 
   for (const config of buildConfigs(after, stage)) {
     await syncOneAssignment({

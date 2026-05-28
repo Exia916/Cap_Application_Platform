@@ -87,14 +87,19 @@ export default function AdminHomePage() {
         },
       ],
     },
-    {
+   {
       title: "Configuration",
-      subtitle: "Shared list and lookup maintenance for platform-controlled values.",
+      subtitle: "Shared list, lookup, and controlled maintenance tools for platform-controlled values.",
       items: [
         {
           href: "/admin/master-data",
           title: "Master Data (Lists)",
           description: "Manage shared list values, lookup sources, and configurable reference data.",
+        },
+        {
+          href: "/admin/tasks/workflow-resync",
+          title: "Workflow Task Resync",
+          description: "Dry-run and safely resync Workflow records into CAP Tasks & Assignments.",
         },
       ],
     },
@@ -191,6 +196,9 @@ export default function AdminHomePage() {
             </Link>
             <Link href="/admin/master-data" className="btn btn-secondary">
               Master Data
+            </Link>
+            <Link href="/admin/tasks/workflow-resync" className="btn btn-secondary">
+              Workflow Task Resync
             </Link>
             <Link href="/admin/playbooks" className="btn btn-secondary">
               Playbooks

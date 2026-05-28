@@ -4,81 +4,56 @@ import {
   countUnreadNotificationsForUser,
   listNotificationsForUser,
 } from "@/lib/repositories/notificationEventsRepo";
+import { resolveCurrentUserIdentity } from "@/lib/services/currentUserIdentityService";
 
 export const runtime = "nodejs";
 
-function getAuthUserId(auth: any): string | null {
-  const id = auth?.id;
-  return id != null && String(id).trim() ? String(id).trim() : null;
-}
-
-function parseBool(value: string | null): boolean {
-  return String(value ?? "").trim().toLowerCase() === "true";
-}
-
-function parsePositiveInt(value: string | null, fallback: number, max: number): number {
+function toLimit(value: unknown, fallback = 50, max = 100) {
   const n = Number(value);
   if (!Number.isFinite(n) || n <= 0) return fallback;
   return Math.min(Math.trunc(n), max);
 }
 
-function parseOffset(value: string | null): number {
+function toOffset(value: unknown) {
   const n = Number(value);
   if (!Number.isFinite(n) || n < 0) return 0;
   return Math.trunc(n);
 }
 
 export async function GET(req: NextRequest) {
-  const auth = getAuthFromRequest(req as any);
+  const auth = getAuthFromRequest(req);
 
   if (!auth) {
-    return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const userId = getAuthUserId(auth);
+  const identity = await resolveCurrentUserIdentity(auth);
 
-  if (!userId) {
+  if (!identity.publicUserId) {
     return NextResponse.json(
-      { error: "Unable to identify authenticated user." },
-      { status: 400 }
+      { error: "Authenticated user could not be resolved." },
+      { status: 400 },
     );
   }
 
-  try {
-    const unreadOnly = parseBool(req.nextUrl.searchParams.get("unreadOnly"));
-    const limit = parsePositiveInt(req.nextUrl.searchParams.get("limit"), 50, 200);
-    const offset = parseOffset(req.nextUrl.searchParams.get("offset"));
+  const unreadOnly = req.nextUrl.searchParams.get("unreadOnly") === "true";
+  const limit = toLimit(req.nextUrl.searchParams.get("limit"));
+  const offset = toOffset(req.nextUrl.searchParams.get("offset"));
 
-    const [rows, unreadCount] = await Promise.all([
-      listNotificationsForUser({
-        userId,
-        unreadOnly,
-        limit,
-        offset,
-      }),
-      countUnreadNotificationsForUser(userId),
-    ]);
+  const [rows, unreadCount] = await Promise.all([
+    listNotificationsForUser({
+      userId: identity.publicUserId,
+      unreadOnly,
+      limit,
+      offset,
+    }),
+    countUnreadNotificationsForUser(identity.publicUserId),
+  ]);
 
-    return NextResponse.json(
-      {
-        rows,
-        unreadCount,
-        limit,
-        offset,
-      },
-      { status: 200 }
-    );
-  } catch (err: any) {
-    console.error("GET /api/platform/notifications failed:", err);
-
-    return NextResponse.json(
-      {
-        error:
-          process.env.NODE_ENV === "production"
-            ? "Failed to load notifications."
-            : err?.message || "Failed to load notifications.",
-      },
-      { status: 500 }
-    );
-  }
+  return NextResponse.json({
+    rows,
+    unreadCount,
+    limit,
+    offset,
+  });
 }
