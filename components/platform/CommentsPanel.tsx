@@ -17,17 +17,24 @@ type CommentRow = {
 function fmtTs(v?: string | null) {
   if (!v) return "";
   const d = new Date(v);
-  return Number.isNaN(d.getTime()) ? String(v) : d.toLocaleString();
+
+  return Number.isNaN(d.getTime())
+    ? String(v)
+    : d.toLocaleString("en-US", { timeZone: "America/Chicago" });
 }
 
 export default function CommentsPanel({
   entityType,
   entityId,
   title = "Comments",
+  subtitle,
+  onCommentAdded,
 }: {
   entityType: string;
   entityId: string;
   title?: string;
+  subtitle?: string;
+  onCommentAdded?: () => void | Promise<void>;
 }) {
   const [rows, setRows] = useState<CommentRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -42,10 +49,14 @@ export default function CommentsPanel({
 
       const res = await fetch(
         `/api/platform/comments?entityType=${encodeURIComponent(entityType)}&entityId=${encodeURIComponent(entityId)}`,
-        { cache: "no-store" }
+        {
+          cache: "no-store",
+          credentials: "include",
+        },
       );
 
       const data = await res.json().catch(() => ({}));
+
       if (!res.ok) {
         throw new Error((data as any)?.error || "Failed to load comments");
       }
@@ -61,11 +72,11 @@ export default function CommentsPanel({
 
   useEffect(() => {
     load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [entityType, entityId]);
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
+
     const text = commentText.trim();
     if (!text) return;
 
@@ -76,6 +87,7 @@ export default function CommentsPanel({
       const res = await fetch("/api/platform/comments", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        credentials: "include",
         body: JSON.stringify({
           entityType,
           entityId,
@@ -84,12 +96,14 @@ export default function CommentsPanel({
       });
 
       const data = await res.json().catch(() => ({}));
+
       if (!res.ok) {
         throw new Error((data as any)?.error || "Failed to save comment");
       }
 
       setCommentText("");
       await load();
+      await onCommentAdded?.();
     } catch (e: any) {
       setError(e?.message || "Failed to save comment");
     } finally {
@@ -98,38 +112,78 @@ export default function CommentsPanel({
   }
 
   return (
-    <div style={card}>
-      <div style={{ marginBottom: 14 }}>
-        <h2 style={{ margin: 0, fontSize: 20 }}>{title}</h2>
+    <div className="card">
+      <div className="section-card-header">
+        <div>
+          <h2 style={{ marginBottom: 4 }}>{title}</h2>
+          {subtitle ? <div className="text-soft">{subtitle}</div> : null}
+        </div>
+
+        {!loading && !error ? (
+          <span className="badge badge-neutral">
+            {rows.length}
+          </span>
+        ) : null}
       </div>
 
-      <form onSubmit={onSubmit} style={{ display: "grid", gap: 10, marginBottom: 16 }}>
+      <form
+        onSubmit={onSubmit}
+        style={{
+          display: "grid",
+          gap: 10,
+          marginBottom: 16,
+        }}
+      >
         <textarea
           value={commentText}
           onChange={(e) => setCommentText(e.target.value)}
           placeholder="Add a comment…"
           rows={4}
-          style={textArea}
+          className="input"
+          style={{
+            minHeight: 110,
+            resize: "vertical",
+            fontFamily: "inherit",
+            lineHeight: 1.45,
+          }}
           disabled={saving}
         />
 
         <div style={{ display: "flex", justifyContent: "flex-end" }}>
-          <button type="submit" style={btnPrimary} disabled={saving || !commentText.trim()}>
+          <button
+            type="submit"
+            className="btn btn-primary"
+            disabled={saving || !commentText.trim()}
+          >
             {saving ? "Saving..." : "Add Comment"}
           </button>
         </div>
       </form>
 
-      {loading ? <div style={mutedText}>Loading comments…</div> : null}
-      {!loading && error ? <div style={errorBox}>{error}</div> : null}
+      {loading ? <div className="text-muted">Loading comments…</div> : null}
+
+      {!loading && error ? (
+        <div className="alert alert-danger">{error}</div>
+      ) : null}
+
       {!loading && !error && rows.length === 0 ? (
-        <div style={mutedText}>No comments yet.</div>
+        <div className="text-muted">No comments yet.</div>
       ) : null}
 
       {!loading && !error && rows.length > 0 ? (
         <div style={{ display: "grid", gap: 10 }}>
           {rows.map((row) => (
-            <div key={row.id} style={commentItem}>
+            <div
+              key={row.id}
+              style={{
+                border: "1px solid var(--border)",
+                borderRadius: 12,
+                background: "var(--surface-subtle)",
+                padding: 12,
+                display: "grid",
+                gap: 8,
+              }}
+            >
               <div
                 style={{
                   display: "flex",
@@ -137,16 +191,35 @@ export default function CommentsPanel({
                   gap: 12,
                   alignItems: "flex-start",
                   flexWrap: "wrap",
-                  marginBottom: 6,
                 }}
               >
-                <div style={{ fontWeight: 700, color: "#111827" }}>
-                  {row.createdByName || row.createdByUserId || "Unknown User"}
+                <div style={{ display: "grid", gap: 2 }}>
+                  <div style={{ fontWeight: 800, color: "var(--text)" }}>
+                    {row.createdByName || row.createdByUserId || "Unknown User"}
+                  </div>
+                  {row.employeeNumber ? (
+                    <div className="text-soft" style={{ fontSize: 12 }}>
+                      Employee #{row.employeeNumber}
+                    </div>
+                  ) : null}
                 </div>
-                <div style={metaText}>{fmtTs(row.createdAt)}</div>
+
+                <div className="text-soft" style={{ fontSize: 12 }}>
+                  {fmtTs(row.createdAt)}
+                </div>
               </div>
 
-              <div style={commentTextStyle}>{row.commentText}</div>
+              <div
+                style={{
+                  color: "var(--text)",
+                  fontSize: 14,
+                  whiteSpace: "pre-wrap",
+                  wordBreak: "break-word",
+                  lineHeight: 1.45,
+                }}
+              >
+                {row.commentText}
+              </div>
             </div>
           ))}
         </div>
@@ -154,69 +227,3 @@ export default function CommentsPanel({
     </div>
   );
 }
-
-const card: React.CSSProperties = {
-  border: "1px solid #ddd",
-  borderRadius: 14,
-  padding: 16,
-  background: "#fff",
-};
-
-const textArea: React.CSSProperties = {
-  width: "100%",
-  minHeight: 110,
-  resize: "vertical",
-  border: "1px solid #d1d5db",
-  borderRadius: 10,
-  padding: 12,
-  fontSize: 14,
-  fontFamily: "inherit",
-};
-
-const btnPrimary: React.CSSProperties = {
-  display: "inline-flex",
-  alignItems: "center",
-  justifyContent: "center",
-  height: 36,
-  padding: "0 14px",
-  borderRadius: 10,
-  border: "1px solid #111827",
-  background: "#111827",
-  color: "#fff",
-  fontWeight: 800,
-  fontSize: 13,
-  cursor: "pointer",
-};
-
-const mutedText: React.CSSProperties = {
-  color: "#6b7280",
-  fontSize: 14,
-};
-
-const metaText: React.CSSProperties = {
-  color: "#6b7280",
-  fontSize: 12,
-};
-
-const commentItem: React.CSSProperties = {
-  border: "1px solid #e5e7eb",
-  borderRadius: 12,
-  background: "#fafafa",
-  padding: 12,
-};
-
-const commentTextStyle: React.CSSProperties = {
-  color: "#111827",
-  fontSize: 14,
-  whiteSpace: "pre-wrap",
-  wordBreak: "break-word",
-};
-
-const errorBox: React.CSSProperties = {
-  marginBottom: 12,
-  padding: 12,
-  borderRadius: 10,
-  border: "1px solid #fca5a5",
-  background: "#fef2f2",
-  color: "#b91c1c",
-};

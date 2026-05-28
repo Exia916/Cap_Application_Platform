@@ -59,7 +59,7 @@ function pickEditable(key: MasterKey, body: any) {
   return data;
 }
 
-function normalizeCommon(data: Record<string, any>) {
+function normalizeCommon(data: Record<string, any>): string | null {
   if (typeof data.code === "string") data.code = data.code.trim().toUpperCase();
   if (typeof data.name === "string") data.name = data.name.trim();
   if (typeof data.label === "string") data.label = data.label.trim();
@@ -82,6 +82,20 @@ function normalizeCommon(data: Record<string, any>) {
   if (typeof data.description === "string") data.description = data.description.trim();
   if (typeof data.department === "string") data.department = data.department.trim();
 
+  if (typeof data.task_assignment_stage === "string") {
+    const stage = data.task_assignment_stage.trim().toLowerCase() || "none";
+
+    if (!["none", "digitizing", "design"].includes(stage)) {
+      return "Task Stage must be none, digitizing, or design.";
+    }
+
+    data.task_assignment_stage = stage;
+  }
+
+  if (typeof data.task_assignment_note === "string") {
+    data.task_assignment_note = data.task_assignment_note.trim() || null;
+  }
+
   if (data.department_id !== undefined && data.department_id !== null && data.department_id !== "") {
     data.department_id = Number(data.department_id);
   }
@@ -97,6 +111,8 @@ function normalizeCommon(data: Record<string, any>) {
   if (data.is_active !== undefined) {
     data.is_active = !!data.is_active;
   }
+
+  return null;
 }
 
 function getFromClause(key: MasterKey) {
@@ -157,7 +173,8 @@ export async function POST(req: Request, ctx: { params: Promise<{ key: string }>
   if (!body) return bad("Invalid JSON body");
 
   const data = pickEditable(key, body);
-  normalizeCommon(data);
+  const normalizeError = normalizeCommon(data);
+  if (normalizeError) return bad(normalizeError);
 
   const cols = Object.keys(data);
   if (cols.length === 0) return bad("No editable fields provided");

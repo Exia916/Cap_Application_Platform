@@ -4,24 +4,64 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import DataTable, { type Column, type SortDir } from "@/components/DataTable";
 
+type TaskStatus =
+  | "open"
+  | "in_progress"
+  | "blocked"
+  | "completed"
+  | "canceled"
+  | "voided";
+
+type TaskPriority = "low" | "normal" | "high" | "urgent";
+
 type TaskRow = {
   id: string;
   taskNumber: number;
+  taskKey?: string | null;
+
   sourceModule: string;
   entityType: string;
   entityId: string;
   sourceRecordLabel: string | null;
+
   taskType: string;
   title: string;
   description: string | null;
+
+  assignedToUserId: string | null;
   assignedToDisplayName: string | null;
   assignedToDepartment: string | null;
   assignedToRole: string | null;
-  priority: "low" | "normal" | "high" | "urgent";
-  status: "open" | "in_progress" | "blocked" | "completed" | "canceled" | "voided";
+
+  priority: TaskPriority;
+  status: TaskStatus;
+
   dueAt: string | null;
   createdAt: string;
   updatedAt: string;
+};
+
+type AssignableUser = {
+  id: string;
+  username: string;
+  displayName: string | null;
+  email: string | null;
+  employeeNumber: number | null;
+  role: string | null;
+  shift: string | null;
+  department: string | null;
+  managerUserId: string | null;
+  managerDisplayName: string | null;
+};
+
+type TaskSummary = {
+  active: number;
+  overdue: number;
+  dueToday: number;
+  blocked: number;
+  highPriority: number;
+  completed: number;
+  canceled: number;
 };
 
 type Props = {
@@ -30,7 +70,30 @@ type Props = {
   subtitle: string;
 };
 
-const DEFAULT_FILTERS = {
+type Filters = {
+  q: string;
+  status: string;
+  sourceModule: string;
+  taskType: string;
+  priority: string;
+  overdue: string;
+  dueToday: string;
+};
+
+type ReassignState =
+  | { open: false }
+  | {
+      open: true;
+      task: TaskRow;
+      query: string;
+      users: AssignableUser[];
+      selectedUserId: string;
+      loading: boolean;
+      saving: boolean;
+      error: string | null;
+    };
+
+const DEFAULT_FILTERS: Filters = {
   q: "",
   status: "open,in_progress,blocked",
   sourceModule: "",
@@ -40,13 +103,52 @@ const DEFAULT_FILTERS = {
   dueToday: "",
 };
 
+function prettyLabel(value?: string | null) {
+  return String(value ?? "")
+    .replaceAll("_", " ")
+    .replace(/\b\w/g, (m) => m.toUpperCase());
+}
+
+function sourceModuleLabel(value: string) {
+  if (value === "design_workflow") return "Workflow";
+  return prettyLabel(value);
+}
+
+function taskTypeLabel(value: string) {
+  if (value === "workflow_design") return "Workflow Design";
+  if (value === "workflow_digitizing") return "Workflow Digitizing";
+  return prettyLabel(value);
+}
+
+function ymdChicago(d: Date): string {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Chicago",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(d);
+
+  const yyyy = parts.find((p) => p.type === "year")?.value ?? "1970";
+  const mm = parts.find((p) => p.type === "month")?.value ?? "01";
+  const dd = parts.find((p) => p.type === "day")?.value ?? "01";
+
+  return `${yyyy}-${mm}-${dd}`;
+}
+
 function fmtDateTime(v?: string | null) {
   if (!v) return "";
   const d = new Date(v);
-  return Number.isNaN(d.getTime()) ? String(v) : d.toLocaleString();
+
+  return Number.isNaN(d.getTime())
+    ? String(v)
+    : d.toLocaleString("en-US", { timeZone: "America/Chicago" });
 }
 
-function statusBadge(status: TaskRow["status"]) {
+function isActiveTask(row: TaskRow) {
+  return ["open", "in_progress", "blocked"].includes(row.status);
+}
+
+function statusBadge(status: TaskStatus) {
   const cls =
     status === "completed"
       ? "badge badge-success"
@@ -56,18 +158,18 @@ function statusBadge(status: TaskRow["status"]) {
           ? "badge badge-danger"
           : "badge badge-brand-blue";
 
-  return <span className={cls}>{status.replaceAll("_", " ")}</span>;
+  return <span className={cls}>{prettyLabel(status)}</span>;
 }
 
-function priorityBadge(priority: TaskRow["priority"]) {
+function priorityBadge(priority: TaskPriority) {
   const cls =
     priority === "urgent" || priority === "high"
       ? "badge badge-danger"
-      : priority === "normal"
-        ? "badge badge-neutral"
-        : "badge badge-success";
+      : priority === "low"
+        ? "badge badge-success"
+        : "badge badge-neutral";
 
-  return <span className={cls}>{priority}</span>;
+  return <span className={cls}>{prettyLabel(priority)}</span>;
 }
 
 function sourceHref(row: TaskRow) {
@@ -78,11 +180,91 @@ function sourceHref(row: TaskRow) {
   return null;
 }
 
+function taskHref(row: TaskRow) {
+  return `/platform/tasks/${encodeURIComponent(row.id)}`;
+}
+
+function assignmentLabel(row: TaskRow) {
+  return (
+    row.assignedToDisplayName ||
+    row.assignedToDepartment ||
+    row.assignedToRole ||
+    "Unassigned"
+  );
+}
+
+function dueDisplay(row: TaskRow) {
+  if (!row.dueAt) return "";
+
+  const d = new Date(row.dueAt);
+  if (Number.isNaN(d.getTime())) return String(row.dueAt);
+
+  if (!isActiveTask(row)) return fmtDateTime(row.dueAt);
+
+  const today = ymdChicago(new Date());
+  const dueDay = ymdChicago(d);
+
+  if (d.getTime() < Date.now()) {
+    return <span className="badge badge-danger">{fmtDateTime(row.dueAt)}</span>;
+  }
+
+  if (dueDay === today) {
+    return <span className="badge badge-warning">{fmtDateTime(row.dueAt)}</span>;
+  }
+
+  return fmtDateTime(row.dueAt);
+}
+
+function SummaryCard({
+  label,
+  value,
+  tone = "neutral",
+  onClick,
+}: {
+  label: string;
+  value: number;
+  tone?: "neutral" | "danger" | "warning" | "primary";
+  onClick?: () => void;
+}) {
+  const badgeClass =
+    tone === "danger"
+      ? "badge badge-danger"
+      : tone === "warning"
+        ? "badge badge-warning"
+        : tone === "primary"
+          ? "badge badge-brand-blue"
+          : "badge badge-neutral";
+
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="card"
+      style={{
+        textAlign: "left",
+        display: "grid",
+        gap: 8,
+        minHeight: 86,
+        cursor: onClick ? "pointer" : "default",
+      }}
+    >
+      <div className={badgeClass} style={{ width: "fit-content" }}>
+        {label}
+      </div>
+      <div style={{ fontSize: 28, fontWeight: 800, color: "var(--text)" }}>
+        {value}
+      </div>
+    </button>
+  );
+}
+
 export default function TaskQueueClient({ scope, title, subtitle }: Props) {
   const [rows, setRows] = useState<TaskRow[]>([]);
   const [totalCount, setTotalCount] = useState(0);
-  const [filters, setFilters] = useState(DEFAULT_FILTERS);
-  const [debounced, setDebounced] = useState(DEFAULT_FILTERS);
+  const [summary, setSummary] = useState<TaskSummary | null>(null);
+
+  const [filters, setFilters] = useState<Filters>(DEFAULT_FILTERS);
+  const [debounced, setDebounced] = useState<Filters>(DEFAULT_FILTERS);
 
   const [sortBy, setSortBy] = useState("dueAt");
   const [sortDir, setSortDir] = useState<SortDir>("asc");
@@ -90,7 +272,10 @@ export default function TaskQueueClient({ scope, title, subtitle }: Props) {
   const [pageSize, setPageSize] = useState(25);
 
   const [loading, setLoading] = useState(true);
+  const [summaryLoading, setSummaryLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  const [reassign, setReassign] = useState<ReassignState>({ open: false });
 
   useEffect(() => {
     const t = window.setTimeout(() => setDebounced(filters), 300);
@@ -103,6 +288,7 @@ export default function TaskQueueClient({ scope, title, subtitle }: Props) {
 
   const qs = useMemo(() => {
     const sp = new URLSearchParams();
+
     sp.set("scope", scope);
     sp.set("page", String(pageIndex + 1));
     sp.set("pageSize", String(pageSize));
@@ -119,6 +305,37 @@ export default function TaskQueueClient({ scope, title, subtitle }: Props) {
 
     return sp.toString();
   }, [scope, pageIndex, pageSize, sortBy, sortDir, debounced]);
+
+  async function loadSummary() {
+    setSummaryLoading(true);
+
+    try {
+      const res = await fetch(`/api/platform/tasks/summary?scope=${scope}`, {
+        cache: "no-store",
+        credentials: "include",
+      });
+
+      const data = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        throw new Error(data?.error || "Failed to load task summary.");
+      }
+
+      setSummary({
+        active: Number(data?.active ?? 0),
+        overdue: Number(data?.overdue ?? 0),
+        dueToday: Number(data?.dueToday ?? 0),
+        blocked: Number(data?.blocked ?? 0),
+        highPriority: Number(data?.highPriority ?? 0),
+        completed: Number(data?.completed ?? 0),
+        canceled: Number(data?.canceled ?? 0),
+      });
+    } catch {
+      setSummary(null);
+    } finally {
+      setSummaryLoading(false);
+    }
+  }
 
   async function load() {
     setLoading(true);
@@ -147,12 +364,123 @@ export default function TaskQueueClient({ scope, title, subtitle }: Props) {
     }
   }
 
+  async function reloadAll() {
+    await Promise.all([load(), loadSummary()]);
+  }
+
   useEffect(() => {
     load();
   }, [qs]);
 
-  function setFilter(key: keyof typeof DEFAULT_FILTERS, value: string) {
+  useEffect(() => {
+    loadSummary();
+  }, [scope]);
+
+  useEffect(() => {
+    if (!reassign.open) return;
+
+    const controller = new AbortController();
+
+    const t = window.setTimeout(async () => {
+      setReassign((current) =>
+        current.open ? { ...current, loading: true, error: null } : current,
+      );
+
+      try {
+        const sp = new URLSearchParams();
+        if (reassign.query.trim()) sp.set("q", reassign.query.trim());
+        sp.set("limit", "50");
+
+        const res = await fetch(`/api/users/assignable?${sp.toString()}`, {
+          cache: "no-store",
+          credentials: "include",
+          signal: controller.signal,
+        });
+
+        const data = await res.json().catch(() => ({}));
+
+        if (!res.ok) {
+          throw new Error(data?.error || "Failed to load assignable users.");
+        }
+
+        const users = Array.isArray(data?.users) ? data.users : [];
+
+        setReassign((current) =>
+          current.open ? { ...current, users, loading: false } : current,
+        );
+      } catch (err: any) {
+        if (controller.signal.aborted) return;
+
+        setReassign((current) =>
+          current.open
+            ? {
+                ...current,
+                users: [],
+                loading: false,
+                error: err?.message || "Failed to load assignable users.",
+              }
+            : current,
+        );
+      }
+    }, 250);
+
+    return () => {
+      window.clearTimeout(t);
+      controller.abort();
+    };
+  }, [reassign.open, reassign.open ? reassign.query : ""]);
+
+  function setFilter(key: keyof Filters, value: string) {
     setFilters((current) => ({ ...current, [key]: value }));
+  }
+
+  function applySummaryFilter(kind: "active" | "overdue" | "dueToday" | "blocked" | "high") {
+    if (kind === "active") {
+      setFilters((current) => ({
+        ...current,
+        status: "open,in_progress,blocked",
+        overdue: "",
+        dueToday: "",
+        priority: "",
+      }));
+    }
+
+    if (kind === "overdue") {
+      setFilters((current) => ({
+        ...current,
+        status: "open,in_progress,blocked",
+        overdue: "true",
+        dueToday: "",
+      }));
+    }
+
+    if (kind === "dueToday") {
+      setFilters((current) => ({
+        ...current,
+        status: "open,in_progress,blocked",
+        overdue: "",
+        dueToday: "true",
+      }));
+    }
+
+    if (kind === "blocked") {
+      setFilters((current) => ({
+        ...current,
+        status: "blocked",
+        overdue: "",
+        dueToday: "",
+      }));
+    }
+
+    if (kind === "high") {
+      setFilters((current) => ({
+        ...current,
+        status: "open,in_progress,blocked",
+        priority: "high",
+        overdue: "",
+        dueToday: "",
+      }));
+    }
   }
 
   function onToggleSort(key: string) {
@@ -165,8 +493,8 @@ export default function TaskQueueClient({ scope, title, subtitle }: Props) {
     setSortDir((d) => (d === "asc" ? "desc" : "asc"));
   }
 
-  async function completeTask(id: string) {
-    const res = await fetch(`/api/platform/tasks/${encodeURIComponent(id)}/complete`, {
+  async function completeTask(row: TaskRow) {
+    const res = await fetch(`/api/platform/tasks/${encodeURIComponent(row.id)}/complete`, {
       method: "POST",
       credentials: "include",
     });
@@ -177,7 +505,68 @@ export default function TaskQueueClient({ scope, title, subtitle }: Props) {
       return;
     }
 
-    await load();
+    await reloadAll();
+  }
+
+  function openReassign(row: TaskRow) {
+    setReassign({
+      open: true,
+      task: row,
+      query: "",
+      users: [],
+      selectedUserId: row.assignedToUserId ?? "",
+      loading: true,
+      saving: false,
+      error: null,
+    });
+  }
+
+  async function submitReassign() {
+    if (!reassign.open) return;
+
+    const selectedUserId = reassign.selectedUserId.trim();
+
+    if (!selectedUserId) {
+      setReassign((current) =>
+        current.open ? { ...current, error: "Select a user first." } : current,
+      );
+      return;
+    }
+
+    setReassign((current) =>
+      current.open ? { ...current, saving: true, error: null } : current,
+    );
+
+    try {
+      const res = await fetch(
+        `/api/platform/tasks/${encodeURIComponent(reassign.task.id)}/assign`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({ assignedToUserId: selectedUserId }),
+        },
+      );
+
+      const data = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        throw new Error(data?.error || "Failed to reassign task.");
+      }
+
+      setReassign({ open: false });
+      await reloadAll();
+    } catch (err: any) {
+      setReassign((current) =>
+        current.open
+          ? {
+              ...current,
+              saving: false,
+              error: err?.message || "Failed to reassign task.",
+            }
+          : current,
+      );
+    }
   }
 
   const columns: Column<TaskRow>[] = [
@@ -185,8 +574,12 @@ export default function TaskQueueClient({ scope, title, subtitle }: Props) {
       key: "taskNumber",
       header: "Task #",
       sortable: true,
-      width: 90,
-      render: (r) => r.taskNumber,
+      width: 100,
+      render: (r) => (
+        <Link className="btn-linkish" href={taskHref(r)}>
+          {r.taskNumber}
+        </Link>
+      ),
       getSearchText: (r) => String(r.taskNumber),
     },
     {
@@ -197,7 +590,9 @@ export default function TaskQueueClient({ scope, title, subtitle }: Props) {
       placeholder: "Search task",
       render: (r) => (
         <div style={{ display: "grid", gap: 4 }}>
-          <strong>{r.title}</strong>
+          <Link className="btn-linkish" href={taskHref(r)}>
+            <strong>{r.title}</strong>
+          </Link>
           <span className="text-soft">{r.description || ""}</span>
         </div>
       ),
@@ -211,37 +606,35 @@ export default function TaskQueueClient({ scope, title, subtitle }: Props) {
         const href = sourceHref(r);
         const label = r.sourceRecordLabel || r.entityId;
 
-        return href ? (
-          <Link className="btn-linkish" href={href}>
-            {label}
-          </Link>
-        ) : (
-          label
+        return (
+          <div style={{ display: "grid", gap: 4 }}>
+            <span className="badge badge-neutral">{sourceModuleLabel(r.sourceModule)}</span>
+            {href ? (
+              <Link className="btn-linkish" href={href}>
+                {label}
+              </Link>
+            ) : (
+              <span>{label}</span>
+            )}
+          </div>
         );
       },
-      getSearchText: (r) => `${r.sourceModule} ${r.sourceRecordLabel || ""}`,
+      getSearchText: (r) =>
+        `${sourceModuleLabel(r.sourceModule)} ${r.sourceRecordLabel || ""}`,
     },
     {
       key: "taskType",
       header: "Type",
       sortable: true,
-      render: (r) => r.taskType.replaceAll("_", " "),
-      getSearchText: (r) => r.taskType,
+      render: (r) => taskTypeLabel(r.taskType),
+      getSearchText: (r) => taskTypeLabel(r.taskType),
     },
     {
       key: "assignedToDisplayName",
       header: "Assigned To",
       sortable: true,
-      render: (r) =>
-        r.assignedToDisplayName ||
-        r.assignedToDepartment ||
-        r.assignedToRole ||
-        "",
-      getSearchText: (r) =>
-        r.assignedToDisplayName ||
-        r.assignedToDepartment ||
-        r.assignedToRole ||
-        "",
+      render: (r) => assignmentLabel(r),
+      getSearchText: (r) => assignmentLabel(r),
     },
     {
       key: "priority",
@@ -261,22 +654,39 @@ export default function TaskQueueClient({ scope, title, subtitle }: Props) {
       key: "dueAt",
       header: "Due",
       sortable: true,
-      render: (r) => fmtDateTime(r.dueAt),
+      render: (r) => dueDisplay(r),
       getSearchText: (r) => fmtDateTime(r.dueAt),
     },
     {
       key: "actions",
       header: "",
-      render: (r) =>
-        r.status === "completed" || r.status === "canceled" || r.status === "voided" ? null : (
-          <button
-            type="button"
-            className="btn btn-primary btn-sm"
-            onClick={() => completeTask(r.id)}
-          >
-            Complete
-          </button>
-        ),
+      render: (r) => (
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <Link href={taskHref(r)} className="btn btn-secondary btn-sm">
+            View
+          </Link>
+
+          {isActiveTask(r) ? (
+            <button
+              type="button"
+              className="btn btn-primary btn-sm"
+              onClick={() => completeTask(r)}
+            >
+              Complete
+            </button>
+          ) : null}
+
+          {scope === "oversight" && isActiveTask(r) ? (
+            <button
+              type="button"
+              className="btn btn-secondary btn-sm"
+              onClick={() => openReassign(r)}
+            >
+              Reassign
+            </button>
+          ) : null}
+        </div>
+      ),
     },
   ];
 
@@ -303,6 +713,27 @@ export default function TaskQueueClient({ scope, title, subtitle }: Props) {
         <option value="completed">Completed</option>
         <option value="canceled">Canceled</option>
         <option value="">All</option>
+      </select>
+
+      <select
+        className="select"
+        style={{ width: 170 }}
+        value={filters.sourceModule}
+        onChange={(e) => setFilter("sourceModule", e.target.value)}
+      >
+        <option value="">All Sources</option>
+        <option value="design_workflow">Workflow</option>
+      </select>
+
+      <select
+        className="select"
+        style={{ width: 190 }}
+        value={filters.taskType}
+        onChange={(e) => setFilter("taskType", e.target.value)}
+      >
+        <option value="">All Types</option>
+        <option value="workflow_design">Workflow Design</option>
+        <option value="workflow_digitizing">Workflow Digitizing</option>
       </select>
 
       <select
@@ -362,6 +793,46 @@ export default function TaskQueueClient({ scope, title, subtitle }: Props) {
         </div>
       </div>
 
+      <div
+        style={{
+          display: "grid",
+          gap: 12,
+          gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))",
+          marginBottom: 16,
+        }}
+      >
+        <SummaryCard
+          label="Active"
+          value={summaryLoading ? 0 : summary?.active ?? 0}
+          tone="primary"
+          onClick={() => applySummaryFilter("active")}
+        />
+        <SummaryCard
+          label="Overdue"
+          value={summaryLoading ? 0 : summary?.overdue ?? 0}
+          tone="danger"
+          onClick={() => applySummaryFilter("overdue")}
+        />
+        <SummaryCard
+          label="Due Today"
+          value={summaryLoading ? 0 : summary?.dueToday ?? 0}
+          tone="warning"
+          onClick={() => applySummaryFilter("dueToday")}
+        />
+        <SummaryCard
+          label="Blocked"
+          value={summaryLoading ? 0 : summary?.blocked ?? 0}
+          tone="warning"
+          onClick={() => applySummaryFilter("blocked")}
+        />
+        <SummaryCard
+          label="High Priority"
+          value={summaryLoading ? 0 : summary?.highPriority ?? 0}
+          tone="danger"
+          onClick={() => applySummaryFilter("high")}
+        />
+      </div>
+
       <div className="card">
         <DataTable<TaskRow>
           columns={columns}
@@ -388,10 +859,9 @@ export default function TaskQueueClient({ scope, title, subtitle }: Props) {
           rowToCsv={(row) => ({
             "Task #": row.taskNumber,
             Task: row.title,
-            Source: row.sourceRecordLabel || row.entityId,
-            Type: row.taskType,
-            "Assigned To":
-              row.assignedToDisplayName || row.assignedToDepartment || row.assignedToRole || "",
+            Source: `${sourceModuleLabel(row.sourceModule)} ${row.sourceRecordLabel || row.entityId}`,
+            Type: taskTypeLabel(row.taskType),
+            "Assigned To": assignmentLabel(row),
             Priority: row.priority,
             Status: row.status,
             Due: fmtDateTime(row.dueAt),
@@ -399,6 +869,106 @@ export default function TaskQueueClient({ scope, title, subtitle }: Props) {
           })}
         />
       </div>
+
+      {reassign.open ? (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 80,
+            background: "rgba(17, 17, 17, 0.32)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: 20,
+          }}
+        >
+          <div className="card" style={{ width: "100%", maxWidth: 560 }}>
+            <div style={{ display: "grid", gap: 14 }}>
+              <div>
+                <h2 style={{ marginBottom: 4 }}>
+                  Reassign Task #{reassign.task.taskNumber}
+                </h2>
+                <div className="text-soft">{reassign.task.title}</div>
+              </div>
+
+              {reassign.error ? (
+                <div className="alert alert-danger">{reassign.error}</div>
+              ) : null}
+
+              <div>
+                <label className="field-label">Search users</label>
+                <input
+                  className="input"
+                  value={reassign.query}
+                  onChange={(e) =>
+                    setReassign((current) =>
+                      current.open ? { ...current, query: e.target.value } : current,
+                    )
+                  }
+                  placeholder="Name, username, email, or employee #"
+                  autoFocus
+                />
+              </div>
+
+              <div>
+                <label className="field-label">Assign To</label>
+                <select
+                  className="select"
+                  value={reassign.selectedUserId}
+                  onChange={(e) =>
+                    setReassign((current) =>
+                      current.open
+                        ? { ...current, selectedUserId: e.target.value }
+                        : current,
+                    )
+                  }
+                  disabled={reassign.loading || reassign.saving}
+                >
+                  <option value="">
+                    {reassign.loading ? "Loading users..." : "Select a user"}
+                  </option>
+
+                  {reassign.users.map((user) => (
+                    <option key={user.id} value={user.id}>
+                      {user.displayName || user.username}
+                      {user.department ? ` — ${user.department}` : ""}
+                      {user.role ? ` (${user.role})` : ""}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "flex-end",
+                  gap: 10,
+                  flexWrap: "wrap",
+                }}
+              >
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  onClick={() => setReassign({ open: false })}
+                  disabled={reassign.saving}
+                >
+                  Cancel
+                </button>
+
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  onClick={submitReassign}
+                  disabled={reassign.saving || !reassign.selectedUserId}
+                >
+                  {reassign.saving ? "Saving…" : "Reassign"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

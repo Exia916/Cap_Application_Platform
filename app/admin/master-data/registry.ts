@@ -64,7 +64,9 @@ export type MasterColumn = {
     | "department_id"
     | "module_key"
     | "area_code"
-    | "area_label";
+    | "area_label"
+    | "task_assignment_stage"
+    | "task_assignment_note";
   label: string;
   type: "text" | "number" | "boolean" | "time" | "select";
   required?: boolean;
@@ -368,6 +370,17 @@ export const MASTER_UI: Record<MasterKey, MasterUiConfig> = {
     columns: [
       { key: "code", label: "Code", type: "text", required: true, widthClass: "w-32" },
       { key: "label", label: "Label", type: "text", required: true },
+      {
+        key: "task_assignment_stage",
+        label: "Task Stage",
+        type: "text",
+        widthClass: "w-40",
+      },
+      {
+        key: "task_assignment_note",
+        label: "Task Note",
+        type: "text",
+      },
       { key: "sort_order", label: "Sort", type: "number", widthClass: "w-24" },
       { key: "is_active", label: "Active", type: "boolean", widthClass: "w-24" },
     ],

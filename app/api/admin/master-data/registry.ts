@@ -49,7 +49,9 @@ export type EditableField =
   | "area_name"
   | "module_key"
   | "area_code"
-  | "area_label";
+  | "area_label"
+  | "task_assignment_stage"
+  | "task_assignment_note";
 
 export type MasterRegistryItem = {
   key: MasterKey;
@@ -346,8 +348,25 @@ export const MASTER_DATA: Record<MasterKey, MasterRegistryItem> = {
     key: "design_workflow_statuses",
     table: "public.design_workflow_statuses",
     idCol: "id",
-    editable: ["code", "label", "sort_order", "is_active"],
-    selectCols: ["id", "code", "label", "sort_order", "is_active", "created_at", "updated_at"],
+    editable: [
+      "code",
+      "label",
+      "task_assignment_stage",
+      "task_assignment_note",
+      "sort_order",
+      "is_active",
+    ],
+    selectCols: [
+      "id",
+      "code",
+      "label",
+      "task_assignment_stage",
+      "task_assignment_note",
+      "sort_order",
+      "is_active",
+      "created_at",
+      "updated_at",
+    ],
     orderBy: "sort_order ASC, code ASC",
     supportsInactive: true,
     allowDelete: false,
