@@ -697,6 +697,15 @@ export default function NavBar() {
                     My Work
                   </Link>
 
+                  <Link
+                    href="/notifications"
+                    role="menuitem"
+                    style={menuItem}
+                    onClick={handleNavigate}
+                  >
+                    Notifications
+                  </Link>
+
                   <div style={menuDivider} />
 
                   <Link
