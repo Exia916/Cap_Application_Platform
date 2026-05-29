@@ -233,7 +233,7 @@ async function markDeliverySent(input: {
       delivered_at = NOW(),
       attempt_count = COALESCE(attempt_count, 0) + 1,
       next_attempt_at = NULL,
-      error_message = $2,
+      error_message = NULL,
       skipped_reason = NULL,
       updated_at = NOW()
     WHERE id = $1::uuid
@@ -253,7 +253,7 @@ async function markDeliverySkipped(input: {
       status = 'skipped',
       attempted_at = NOW(),
       delivered_at = NULL,
-      error_message = $2,
+      error_message = NULL,
       skipped_reason = $2,
       updated_at = NOW()
     WHERE id = $1::uuid
@@ -378,7 +378,7 @@ export async function processPendingEmailNotifications(
 
         await markDeliverySent({
           deliveryId: row.deliveryId,
-          responseMessage: sent.response || sent.messageId,
+          responseMessage: sent.response || sent.messageId || null,
         });
 
         result.sent += 1;
