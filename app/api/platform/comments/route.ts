@@ -6,7 +6,7 @@ import {
   listCommentsByEntity,
 } from "@/lib/repositories/commentsRepo";
 import { getTaskById } from "@/lib/services/platformTaskService";
-import { createNotificationForUser } from "@/lib/services/notificationService";
+import { createConfiguredNotificationForUser } from "@/lib/services/configuredNotificationService";
 
 export const runtime = "nodejs";
 
@@ -54,7 +54,7 @@ function cleanString(value: unknown) {
 }
 
 function isUuid(value?: string | null) {
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{12}$/i.test(
     String(value ?? "").trim(),
   );
 }
@@ -273,16 +273,30 @@ async function notifyTaskAssigneeOfComment(input: {
   if (input.task.assignedToUserId === input.actorUserId) return;
 
   try {
-    await createNotificationForUser({
+    await createConfiguredNotificationForUser({
       eventType: "task.comment.created",
       module: "tasks",
       entityType: "platform_task",
       entityId: input.task.id,
       actorUserId: input.actorUserId,
       targetUserId: input.task.assignedToUserId,
-      title: `New comment on task #${input.task.taskNumber}`,
-      message: `${input.actorName || "Someone"}: ${shortMessage(input.commentText)}`,
-      priority: notificationPriorityFromTask(input.task),
+      fallbackTitle: `New comment on task #${input.task.taskNumber}`,
+      fallbackMessage: `${input.actorName || "Someone"}: ${shortMessage(input.commentText)}`,
+      fallbackPriority: notificationPriorityFromTask(input.task),
+      fallbackChannels: ["in_app"],
+      templateContext: {
+        taskId: input.task.id,
+        taskNumber: input.task.taskNumber,
+        taskTitle: input.task.title,
+        taskDescription: input.task.description ?? "",
+        actorName: input.actorName || "Someone",
+        commentText: shortMessage(input.commentText),
+        sourceModule: input.task.sourceModule,
+        sourceRecordLabel: input.task.sourceRecordLabel ?? "",
+        sourceCreatedByName: input.task.sourceCreatedByName ?? "",
+        sourceBinCode: input.task.sourceBinCode ?? "",
+        taskType: input.task.taskType,
+      },
       payload: {
         taskId: input.task.id,
         taskNumber: input.task.taskNumber,
@@ -290,8 +304,9 @@ async function notifyTaskAssigneeOfComment(input: {
         entityType: input.task.entityType,
         entityId: input.task.entityId,
         taskType: input.task.taskType,
+        sourceCreatedByName: input.task.sourceCreatedByName,
+        sourceBinCode: input.task.sourceBinCode,
       },
-      channels: ["in_app"],
     });
   } catch (err) {
     console.error("Task comment notification failed:", err);

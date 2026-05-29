@@ -24,6 +24,9 @@ type TaskAgingRow = {
   entityType: string;
   entityId: string;
   sourceRecordLabel: string | null;
+  sourceCreatedByUserId: string | null;
+  sourceCreatedByName: string | null;
+  sourceBinCode: string | null;
   taskType: string;
   title: string;
   assignedToUserId: string | null;
@@ -60,6 +63,8 @@ type Filters = {
   statusGroup: StatusGroup;
   agingBucket: AgingBucket;
   sourceModule: string;
+  sourceCreatedByName: string;
+  sourceBinCode: string;
   taskType: string;
   priority: string;
 };
@@ -80,6 +85,8 @@ const DEFAULT_FILTERS: Filters = {
   statusGroup: "active",
   agingBucket: "all",
   sourceModule: "",
+  sourceCreatedByName: "",
+  sourceBinCode: "",
   taskType: "",
   priority: "",
 };
@@ -252,22 +259,38 @@ export default function TaskAgingPage() {
   }, [debounced, sortBy, sortDir, pageSize]);
 
   const qs = useMemo(() => {
-    const sp = new URLSearchParams();
+  const sp = new URLSearchParams();
 
-    sp.set("page", String(pageIndex + 1));
-    sp.set("pageSize", String(pageSize));
-    sp.set("sortBy", sortBy);
-    sp.set("sortDir", sortDir);
-    sp.set("statusGroup", debounced.statusGroup);
-    sp.set("agingBucket", debounced.agingBucket);
+  const q = debounced.q ?? "";
+  const sourceModule = debounced.sourceModule ?? "";
+  const sourceCreatedByName = debounced.sourceCreatedByName ?? "";
+  const sourceBinCode = debounced.sourceBinCode ?? "";
+  const taskType = debounced.taskType ?? "";
+  const priority = debounced.priority ?? "";
 
-    if (debounced.q.trim()) sp.set("q", debounced.q.trim());
-    if (debounced.sourceModule.trim()) sp.set("sourceModule", debounced.sourceModule.trim());
-    if (debounced.taskType.trim()) sp.set("taskType", debounced.taskType.trim());
-    if (debounced.priority.trim()) sp.set("priority", debounced.priority.trim());
+  sp.set("page", String(pageIndex + 1));
+  sp.set("pageSize", String(pageSize));
+  sp.set("sortBy", sortBy);
+  sp.set("sortDir", sortDir);
+  sp.set("statusGroup", debounced.statusGroup ?? "active");
+  sp.set("agingBucket", debounced.agingBucket ?? "all");
 
-    return sp.toString();
-  }, [pageIndex, pageSize, sortBy, sortDir, debounced]);
+  if (q.trim()) sp.set("q", q.trim());
+  if (sourceModule.trim()) sp.set("sourceModule", sourceModule.trim());
+
+  if (sourceCreatedByName.trim()) {
+    sp.set("sourceCreatedByName", sourceCreatedByName.trim());
+  }
+
+  if (sourceBinCode.trim()) {
+    sp.set("sourceBinCode", sourceBinCode.trim());
+  }
+
+  if (taskType.trim()) sp.set("taskType", taskType.trim());
+  if (priority.trim()) sp.set("priority", priority.trim());
+
+  return sp.toString();
+}, [pageIndex, pageSize, sortBy, sortDir, debounced]);
 
   async function load() {
     setLoading(true);
@@ -398,6 +421,25 @@ export default function TaskAgingPage() {
       getSearchText: (r) => `${sourceModuleLabel(r.sourceModule)} ${r.sourceRecordLabel || ""}`,
     },
     {
+      key: "sourceCreatedByName",
+      header: "Created By",
+      sortable: true,
+      render: (r) => r.sourceCreatedByName || "",
+      getSearchText: (r) => r.sourceCreatedByName || "",
+    },
+    {
+      key: "sourceBinCode",
+      header: "Bin #",
+      sortable: true,
+      render: (r) =>
+        r.sourceBinCode ? (
+          <span className="badge badge-neutral">{r.sourceBinCode}</span>
+        ) : (
+          ""
+        ),
+      getSearchText: (r) => r.sourceBinCode || "",
+    },
+    {
       key: "priority",
       header: "Priority",
       sortable: true,
@@ -504,6 +546,22 @@ export default function TaskAgingPage() {
         <option value="">All Sources</option>
         <option value="design_workflow">Workflow</option>
       </select>
+
+      <input
+        className="input"
+        style={{ width: 180 }}
+        value={filters.sourceCreatedByName}
+        onChange={(e) => setFilter("sourceCreatedByName", e.target.value)}
+        placeholder="Created By"
+      />
+
+      <input
+        className="input"
+        style={{ width: 130 }}
+        value={filters.sourceBinCode}
+        onChange={(e) => setFilter("sourceBinCode", e.target.value)}
+        placeholder="Bin #"
+      />
 
       <select
         className="select"
@@ -646,6 +704,8 @@ export default function TaskAgingPage() {
             Aging: bucketLabel(row.agingBucket),
             "Assigned To": assignmentLabel(row),
             Source: `${sourceModuleLabel(row.sourceModule)} ${row.sourceRecordLabel || row.entityId}`,
+            "Created By": row.sourceCreatedByName ?? "",
+            "Bin #": row.sourceBinCode ?? "",
             Type: taskTypeLabel(row.taskType),
             Priority: row.priority,
             Status: row.status,

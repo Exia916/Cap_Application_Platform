@@ -23,6 +23,9 @@ type TaskRow = {
   entityType: string;
   entityId: string;
   sourceRecordLabel: string | null;
+  sourceCreatedByUserId: string | null;
+  sourceCreatedByName: string | null;
+  sourceBinCode: string | null;
 
   taskType: string;
   title: string;
@@ -74,6 +77,8 @@ type Filters = {
   q: string;
   status: string;
   sourceModule: string;
+  sourceCreatedByName: string;
+  sourceBinCode: string;
   taskType: string;
   priority: string;
   overdue: string;
@@ -97,6 +102,8 @@ const DEFAULT_FILTERS: Filters = {
   q: "",
   status: "open,in_progress,blocked",
   sourceModule: "",
+  sourceCreatedByName: "",
+  sourceBinCode: "",
   taskType: "",
   priority: "",
   overdue: "",
@@ -298,6 +305,10 @@ export default function TaskQueueClient({ scope, title, subtitle }: Props) {
     if (debounced.q.trim()) sp.set("q", debounced.q.trim());
     if (debounced.status.trim()) sp.set("status", debounced.status.trim());
     if (debounced.sourceModule.trim()) sp.set("sourceModule", debounced.sourceModule.trim());
+    if (debounced.sourceCreatedByName.trim()) {
+      sp.set("sourceCreatedByName", debounced.sourceCreatedByName.trim());
+    }
+    if (debounced.sourceBinCode.trim()) sp.set("sourceBinCode", debounced.sourceBinCode.trim());
     if (debounced.taskType.trim()) sp.set("taskType", debounced.taskType.trim());
     if (debounced.priority.trim()) sp.set("priority", debounced.priority.trim());
     if (debounced.overdue === "true") sp.set("overdue", "true");
@@ -623,6 +634,25 @@ export default function TaskQueueClient({ scope, title, subtitle }: Props) {
         `${sourceModuleLabel(r.sourceModule)} ${r.sourceRecordLabel || ""}`,
     },
     {
+      key: "sourceCreatedByName",
+      header: "Created By",
+      sortable: true,
+      render: (r) => r.sourceCreatedByName || "",
+      getSearchText: (r) => r.sourceCreatedByName || "",
+    },
+    {
+      key: "sourceBinCode",
+      header: "Bin #",
+      sortable: true,
+      render: (r) =>
+        r.sourceBinCode ? (
+          <span className="badge badge-neutral">{r.sourceBinCode}</span>
+        ) : (
+          ""
+        ),
+      getSearchText: (r) => r.sourceBinCode || "",
+    },
+    {
       key: "taskType",
       header: "Type",
       sortable: true,
@@ -724,6 +754,22 @@ export default function TaskQueueClient({ scope, title, subtitle }: Props) {
         <option value="">All Sources</option>
         <option value="design_workflow">Workflow</option>
       </select>
+
+      <input
+        className="input"
+        style={{ width: 180 }}
+        value={filters.sourceCreatedByName}
+        onChange={(e) => setFilter("sourceCreatedByName", e.target.value)}
+        placeholder="Created By"
+      />
+
+      <input
+        className="input"
+        style={{ width: 130 }}
+        value={filters.sourceBinCode}
+        onChange={(e) => setFilter("sourceBinCode", e.target.value)}
+        placeholder="Bin #"
+      />
 
       <select
         className="select"
@@ -860,6 +906,8 @@ export default function TaskQueueClient({ scope, title, subtitle }: Props) {
             "Task #": row.taskNumber,
             Task: row.title,
             Source: `${sourceModuleLabel(row.sourceModule)} ${row.sourceRecordLabel || row.entityId}`,
+            "Created By": row.sourceCreatedByName ?? "",
+            "Bin #": row.sourceBinCode ?? "",
             Type: taskTypeLabel(row.taskType),
             "Assigned To": assignmentLabel(row),
             Priority: row.priority,

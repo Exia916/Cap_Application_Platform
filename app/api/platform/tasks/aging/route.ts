@@ -23,6 +23,8 @@ type SortKey =
   | "title"
   | "assignedToDisplayName"
   | "sourceModule"
+  | "sourceCreatedByName"
+  | "sourceBinCode"
   | "taskType"
   | "priority"
   | "status"
@@ -42,6 +44,9 @@ type AgingRow = {
   entityType: string;
   entityId: string;
   sourceRecordLabel: string | null;
+  sourceCreatedByUserId: string | null;
+  sourceCreatedByName: string | null;
+  sourceBinCode: string | null;
   taskType: string;
   title: string;
   assignedToUserId: string | null;
@@ -116,6 +121,8 @@ function normalizeSortBy(value: unknown): SortKey {
     "title",
     "assignedToDisplayName",
     "sourceModule",
+    "sourceCreatedByName",
+    "sourceBinCode",
     "taskType",
     "priority",
     "status",
@@ -144,6 +151,8 @@ function orderBySql(sortBy: SortKey, sortDir: "asc" | "desc") {
     title: `title ${dir}`,
     assignedToDisplayName: `assigned_to_display_name ${dir} NULLS LAST`,
     sourceModule: `source_module ${dir}`,
+    sourceCreatedByName: `source_created_by_name ${dir} NULLS LAST`,
+    sourceBinCode: `source_bin_code ${dir} NULLS LAST`,
     taskType: `task_type ${dir}`,
     priority: `priority ${dir}`,
     status: `status ${dir}`,
@@ -165,6 +174,8 @@ function buildFilters(input: {
   statusGroup: StatusGroup;
   agingBucket: AgingBucket;
   sourceModule: string | null;
+  sourceCreatedByName: string | null;
+  sourceBinCode: string | null;
   taskType: string | null;
   priority: string | null;
   assignedToUserId: string | null;
@@ -179,6 +190,8 @@ function buildFilters(input: {
     where.push(`(
       CAST(t.task_number AS text) ILIKE ${p}
       OR COALESCE(t.source_record_label, '') ILIKE ${p}
+      OR COALESCE(t.source_created_by_name, '') ILIKE ${p}
+      OR COALESCE(t.source_bin_code, '') ILIKE ${p}
       OR COALESCE(t.title, '') ILIKE ${p}
       OR COALESCE(t.description, '') ILIKE ${p}
       OR COALESCE(t.assigned_to_display_name, '') ILIKE ${p}
@@ -198,6 +211,16 @@ function buildFilters(input: {
   if (input.sourceModule) {
     params.push(input.sourceModule);
     where.push(`t.source_module = $${params.length}`);
+  }
+
+  if (input.sourceCreatedByName) {
+    params.push(`%${input.sourceCreatedByName}%`);
+    where.push(`COALESCE(t.source_created_by_name, '') ILIKE $${params.length}`);
+  }
+
+  if (input.sourceBinCode) {
+    params.push(`%${input.sourceBinCode}%`);
+    where.push(`COALESCE(t.source_bin_code, '') ILIKE $${params.length}`);
   }
 
   if (input.taskType) {
@@ -231,9 +254,12 @@ function classifiedCte(whereSql: string) {
         t.entity_type,
         t.entity_id,
         t.source_record_label,
+        t.source_created_by_user_id::text AS source_created_by_user_id,
+        t.source_created_by_name,
+        t.source_bin_code,
         t.task_type,
         t.title,
-        t.assigned_to_user_id::text,
+        t.assigned_to_user_id::text AS assigned_to_user_id,
         t.assigned_to_display_name,
         t.assigned_to_department,
         t.assigned_to_role,
@@ -340,6 +366,8 @@ export async function GET(req: NextRequest) {
   const statusGroup = normalizeStatusGroup(req.nextUrl.searchParams.get("statusGroup"));
   const agingBucket = normalizeBucket(req.nextUrl.searchParams.get("agingBucket"));
   const sourceModule = clean(req.nextUrl.searchParams.get("sourceModule"));
+  const sourceCreatedByName = clean(req.nextUrl.searchParams.get("sourceCreatedByName"));
+  const sourceBinCode = clean(req.nextUrl.searchParams.get("sourceBinCode"));
   const taskType = clean(req.nextUrl.searchParams.get("taskType"));
   const priority = clean(req.nextUrl.searchParams.get("priority"));
   const assignedToUserId = clean(req.nextUrl.searchParams.get("assignedToUserId"));
@@ -356,6 +384,8 @@ export async function GET(req: NextRequest) {
     statusGroup,
     agingBucket,
     sourceModule,
+    sourceCreatedByName,
+    sourceBinCode,
     taskType,
     priority,
     assignedToUserId,
@@ -404,6 +434,9 @@ export async function GET(req: NextRequest) {
       entity_type AS "entityType",
       entity_id AS "entityId",
       source_record_label AS "sourceRecordLabel",
+      source_created_by_user_id AS "sourceCreatedByUserId",
+      source_created_by_name AS "sourceCreatedByName",
+      source_bin_code AS "sourceBinCode",
       task_type AS "taskType",
       title,
       assigned_to_user_id AS "assignedToUserId",
@@ -464,6 +497,8 @@ export async function GET(req: NextRequest) {
       statusGroup,
       agingBucket,
       sourceModule,
+      sourceCreatedByName,
+      sourceBinCode,
       taskType,
       priority,
       assignedToUserId,
