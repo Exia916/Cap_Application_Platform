@@ -7,6 +7,10 @@ import {
   type UpdateRequestInput,
 } from "@/lib/repositories/designWorkflowRepo";
 import { syncWorkflowTasksForRequest } from "@/lib/services/workflowTaskSyncService";
+import {
+  fireWorkflowFieldChangedRule,
+  fireWorkflowStatusChangedRules,
+} from "@/lib/services/workflowNotificationRuleTriggerService";
 
 const dbQuery = db.query.bind(db);
 
@@ -83,6 +87,10 @@ function valuesDiffer(a: unknown, b: unknown) {
   const left = normalizeForCompare(a);
   const right = normalizeForCompare(b);
   return JSON.stringify(left) !== JSON.stringify(right);
+}
+
+function displayBoolean(value: unknown) {
+  return !!value ? "Yes" : "No";
 }
 
 const TRACKED_FIELDS: Array<{
@@ -166,6 +174,142 @@ async function insertActivityHistoryRow(args: {
 function toNullableNumber(value: unknown) {
   const n = Number(value);
   return Number.isFinite(n) ? n : null;
+}
+
+function actorFromUser(user: any) {
+  return {
+    userId: user?.id ?? null,
+    name:
+      user?.name ??
+      user?.displayName ??
+      user?.username ??
+      null,
+    role: user?.role ?? null,
+    department: user?.department ?? null,
+  };
+}
+
+async function fireWorkflowFieldChangeRulesSafely(args: {
+  requestId: string;
+  before: any;
+  updated: any;
+  updateData: Record<string, any>;
+  actor: ReturnType<typeof actorFromUser>;
+}) {
+  const changes: Array<{
+    eventType:
+      | "workflow.digitizer.changed"
+      | "workflow.designer.changed"
+      | "workflow.bin.changed"
+      | "workflow.due_date.changed"
+      | "workflow.rush.changed";
+    fieldName: string;
+    fieldLabel: string;
+    previousValue: unknown;
+    newValue: unknown;
+  }> = [];
+
+  const digitizerFieldWasSubmitted =
+    "digitizer_user_id" in args.updateData || "digitizer_name" in args.updateData;
+
+  if (
+    digitizerFieldWasSubmitted &&
+    (
+      valuesDiffer(args.before.digitizer_user_id, args.updated.digitizer_user_id) ||
+      valuesDiffer(args.before.digitizer_name, args.updated.digitizer_name)
+    )
+  ) {
+    changes.push({
+      eventType: "workflow.digitizer.changed",
+      fieldName: "digitizer",
+      fieldLabel: "Digitizer",
+      previousValue: args.before.digitizer_name ?? args.before.digitizer_user_id ?? "",
+      newValue: args.updated.digitizer_name ?? args.updated.digitizer_user_id ?? "",
+    });
+  }
+
+  const designerFieldWasSubmitted =
+    "designer_user_id" in args.updateData || "designer_name" in args.updateData;
+
+  if (
+    designerFieldWasSubmitted &&
+    (
+      valuesDiffer(args.before.designer_user_id, args.updated.designer_user_id) ||
+      valuesDiffer(args.before.designer_name, args.updated.designer_name)
+    )
+  ) {
+    changes.push({
+      eventType: "workflow.designer.changed",
+      fieldName: "designer",
+      fieldLabel: "Designer",
+      previousValue: args.before.designer_name ?? args.before.designer_user_id ?? "",
+      newValue: args.updated.designer_name ?? args.updated.designer_user_id ?? "",
+    });
+  }
+
+  if (
+    "bin_code" in args.updateData &&
+    valuesDiffer(args.before.bin_code, args.updated.bin_code)
+  ) {
+    changes.push({
+      eventType: "workflow.bin.changed",
+      fieldName: "bin_code",
+      fieldLabel: "Bin #",
+      previousValue: args.before.bin_code ?? "",
+      newValue: args.updated.bin_code ?? "",
+    });
+  }
+
+  if (
+    "due_date" in args.updateData &&
+    valuesDiffer(args.before.due_date, args.updated.due_date)
+  ) {
+    changes.push({
+      eventType: "workflow.due_date.changed",
+      fieldName: "due_date",
+      fieldLabel: "Due Date",
+      previousValue: args.before.due_date ?? "",
+      newValue: args.updated.due_date ?? "",
+    });
+  }
+
+  if (
+    "rush" in args.updateData &&
+    valuesDiffer(!!args.before.rush, !!args.updated.rush)
+  ) {
+    changes.push({
+      eventType: "workflow.rush.changed",
+      fieldName: "rush",
+      fieldLabel: "Rush",
+      previousValue: displayBoolean(args.before.rush),
+      newValue: displayBoolean(args.updated.rush),
+    });
+  }
+
+  if (!changes.length) return;
+
+  for (const change of changes) {
+    try {
+      const result = await fireWorkflowFieldChangedRule({
+        requestId: args.requestId,
+        eventType: change.eventType,
+        fieldName: change.fieldName,
+        fieldLabel: change.fieldLabel,
+        previousValue: change.previousValue,
+        newValue: change.newValue,
+        actor: args.actor,
+      });
+
+      if (result.errors.length) {
+        console.error("Workflow field notification rule trigger errors:", result.errors);
+      }
+    } catch (err) {
+      console.error(
+        `Workflow field notification rule trigger failed for ${change.eventType}:`,
+        err
+      );
+    }
+  }
 }
 
 export async function GET(
@@ -304,23 +448,46 @@ export async function PUT(
       });
     }
 
+    const actor = actorFromUser(user as any);
+
     try {
       await syncWorkflowTasksForRequest({
         requestId: id,
         before,
-        actor: {
-          userId: (user as any)?.id ?? null,
-          name:
-            (user as any)?.name ??
-            (user as any)?.displayName ??
-            (user as any)?.username ??
-            null,
-          role: (user as any)?.role ?? null,
-          department: (user as any)?.department ?? null,
-        },
+        actor,
       });
     } catch (syncErr) {
       console.error("Workflow task sync failed after update:", syncErr);
+    }
+
+    if (before.status_id !== updated.status_id) {
+      try {
+        const triggerResults = await fireWorkflowStatusChangedRules({
+          requestId: id,
+          previousStatusId: before.status_id,
+          newStatusId: updated.status_id,
+          actor,
+        });
+
+        const errors = triggerResults.flatMap((r) => r.errors || []);
+        if (errors.length) {
+          console.error("Workflow notification rule trigger errors after update:", errors);
+        }
+      } catch (notificationErr) {
+        console.error("Workflow notification rule triggers failed after update:", notificationErr);
+      }
+    }
+
+    try {
+      await fireWorkflowFieldChangeRulesSafely({
+        requestId: id,
+        before,
+        updated,
+        updateData,
+        actor,
+      });
+    } catch (fieldRuleErr) {
+      console.error("Workflow field notification rule triggers failed after update:", fieldRuleErr);
     }
 
     return NextResponse.json(mapRequestRow(updated));

@@ -4,6 +4,10 @@ import {
   evaluateNotificationRules,
   type EvaluateNotificationRulesInput,
 } from "@/lib/services/notificationRuleEvaluatorService";
+import {
+  finishPlatformJobRun,
+  startPlatformJobRun,
+} from "@/lib/repositories/platformJobRunsRepo";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -119,28 +123,47 @@ async function buildInputFromBody(req: NextRequest): Promise<EvaluateNotificatio
   };
 }
 
-/**
- * GET is used by Vercel Cron and can also be opened by Admins.
- *
- * Safe default:
- * - Admin GET defaults to dryRun=true.
- * - Cron GET defaults to dryRun=true unless:
- *   CAP_NOTIFICATION_RULE_EVALUATOR_CRON_EXECUTE=true
- *
- * Examples:
- * - /api/platform/notification-rules/evaluate
- * - /api/platform/notification-rules/evaluate?dryRun=true
- * - /api/platform/notification-rules/evaluate?execute=true
- */
 export async function GET(req: NextRequest) {
   const access = requireEvaluateAccess(req);
   if (!access.ok) {
     return NextResponse.json({ error: access.error }, { status: access.status });
   }
 
+  let jobRunId: string | null = null;
+
   try {
     const input = buildInputFromSearchParams(req, access.mode);
+
+    jobRunId = await startPlatformJobRun({
+      jobName: "notification_rule_evaluator",
+      triggerMode: access.mode,
+      resultJson: {
+        method: "GET",
+        dryRun: input.dryRun,
+        ruleId: input.ruleId,
+        limitPerRule: input.limitPerRule,
+      },
+    });
+
     const result = await evaluateNotificationRules(input);
+
+    await finishPlatformJobRun({
+      id: jobRunId,
+      status: result.lockAcquired ? "success" : "skipped",
+      resultJson: {
+        dryRun: result.dryRun,
+        lockAcquired: result.lockAcquired,
+        evaluatedRules: result.evaluatedRules,
+        matchedRecords: result.matchedRecords,
+        candidateRecipients: result.candidateRecipients,
+        createdEvents: result.createdEvents,
+        createdDeliveries: result.createdDeliveries,
+        createdRuleRuns: result.createdRuleRuns,
+        skippedDryRun: result.skippedDryRun,
+        skippedConditions: result.skippedConditions,
+        errors: result.errors?.length || 0,
+      },
+    });
 
     return NextResponse.json({
       ok: true,
@@ -150,6 +173,15 @@ export async function GET(req: NextRequest) {
     });
   } catch (err: any) {
     console.error("GET /api/platform/notification-rules/evaluate failed:", err);
+
+    await finishPlatformJobRun({
+      id: jobRunId,
+      status: "failed",
+      errorMessage: err?.message || "Failed to evaluate notification rules.",
+      resultJson: {
+        method: "GET",
+      },
+    });
 
     return NextResponse.json(
       {
@@ -164,23 +196,47 @@ export async function GET(req: NextRequest) {
   }
 }
 
-/**
- * POST is useful for admin/manual testing.
- *
- * Body examples:
- * { "dryRun": true }
- * { "execute": true }
- * { "dryRun": true, "ruleId": "...", "limitPerRule": 10 }
- */
 export async function POST(req: NextRequest) {
   const access = requireEvaluateAccess(req);
   if (!access.ok) {
     return NextResponse.json({ error: access.error }, { status: access.status });
   }
 
+  let jobRunId: string | null = null;
+
   try {
     const input = await buildInputFromBody(req);
+
+    jobRunId = await startPlatformJobRun({
+      jobName: "notification_rule_evaluator",
+      triggerMode: access.mode,
+      resultJson: {
+        method: "POST",
+        dryRun: input.dryRun,
+        ruleId: input.ruleId,
+        limitPerRule: input.limitPerRule,
+      },
+    });
+
     const result = await evaluateNotificationRules(input);
+
+    await finishPlatformJobRun({
+      id: jobRunId,
+      status: result.lockAcquired ? "success" : "skipped",
+      resultJson: {
+        dryRun: result.dryRun,
+        lockAcquired: result.lockAcquired,
+        evaluatedRules: result.evaluatedRules,
+        matchedRecords: result.matchedRecords,
+        candidateRecipients: result.candidateRecipients,
+        createdEvents: result.createdEvents,
+        createdDeliveries: result.createdDeliveries,
+        createdRuleRuns: result.createdRuleRuns,
+        skippedDryRun: result.skippedDryRun,
+        skippedConditions: result.skippedConditions,
+        errors: result.errors?.length || 0,
+      },
+    });
 
     return NextResponse.json({
       ok: true,
@@ -190,6 +246,15 @@ export async function POST(req: NextRequest) {
     });
   } catch (err: any) {
     console.error("POST /api/platform/notification-rules/evaluate failed:", err);
+
+    await finishPlatformJobRun({
+      id: jobRunId,
+      status: "failed",
+      errorMessage: err?.message || "Failed to evaluate notification rules.",
+      resultJson: {
+        method: "POST",
+      },
+    });
 
     return NextResponse.json(
       {

@@ -23,6 +23,7 @@ type EvaluationResult = {
   skippedAlreadyRun?: number;
   skippedNoRecipients?: number;
   skippedInvalidRecipients?: number;
+  skippedConditions?: number;
   skippedDryRun?: number;
 
   errors?: Array<{
@@ -200,6 +201,9 @@ export default function AdminNotificationRuleEvaluatePage() {
             <Link href="/admin/notification-rules" className="btn btn-secondary">
               Notification Rules
             </Link>
+            <Link href="/admin/platform/notification-rules/runs" className="btn btn-secondary">
+              Rule Run History
+            </Link>
             <Link href="/admin/platform/email-test" className="btn btn-secondary">
               Email Test
             </Link>
@@ -300,6 +304,8 @@ export default function AdminNotificationRuleEvaluatePage() {
             <SummaryCard label="Dry Run Skips" value={evalResult.skippedDryRun} />
             <SummaryCard label="Duplicate Skips" value={evalResult.skippedAlreadyRun} />
             <SummaryCard label="No Recipient Skips" value={evalResult.skippedNoRecipients} />
+            <SummaryCard label="Invalid Recipient Skips" value={evalResult.skippedInvalidRecipients} />
+            <SummaryCard label="Condition Skips" value={evalResult.skippedConditions} />
             <SummaryCard label="Errors" value={evalResult.errors?.length || 0} />
           </div>
 

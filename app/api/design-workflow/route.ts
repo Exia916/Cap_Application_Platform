@@ -8,6 +8,7 @@ import {
   type ListRequestOptions,
 } from "@/lib/repositories/designWorkflowRepo";
 import { syncWorkflowTasksForRequest } from "@/lib/services/workflowTaskSyncService";
+import { fireWorkflowRequestCreatedRules } from "@/lib/services/workflowNotificationRuleTriggerService";
 
 const dbQuery = db.query.bind(db);
 
@@ -136,6 +137,25 @@ export async function POST(req: NextRequest) {
       });
     } catch (syncErr) {
       console.error("Workflow task sync failed after create:", syncErr);
+    }
+
+    try {
+      const triggerResults = await fireWorkflowRequestCreatedRules({
+        requestId: created.id,
+        actor: {
+          userId: user.id ?? null,
+          name: user.name ?? null,
+          role: user.role ?? null,
+          department: user.department ?? null,
+        },
+      });
+
+      const errors = triggerResults.flatMap((r) => r.errors || []);
+      if (errors.length) {
+        console.error("Workflow notification rule trigger errors after create:", errors);
+      }
+    } catch (notificationErr) {
+      console.error("Workflow notification rule triggers failed after create:", notificationErr);
     }
 
     return NextResponse.json(created, { status: 201 });

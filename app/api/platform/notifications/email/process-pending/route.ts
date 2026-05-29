@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAuthFromRequest } from "@/lib/auth";
 import { processPendingEmailNotifications } from "@/lib/services/notificationEmailProcessorService";
+import {
+  finishPlatformJobRun,
+  startPlatformJobRun,
+} from "@/lib/repositories/platformJobRunsRepo";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -69,12 +73,43 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: access.error }, { status: access.status });
   }
 
+  let jobRunId: string | null = null;
+
   try {
     const sp = req.nextUrl.searchParams;
 
+    const dryRun = parseBool(sp.get("dryRun"), false);
+    const limit = parseLimit(sp.get("limit"));
+
+    jobRunId = await startPlatformJobRun({
+      jobName: "notification_email_processor",
+      triggerMode: access.mode,
+      resultJson: {
+        method: "GET",
+        dryRun,
+        limit,
+      },
+    });
+
     const result = await processPendingEmailNotifications({
-      dryRun: parseBool(sp.get("dryRun"), false),
-      limit: parseLimit(sp.get("limit")),
+      dryRun,
+      limit,
+    });
+
+    await finishPlatformJobRun({
+      id: jobRunId,
+      status: "success",
+      resultJson: {
+        emailEnabled: result.emailEnabled,
+        dryRun: result.dryRun,
+        limit: result.limit,
+        selected: result.selected,
+        sent: result.sent,
+        failed: result.failed,
+        skipped: result.skipped,
+        wouldSend: result.wouldSend,
+        errors: result.errors?.length || 0,
+      },
     });
 
     return NextResponse.json({
@@ -84,6 +119,15 @@ export async function GET(req: NextRequest) {
     });
   } catch (err: any) {
     console.error("GET /api/platform/notifications/email/process-pending failed:", err);
+
+    await finishPlatformJobRun({
+      id: jobRunId,
+      status: "failed",
+      errorMessage: err?.message || "Failed to process pending email notifications.",
+      resultJson: {
+        method: "GET",
+      },
+    });
 
     return NextResponse.json(
       {
@@ -104,15 +148,46 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: access.error }, { status: access.status });
   }
 
+  let jobRunId: string | null = null;
+
   try {
     const body = await req.json().catch(() => ({} as any));
 
+    const dryRun = body?.dryRun === true;
+    const limit =
+      Number.isFinite(Number(body?.limit)) && Number(body?.limit) > 0
+        ? Math.trunc(Number(body.limit))
+        : undefined;
+
+    jobRunId = await startPlatformJobRun({
+      jobName: "notification_email_processor",
+      triggerMode: access.mode,
+      resultJson: {
+        method: "POST",
+        dryRun,
+        limit,
+      },
+    });
+
     const result = await processPendingEmailNotifications({
-      dryRun: body?.dryRun === true,
-      limit:
-        Number.isFinite(Number(body?.limit)) && Number(body?.limit) > 0
-          ? Math.trunc(Number(body.limit))
-          : undefined,
+      dryRun,
+      limit,
+    });
+
+    await finishPlatformJobRun({
+      id: jobRunId,
+      status: "success",
+      resultJson: {
+        emailEnabled: result.emailEnabled,
+        dryRun: result.dryRun,
+        limit: result.limit,
+        selected: result.selected,
+        sent: result.sent,
+        failed: result.failed,
+        skipped: result.skipped,
+        wouldSend: result.wouldSend,
+        errors: result.errors?.length || 0,
+      },
     });
 
     return NextResponse.json({
@@ -122,6 +197,15 @@ export async function POST(req: NextRequest) {
     });
   } catch (err: any) {
     console.error("POST /api/platform/notifications/email/process-pending failed:", err);
+
+    await finishPlatformJobRun({
+      id: jobRunId,
+      status: "failed",
+      errorMessage: err?.message || "Failed to process pending email notifications.",
+      resultJson: {
+        method: "POST",
+      },
+    });
 
     return NextResponse.json(
       {

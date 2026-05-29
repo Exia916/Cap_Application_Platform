@@ -8,6 +8,7 @@ import type {
   NotificationChannel,
   NotificationPriority,
 } from "@/lib/repositories/notificationEventsRepo";
+import { evaluateNotificationRuleConditions } from "@/lib/services/notificationRuleConditionService";
 
 type Queryable = {
   query: <T = any>(
@@ -47,7 +48,7 @@ type NotificationRuleRow = {
   messageTemplate: string | null;
 
   channels: NotificationChannel[];
-  conditionJson: Record<string, any>;
+  conditionJson: Record<string, any> | null;
 };
 
 type WorkflowCandidateRow = {
@@ -123,6 +124,7 @@ export type EvaluateNotificationRulesResult = {
   skippedAlreadyRun: number;
   skippedNoRecipients: number;
   skippedInvalidRecipients: number;
+  skippedConditions: number;
   skippedDryRun: number;
 
   errors: Array<{
@@ -148,6 +150,7 @@ export type EvaluateNotificationRulesResult = {
 };
 
 const LOCK_KEY = "cap.platform.notification_rules.evaluate";
+const ENTITY_TYPE = "design_workflow_request";
 
 function normalizeLimit(value: unknown, fallback = 100, max = 500): number {
   const n = Number(value);
@@ -791,7 +794,7 @@ async function createStaticEmailNotification(input: {
       [
         input.rule.eventType,
         input.rule.module,
-        "design_workflow_request",
+        ENTITY_TYPE,
         input.candidate.id,
         input.title,
         input.message,
@@ -807,7 +810,7 @@ async function createStaticEmailNotification(input: {
     const status = emailEnabled ? "pending" : "skipped";
     const errorMessage = emailEnabled
       ? null
-      : "Email delivery engine is not enabled. Set CAP_EMAIL_NOTIFICATIONS_ENABLED=true when email delivery is implemented.";
+      : "Email delivery engine is not enabled. Set CAP_EMAIL_NOTIFICATIONS_ENABLED=true before executing email rules.";
 
     const deliveryRes = await client.query(
       `
@@ -882,7 +885,7 @@ async function createUserNotification(input: {
   const result = await createNotificationForUser({
     eventType: input.rule.eventType,
     module: input.rule.module,
-    entityType: "design_workflow_request",
+    entityType: ENTITY_TYPE,
     entityId: input.candidate.id,
     actorUserId: null,
     targetUserId: input.recipient.userId,
@@ -949,6 +952,7 @@ export async function evaluateNotificationRules(
     skippedAlreadyRun: 0,
     skippedNoRecipients: 0,
     skippedInvalidRecipients: 0,
+    skippedConditions: 0,
     skippedDryRun: 0,
 
     errors: [],
@@ -972,6 +976,12 @@ export async function evaluateNotificationRules(
     result.evaluatedRules = rules.length;
 
     for (const rule of rules) {
+      const definition = await getNotificationDefinitionByEventType(rule.eventType);
+
+      if (definition && !definition.isActive) {
+        continue;
+      }
+
       const candidates = await listWorkflowStatusDurationCandidates(
         rule,
         {
@@ -983,9 +993,42 @@ export async function evaluateNotificationRules(
 
       result.matchedRecords += candidates.length;
 
-      const definition = await getNotificationDefinitionByEventType(rule.eventType);
-
       for (const candidate of candidates) {
+        const conditionResult = evaluateNotificationRuleConditions(rule.conditionJson, {
+          rush: candidate.rush,
+          salesOrder: displaySalesOrder(candidate),
+          customerName: candidate.customerName,
+          dueDate: candidate.dueDate,
+
+          digitizerUserId: candidate.digitizerUserId,
+          digitizerName: candidate.digitizerName,
+
+          designerUserId: candidate.designerUserId,
+          designerName: candidate.designerName,
+
+          binCode: candidate.binCode,
+          now,
+        });
+
+        if (!conditionResult.passed) {
+          result.skippedConditions += 1;
+
+          result.details.push({
+            ruleId: rule.id,
+            ruleName: rule.ruleName,
+            entityId: candidate.id,
+            requestNumber: candidate.requestNumber,
+            workflowStatusLabel: candidate.statusLabel,
+            statusEnteredAt: candidate.statusEnteredAt,
+            elapsedMinutes: candidate.elapsedMinutes,
+            recipient: rule.recipientMode,
+            action: "skipped",
+            message: `Condition not met: ${conditionResult.failedReasons.join("; ")}`,
+          });
+
+          continue;
+        }
+
         let recipients: Recipient[] = [];
 
         try {
@@ -1025,7 +1068,7 @@ export async function evaluateNotificationRules(
 
           const alreadyRun = await hasRuleRun({
             ruleId: rule.id,
-            entityType: "design_workflow_request",
+            entityType: ENTITY_TYPE,
             entityId: candidate.id,
             workflowStatusId: candidate.statusId,
             statusEnteredAt: candidate.statusEnteredAt,
@@ -1078,7 +1121,7 @@ export async function evaluateNotificationRules(
             eventType: rule.eventType,
             triggerType: rule.triggerType,
 
-            entityType: "design_workflow_request",
+            entityType: ENTITY_TYPE,
             entityId: candidate.id,
             requestNumber: candidate.requestNumber,
 
@@ -1167,7 +1210,7 @@ export async function evaluateNotificationRules(
             const runInserted = await insertRuleRun({
               ruleId: rule.id,
               notificationEventId: eventId,
-              entityType: "design_workflow_request",
+              entityType: ENTITY_TYPE,
               entityId: candidate.id,
               eventType: rule.eventType,
               triggerType: rule.triggerType,
