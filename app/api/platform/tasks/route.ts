@@ -55,6 +55,9 @@ export async function GET(req: NextRequest) {
     assignedToRole: oversight ? sp.get("assignedToRole") : null,
 
     sourceModule: sp.get("sourceModule"),
+    sourceCreatedByUserId: oversight ? sp.get("sourceCreatedByUserId") : null,
+    sourceCreatedByName: sp.get("sourceCreatedByName"),
+    sourceBinCode: sp.get("sourceBinCode"),
     taskType: sp.get("taskType"),
     priority: (sp.get("priority") || null) as TaskPriority | null,
 
@@ -106,6 +109,9 @@ export async function POST(req: NextRequest) {
       entityType: String(body.entityType),
       entityId: String(body.entityId),
       sourceRecordLabel: body.sourceRecordLabel ?? null,
+      sourceCreatedByUserId: body.sourceCreatedByUserId ?? null,
+      sourceCreatedByName: body.sourceCreatedByName ?? null,
+      sourceBinCode: body.sourceBinCode ?? null,
       taskType: String(body.taskType),
       title: String(body.title),
       description: body.description ?? null,

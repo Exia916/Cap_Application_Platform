@@ -1,5 +1,5 @@
 import { db } from "@/lib/db";
-import { createNotificationForUser } from "@/lib/services/notificationService";
+import { createConfiguredNotificationForUser } from "@/lib/services/configuredNotificationService";
 import {
   assignTask as repoAssignTask,
   createTask as repoCreateTask,
@@ -30,6 +30,12 @@ function actorName(actor?: TaskActor | null) {
 
 function actorId(actor?: TaskActor | null) {
   return actor?.userId ?? null;
+}
+
+function notificationPriorityFromTask(task: PlatformTaskRow) {
+  if (task.priority === "urgent") return "urgent";
+  if (task.priority === "high") return "high";
+  return "normal";
 }
 
 async function writeActivity(input: {
@@ -88,21 +94,31 @@ async function notifyAssignedUser(input: {
   if (!input.task.assignedToUserId) return;
 
   try {
-    await createNotificationForUser({
+    await createConfiguredNotificationForUser({
       eventType: input.eventType,
       module: "tasks",
       entityType: "platform_task",
       entityId: input.task.id,
       actorUserId: actorId(input.actor),
       targetUserId: input.task.assignedToUserId,
-      title: input.title,
-      message: input.message ?? null,
-      priority:
-        input.task.priority === "urgent"
-          ? "urgent"
-          : input.task.priority === "high"
-            ? "high"
-            : "normal",
+      fallbackTitle: input.title,
+      fallbackMessage: input.message ?? null,
+      fallbackPriority: notificationPriorityFromTask(input.task),
+      fallbackChannels: ["in_app"],
+      templateContext: {
+        taskId: input.task.id,
+        taskNumber: input.task.taskNumber,
+        taskTitle: input.task.title,
+        taskDescription: input.task.description ?? "",
+        sourceModule: input.task.sourceModule,
+        sourceRecordLabel: input.task.sourceRecordLabel ?? "",
+        sourceCreatedByName: input.task.sourceCreatedByName ?? "",
+        sourceBinCode: input.task.sourceBinCode ?? "",
+        taskType: input.task.taskType,
+        assignedToDisplayName: input.task.assignedToDisplayName ?? "",
+        actorName: actorName(input.actor),
+        message: input.message ?? input.task.description ?? "",
+      },
       payload: {
         taskId: input.task.id,
         taskNumber: input.task.taskNumber,
@@ -110,8 +126,9 @@ async function notifyAssignedUser(input: {
         entityType: input.task.entityType,
         entityId: input.task.entityId,
         taskType: input.task.taskType,
+        sourceCreatedByName: input.task.sourceCreatedByName,
+        sourceBinCode: input.task.sourceBinCode,
       },
-      channels: ["in_app"],
     });
   } catch (err) {
     console.error("Task notification failed:", err);

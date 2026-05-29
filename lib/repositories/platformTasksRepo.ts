@@ -39,6 +39,9 @@ export type PlatformTaskRow = {
   entityType: string;
   entityId: string;
   sourceRecordLabel: string | null;
+  sourceCreatedByUserId: string | null;
+  sourceCreatedByName: string | null;
+  sourceBinCode: string | null;
 
   taskType: string;
 
@@ -102,6 +105,9 @@ export type ListTasksArgs = StandardRepoOptions & {
   sourceModule?: string | null;
   entityType?: string | null;
   entityId?: string | null;
+  sourceCreatedByUserId?: string | null;
+  sourceCreatedByName?: string | null;
+  sourceBinCode?: string | null;
   taskType?: string | null;
 
   statuses?: TaskStatus[];
@@ -116,6 +122,8 @@ export type ListTasksArgs = StandardRepoOptions & {
   sortBy?:
     | "taskNumber"
     | "sourceModule"
+    | "sourceCreatedByName"
+    | "sourceBinCode"
     | "taskType"
     | "title"
     | "assignedToDisplayName"
@@ -142,6 +150,9 @@ export type CreateTaskInput = {
   entityType: string;
   entityId: string;
   sourceRecordLabel?: string | null;
+  sourceCreatedByUserId?: string | null;
+  sourceCreatedByName?: string | null;
+  sourceBinCode?: string | null;
 
   taskType: string;
 
@@ -164,101 +175,81 @@ export type CreateTaskInput = {
   metadata?: unknown;
 };
 
+type TaskUpdateData = Partial<{
+  title: string;
+  description: string | null;
+  sourceCreatedByUserId: string | null;
+  sourceCreatedByName: string | null;
+  sourceBinCode: string | null;
+  priority: TaskPriority;
+  status: TaskStatus;
+  dueAt: string | Date | null;
+  metadata: unknown;
+}>;
+
+function taskSelectColumnsSql(alias = "t") {
+  return `
+      ${alias}.id::text AS "id",
+      ${alias}.task_number AS "taskNumber",
+      ${alias}.task_key AS "taskKey",
+
+      ${alias}.source_module AS "sourceModule",
+      ${alias}.entity_type AS "entityType",
+      ${alias}.entity_id AS "entityId",
+      ${alias}.source_record_label AS "sourceRecordLabel",
+      ${alias}.source_created_by_user_id::text AS "sourceCreatedByUserId",
+      ${alias}.source_created_by_name AS "sourceCreatedByName",
+      ${alias}.source_bin_code AS "sourceBinCode",
+
+      ${alias}.task_type AS "taskType",
+
+      ${alias}.title,
+      ${alias}.description,
+
+      ${alias}.assigned_to_user_id::text AS "assignedToUserId",
+      ${alias}.assigned_to_role AS "assignedToRole",
+      ${alias}.assigned_to_department AS "assignedToDepartment",
+      ${alias}.assigned_to_display_name AS "assignedToDisplayName",
+
+      ${alias}.priority,
+      ${alias}.status,
+
+      ${alias}.due_at AS "dueAt",
+
+      ${alias}.completed_at AS "completedAt",
+      ${alias}.completed_by::text AS "completedBy",
+
+      ${alias}.canceled_at AS "canceledAt",
+      ${alias}.canceled_by::text AS "canceledBy",
+
+      ${alias}.created_at AS "createdAt",
+      ${alias}.created_by::text AS "createdBy",
+
+      ${alias}.updated_at AS "updatedAt",
+      ${alias}.updated_by::text AS "updatedBy",
+
+      COALESCE(${alias}.is_voided, false) AS "isVoided",
+      ${alias}.voided_at AS "voidedAt",
+      ${alias}.voided_by AS "voidedBy",
+      ${alias}.void_reason AS "voidReason",
+
+      ${alias}.metadata
+  `;
+}
+
 function taskSelectSql() {
   return `
     SELECT
-      t.id::text AS "id",
-      t.task_number AS "taskNumber",
-      t.task_key AS "taskKey",
-
-      t.source_module AS "sourceModule",
-      t.entity_type AS "entityType",
-      t.entity_id AS "entityId",
-      t.source_record_label AS "sourceRecordLabel",
-
-      t.task_type AS "taskType",
-
-      t.title,
-      t.description,
-
-      t.assigned_to_user_id::text AS "assignedToUserId",
-      t.assigned_to_role AS "assignedToRole",
-      t.assigned_to_department AS "assignedToDepartment",
-      t.assigned_to_display_name AS "assignedToDisplayName",
-
-      t.priority,
-      t.status,
-
-      t.due_at AS "dueAt",
-
-      t.completed_at AS "completedAt",
-      t.completed_by::text AS "completedBy",
-
-      t.canceled_at AS "canceledAt",
-      t.canceled_by::text AS "canceledBy",
-
-      t.created_at AS "createdAt",
-      t.created_by::text AS "createdBy",
-
-      t.updated_at AS "updatedAt",
-      t.updated_by::text AS "updatedBy",
-
-      COALESCE(t.is_voided, false) AS "isVoided",
-      t.voided_at AS "voidedAt",
-      t.voided_by AS "voidedBy",
-      t.void_reason AS "voidReason",
-
-      t.metadata
+      ${taskSelectColumnsSql("t")}
     FROM public.platform_tasks t
   `;
 }
 
-function taskSelectFromInsertedSql() {
+function taskSelectFromCteSql(cteName: string) {
   return `
     SELECT
-      t.id::text AS "id",
-      t.task_number AS "taskNumber",
-      t.task_key AS "taskKey",
-
-      t.source_module AS "sourceModule",
-      t.entity_type AS "entityType",
-      t.entity_id AS "entityId",
-      t.source_record_label AS "sourceRecordLabel",
-
-      t.task_type AS "taskType",
-
-      t.title,
-      t.description,
-
-      t.assigned_to_user_id::text AS "assignedToUserId",
-      t.assigned_to_role AS "assignedToRole",
-      t.assigned_to_department AS "assignedToDepartment",
-      t.assigned_to_display_name AS "assignedToDisplayName",
-
-      t.priority,
-      t.status,
-
-      t.due_at AS "dueAt",
-
-      t.completed_at AS "completedAt",
-      t.completed_by::text AS "completedBy",
-
-      t.canceled_at AS "canceledAt",
-      t.canceled_by::text AS "canceledBy",
-
-      t.created_at AS "createdAt",
-      t.created_by::text AS "createdBy",
-
-      t.updated_at AS "updatedAt",
-      t.updated_by::text AS "updatedBy",
-
-      COALESCE(t.is_voided, false) AS "isVoided",
-      t.voided_at AS "voidedAt",
-      t.voided_by AS "voidedBy",
-      t.void_reason AS "voidReason",
-
-      t.metadata
-    FROM inserted t
+      ${taskSelectColumnsSql("t")}
+    FROM ${cteName} t
   `;
 }
 
@@ -289,13 +280,17 @@ function jsonParam(value: unknown) {
   return JSON.stringify(value ?? {});
 }
 
+function clean(value: unknown) {
+  return String(value ?? "").trim();
+}
+
 function buildWhere(args: ListTasksArgs) {
   const params: any[] = [];
   const where: string[] = [];
 
   pushWhere(where, buildVoidedWhereClause("t", resolveVoidMode(args)));
 
-  const q = String(args.q ?? "").trim();
+  const q = clean(args.q);
   if (q) {
     params.push(`%${q}%`);
     const p = `$${params.length}`;
@@ -305,6 +300,8 @@ function buildWhere(args: ListTasksArgs) {
         CAST(t.task_number AS text) ILIKE ${p}
         OR COALESCE(t.task_key, '') ILIKE ${p}
         OR COALESCE(t.source_record_label, '') ILIKE ${p}
+        OR COALESCE(t.source_created_by_name, '') ILIKE ${p}
+        OR COALESCE(t.source_bin_code, '') ILIKE ${p}
         OR COALESCE(t.title, '') ILIKE ${p}
         OR COALESCE(t.description, '') ILIKE ${p}
         OR COALESCE(t.assigned_to_display_name, '') ILIKE ${p}
@@ -321,16 +318,18 @@ function buildWhere(args: ListTasksArgs) {
     }
 
     if (args.visibleToRole) {
-      params.push(String(args.visibleToRole).trim().toUpperCase());
+      params.push(clean(args.visibleToRole).toUpperCase());
       parts.push(`UPPER(COALESCE(t.assigned_to_role, '')) = $${params.length}`);
     }
 
     if (args.visibleToDepartment) {
-      params.push(String(args.visibleToDepartment).trim());
+      params.push(clean(args.visibleToDepartment));
       parts.push(`t.assigned_to_department ILIKE $${params.length}`);
     }
 
-    pushWhere(where, `(${parts.join(" OR ")})`);
+    if (parts.length) {
+      pushWhere(where, `(${parts.join(" OR ")})`);
+    }
   }
 
   if (args.assignedToUserId) {
@@ -339,32 +338,47 @@ function buildWhere(args: ListTasksArgs) {
   }
 
   if (args.assignedToRole) {
-    params.push(String(args.assignedToRole).trim().toUpperCase());
+    params.push(clean(args.assignedToRole).toUpperCase());
     pushWhere(where, `UPPER(COALESCE(t.assigned_to_role, '')) = $${params.length}`);
   }
 
   if (args.assignedToDepartment) {
-    params.push(String(args.assignedToDepartment).trim());
+    params.push(clean(args.assignedToDepartment));
     pushWhere(where, `t.assigned_to_department ILIKE $${params.length}`);
   }
 
   if (args.sourceModule) {
-    params.push(String(args.sourceModule).trim());
+    params.push(clean(args.sourceModule));
     pushWhere(where, `t.source_module = $${params.length}`);
   }
 
   if (args.entityType) {
-    params.push(String(args.entityType).trim());
+    params.push(clean(args.entityType));
     pushWhere(where, `t.entity_type = $${params.length}`);
   }
 
   if (args.entityId) {
-    params.push(String(args.entityId).trim());
+    params.push(clean(args.entityId));
     pushWhere(where, `t.entity_id = $${params.length}`);
   }
 
+  if (args.sourceCreatedByUserId) {
+    params.push(clean(args.sourceCreatedByUserId));
+    pushWhere(where, `t.source_created_by_user_id = $${params.length}::uuid`);
+  }
+
+  if (clean(args.sourceCreatedByName)) {
+    params.push(`%${clean(args.sourceCreatedByName)}%`);
+    pushWhere(where, `COALESCE(t.source_created_by_name, '') ILIKE $${params.length}`);
+  }
+
+  if (clean(args.sourceBinCode)) {
+    params.push(`%${clean(args.sourceBinCode)}%`);
+    pushWhere(where, `COALESCE(t.source_bin_code, '') ILIKE $${params.length}`);
+  }
+
   if (args.taskType) {
-    params.push(String(args.taskType).trim());
+    params.push(clean(args.taskType));
     pushWhere(where, `t.task_type = $${params.length}`);
   }
 
@@ -407,6 +421,8 @@ function orderBy(args: ListTasksArgs) {
   const map: Record<string, string> = {
     taskNumber: `t.task_number ${dir}`,
     sourceModule: `t.source_module ${dir}`,
+    sourceCreatedByName: `t.source_created_by_name ${dir} NULLS LAST`,
+    sourceBinCode: `t.source_bin_code ${dir} NULLS LAST`,
     taskType: `t.task_type ${dir}`,
     title: `t.title ${dir}`,
     assignedToDisplayName: `t.assigned_to_display_name ${dir}`,
@@ -482,6 +498,9 @@ export async function createTask(input: CreateTaskInput): Promise<PlatformTaskRo
         entity_type,
         entity_id,
         source_record_label,
+        source_created_by_user_id,
+        source_created_by_name,
+        source_bin_code,
         task_type,
         title,
         description,
@@ -497,13 +516,14 @@ export async function createTask(input: CreateTaskInput): Promise<PlatformTaskRo
         metadata
       )
       VALUES (
-        $1,$2,$3,$4,$5,$6,$7,$8,
+        $1,$2,$3,$4,$5,
+        $6,$7,$8,
         $9,$10,$11,$12,$13,$14,$15,
-        $16,$17,$18::jsonb
+        $16,$17,$18,$19,$20,$21::jsonb
       )
       RETURNING *
     )
-    ${taskSelectFromInsertedSql()}
+    ${taskSelectFromCteSql("inserted")}
     `,
     [
       input.taskKey ?? null,
@@ -511,6 +531,9 @@ export async function createTask(input: CreateTaskInput): Promise<PlatformTaskRo
       input.entityType,
       input.entityId,
       input.sourceRecordLabel ?? null,
+      input.sourceCreatedByUserId ?? null,
+      input.sourceCreatedByName ?? null,
+      input.sourceBinCode ?? null,
       input.taskType,
       input.title,
       input.description ?? null,
@@ -532,14 +555,7 @@ export async function createTask(input: CreateTaskInput): Promise<PlatformTaskRo
 
 export async function updateTask(
   id: string,
-  data: Partial<{
-    title: string;
-    description: string | null;
-    priority: TaskPriority;
-    status: TaskStatus;
-    dueAt: string | Date | null;
-    metadata: unknown;
-  }>,
+  data: TaskUpdateData,
   updatedBy?: string | null,
 ): Promise<PlatformTaskRow | null> {
   const existing = await getTaskById(id, { includeVoided: true });
@@ -558,6 +574,21 @@ export async function updateTask(
   if ("description" in data) {
     sets.push(`description = $${idx++}`);
     params.push(data.description ?? null);
+  }
+
+  if ("sourceCreatedByUserId" in data) {
+    sets.push(`source_created_by_user_id = $${idx++}`);
+    params.push(data.sourceCreatedByUserId ?? null);
+  }
+
+  if ("sourceCreatedByName" in data) {
+    sets.push(`source_created_by_name = $${idx++}`);
+    params.push(data.sourceCreatedByName ?? null);
+  }
+
+  if ("sourceBinCode" in data) {
+    sets.push(`source_bin_code = $${idx++}`);
+    params.push(data.sourceBinCode ?? null);
   }
 
   if ("priority" in data) {
@@ -580,14 +611,14 @@ export async function updateTask(
     params.push(jsonParam(data.metadata));
   }
 
+  if (!sets.length) return existing;
+
   sets.push(`updated_at = NOW()`);
 
   if (updatedBy) {
     sets.push(`updated_by = $${idx++}`);
     params.push(updatedBy);
   }
-
-  if (!sets.length) return existing;
 
   params.push(id);
 
@@ -600,38 +631,7 @@ export async function updateTask(
         AND COALESCE(is_voided, false) = false
       RETURNING *
     )
-    SELECT
-      t.id::text AS "id",
-      t.task_number AS "taskNumber",
-      t.task_key AS "taskKey",
-      t.source_module AS "sourceModule",
-      t.entity_type AS "entityType",
-      t.entity_id AS "entityId",
-      t.source_record_label AS "sourceRecordLabel",
-      t.task_type AS "taskType",
-      t.title,
-      t.description,
-      t.assigned_to_user_id::text AS "assignedToUserId",
-      t.assigned_to_role AS "assignedToRole",
-      t.assigned_to_department AS "assignedToDepartment",
-      t.assigned_to_display_name AS "assignedToDisplayName",
-      t.priority,
-      t.status,
-      t.due_at AS "dueAt",
-      t.completed_at AS "completedAt",
-      t.completed_by::text AS "completedBy",
-      t.canceled_at AS "canceledAt",
-      t.canceled_by::text AS "canceledBy",
-      t.created_at AS "createdAt",
-      t.created_by::text AS "createdBy",
-      t.updated_at AS "updatedAt",
-      t.updated_by::text AS "updatedBy",
-      COALESCE(t.is_voided, false) AS "isVoided",
-      t.voided_at AS "voidedAt",
-      t.voided_by AS "voidedBy",
-      t.void_reason AS "voidReason",
-      t.metadata
-    FROM updated t
+    ${taskSelectFromCteSql("updated")}
     `,
     params,
   );
@@ -666,38 +666,7 @@ export async function assignTask(input: {
         AND COALESCE(is_voided, false) = false
       RETURNING *
     )
-    SELECT
-      t.id::text AS "id",
-      t.task_number AS "taskNumber",
-      t.task_key AS "taskKey",
-      t.source_module AS "sourceModule",
-      t.entity_type AS "entityType",
-      t.entity_id AS "entityId",
-      t.source_record_label AS "sourceRecordLabel",
-      t.task_type AS "taskType",
-      t.title,
-      t.description,
-      t.assigned_to_user_id::text AS "assignedToUserId",
-      t.assigned_to_role AS "assignedToRole",
-      t.assigned_to_department AS "assignedToDepartment",
-      t.assigned_to_display_name AS "assignedToDisplayName",
-      t.priority,
-      t.status,
-      t.due_at AS "dueAt",
-      t.completed_at AS "completedAt",
-      t.completed_by::text AS "completedBy",
-      t.canceled_at AS "canceledAt",
-      t.canceled_by::text AS "canceledBy",
-      t.created_at AS "createdAt",
-      t.created_by::text AS "createdBy",
-      t.updated_at AS "updatedAt",
-      t.updated_by::text AS "updatedBy",
-      COALESCE(t.is_voided, false) AS "isVoided",
-      t.voided_at AS "voidedAt",
-      t.voided_by AS "voidedBy",
-      t.void_reason AS "voidReason",
-      t.metadata
-    FROM updated t
+    ${taskSelectFromCteSql("updated")}
     `,
     [
       input.id,
@@ -737,38 +706,7 @@ export async function setTaskStatus(input: {
         AND COALESCE(is_voided, false) = false
       RETURNING *
     )
-    SELECT
-      t.id::text AS "id",
-      t.task_number AS "taskNumber",
-      t.task_key AS "taskKey",
-      t.source_module AS "sourceModule",
-      t.entity_type AS "entityType",
-      t.entity_id AS "entityId",
-      t.source_record_label AS "sourceRecordLabel",
-      t.task_type AS "taskType",
-      t.title,
-      t.description,
-      t.assigned_to_user_id::text AS "assignedToUserId",
-      t.assigned_to_role AS "assignedToRole",
-      t.assigned_to_department AS "assignedToDepartment",
-      t.assigned_to_display_name AS "assignedToDisplayName",
-      t.priority,
-      t.status,
-      t.due_at AS "dueAt",
-      t.completed_at AS "completedAt",
-      t.completed_by::text AS "completedBy",
-      t.canceled_at AS "canceledAt",
-      t.canceled_by::text AS "canceledBy",
-      t.created_at AS "createdAt",
-      t.created_by::text AS "createdBy",
-      t.updated_at AS "updatedAt",
-      t.updated_by::text AS "updatedBy",
-      COALESCE(t.is_voided, false) AS "isVoided",
-      t.voided_at AS "voidedAt",
-      t.voided_by AS "voidedBy",
-      t.void_reason AS "voidReason",
-      t.metadata
-    FROM updated t
+    ${taskSelectFromCteSql("updated")}
     `,
     [input.id, input.status, input.actorUserId ?? null],
   );
@@ -798,38 +736,7 @@ export async function voidTask(input: {
         AND COALESCE(is_voided, false) = false
       RETURNING *
     )
-    SELECT
-      t.id::text AS "id",
-      t.task_number AS "taskNumber",
-      t.task_key AS "taskKey",
-      t.source_module AS "sourceModule",
-      t.entity_type AS "entityType",
-      t.entity_id AS "entityId",
-      t.source_record_label AS "sourceRecordLabel",
-      t.task_type AS "taskType",
-      t.title,
-      t.description,
-      t.assigned_to_user_id::text AS "assignedToUserId",
-      t.assigned_to_role AS "assignedToRole",
-      t.assigned_to_department AS "assignedToDepartment",
-      t.assigned_to_display_name AS "assignedToDisplayName",
-      t.priority,
-      t.status,
-      t.due_at AS "dueAt",
-      t.completed_at AS "completedAt",
-      t.completed_by::text AS "completedBy",
-      t.canceled_at AS "canceledAt",
-      t.canceled_by::text AS "canceledBy",
-      t.created_at AS "createdAt",
-      t.created_by::text AS "createdBy",
-      t.updated_at AS "updatedAt",
-      t.updated_by::text AS "updatedBy",
-      COALESCE(t.is_voided, false) AS "isVoided",
-      t.voided_at AS "voidedAt",
-      t.voided_by AS "voidedBy",
-      t.void_reason AS "voidReason",
-      t.metadata
-    FROM updated t
+    ${taskSelectFromCteSql("updated")}
     `,
     [input.id, input.actorName ?? null, input.reason ?? null, input.actorUserId ?? null],
   );

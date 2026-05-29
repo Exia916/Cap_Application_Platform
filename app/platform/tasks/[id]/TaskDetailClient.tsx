@@ -24,6 +24,9 @@ type TaskRow = {
   entityType: string;
   entityId: string;
   sourceRecordLabel: string | null;
+  sourceCreatedByUserId: string | null;
+  sourceCreatedByName: string | null;
+  sourceBinCode: string | null;
 
   taskType: string;
 
@@ -442,6 +445,10 @@ export default function TaskDetailClient({ taskId }: { taskId: string }) {
                   task.sourceRecordLabel || task.entityId
                 )}
               </InfoItem>
+              <InfoItem label="Source Created By">
+                {task.sourceCreatedByName || task.sourceCreatedByUserId || ""}
+              </InfoItem>
+              <InfoItem label="Bin #">{task.sourceBinCode || ""}</InfoItem>
               <InfoItem label="Entity Type">{prettyLabel(task.entityType)}</InfoItem>
             </div>
 

@@ -33,7 +33,7 @@ function norm(v?: string | null) {
 }
 
 function isUuid(value?: string | null) {
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{12}$/i.test(
     String(value ?? "").trim(),
   );
 }
@@ -121,6 +121,16 @@ function dueAtFromWorkflowDueDate(row: DesignWorkflowRequest) {
   return `${datePart} 17:00:00 America/Chicago`;
 }
 
+function sourceContext(row: DesignWorkflowRequest) {
+  const createdByUserId = norm(row.created_by_user_id);
+
+  return {
+    sourceCreatedByUserId: isUuid(createdByUserId) ? createdByUserId : null,
+    sourceCreatedByName: norm(row.created_by_name) || null,
+    sourceBinCode: norm(row.bin_code) || null,
+  };
+}
+
 function taskMetadata(row: DesignWorkflowRequest, kind: WorkflowAssignmentKind) {
   return {
     source: "workflow_assignment_sync",
@@ -133,6 +143,8 @@ function taskMetadata(row: DesignWorkflowRequest, kind: WorkflowAssignmentKind) 
     statusLabel: row.status_label ?? null,
     dueDate: extractDatePart((row as any).due_date),
     binCode: row.bin_code,
+    sourceCreatedByUserId: row.created_by_user_id,
+    sourceCreatedByName: row.created_by_name,
     digitizerUserId: row.digitizer_user_id,
     digitizerName: row.digitizer_name,
     designerUserId: row.designer_user_id,
@@ -196,6 +208,7 @@ async function refreshOpenTaskFromWorkflow(input: {
       priority: after.rush ? "high" : "normal",
       dueAt: dueAtFromWorkflowDueDate(after),
       metadata: taskMetadata(after, config.kind),
+      ...sourceContext(after),
     },
     actor?.userId ?? null,
   );
@@ -327,6 +340,7 @@ async function syncOneAssignment(input: {
       entityType: ENTITY_TYPE,
       entityId: after.id,
       sourceRecordLabel: recordLabel(after),
+      ...sourceContext(after),
       taskType: config.taskType,
       title: `${config.titlePrefix}: ${recordLabel(after)}`,
       description: after.instructions ?? null,
