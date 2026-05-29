@@ -3,6 +3,11 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import DataTable, { type Column, type SortDir } from "@/components/DataTable";
+import NotificationRuleConditionEditor from "@/components/NotificationRuleConditionEditor";
+import {
+  normalizeNotificationRuleConditionConfig,
+  type NotificationRuleConditionConfig,
+} from "@/lib/services/notificationRuleConditionService";
 
 type EventTypeRow = {
   id: string;
@@ -78,6 +83,7 @@ type NotificationRuleRow = {
   messageTemplate: string | null;
 
   channels: string[];
+  conditionJson: Record<string, any> | null;
 
   isActive: boolean;
   updatedAt: string;
@@ -109,6 +115,8 @@ type RuleForm = {
   messageTemplate: string;
 
   channels: string[];
+  conditionJson: NotificationRuleConditionConfig;
+
   isActive: boolean;
 };
 
@@ -132,34 +140,38 @@ const DEFAULT_FILTERS: Filters = {
   isActive: "",
 };
 
-const EMPTY_FORM: RuleForm = {
-  ruleName: "",
-  module: "design_workflow",
-  eventType: "workflow.status.duration_exceeded",
-  triggerType: "status_duration",
+function emptyForm(): RuleForm {
+  return {
+    ruleName: "",
+    module: "design_workflow",
+    eventType: "workflow.status.duration_exceeded",
+    triggerType: "status_duration",
 
-  workflowStatusId: "",
-  taskType: "",
-  durationMinutes: "1440",
+    workflowStatusId: "",
+    taskType: "",
+    durationMinutes: "1440",
 
-  recipientMode: "static_email_list",
-  recipientUserId: "",
-  recipientRole: "",
-  recipientDepartment: "",
+    recipientMode: "static_email_list",
+    recipientUserId: "",
+    recipientRole: "",
+    recipientDepartment: "",
 
-  recipientStaticEmails: "",
-  ccStaticEmails: "",
-  bccStaticEmails: "",
+    recipientStaticEmails: "",
+    ccStaticEmails: "",
+    bccStaticEmails: "",
 
-  priorityMode: "rule_default",
-  defaultPriority: "normal",
+    priorityMode: "rule_default",
+    defaultPriority: "normal",
 
-  titleTemplate: "",
-  messageTemplate: "",
+    titleTemplate: "",
+    messageTemplate: "",
 
-  channels: ["in_app", "email"],
-  isActive: false,
-};
+    channels: ["in_app", "email"],
+    conditionJson: normalizeNotificationRuleConditionConfig({}),
+
+    isActive: false,
+  };
+}
 
 const TRIGGER_TYPES = [
   { value: "event_based", label: "Event Based" },
@@ -188,6 +200,30 @@ const PRIORITIES = [
   { value: "normal", label: "Normal" },
   { value: "high", label: "High" },
   { value: "urgent", label: "Urgent" },
+];
+
+const TEMPLATE_VARIABLES = [
+  "{{requestNumber}}",
+  "{{sourceRecordLabel}}",
+  "{{salesOrder}}",
+  "{{customerName}}",
+  "{{workflowStatusLabel}}",
+  "{{previousWorkflowStatusLabel}}",
+  "{{newWorkflowStatusLabel}}",
+  "{{fieldLabel}}",
+  "{{previousValue}}",
+  "{{newValue}}",
+  "{{actorName}}",
+  "{{createdByName}}",
+  "{{digitizerName}}",
+  "{{designerName}}",
+  "{{binCode}}",
+  "{{dueDate}}",
+  "{{rush}}",
+  "{{elapsedMinutes}}",
+  "{{durationMinutes}}",
+  "{{durationHours}}",
+  "{{statusEnteredAt}}",
 ];
 
 function isWorkflowStatusEvent(eventType: string): boolean {
@@ -263,7 +299,9 @@ function buildPayload(form: RuleForm) {
 
     workflowStatusId:
       showWorkflowStatus && form.workflowStatusId ? Number(form.workflowStatusId) : null,
+
     taskType: form.taskType.trim() || null,
+
     durationMinutes:
       form.triggerType === "status_duration" && form.durationMinutes
         ? Number(form.durationMinutes)
@@ -285,7 +323,8 @@ function buildPayload(form: RuleForm) {
     messageTemplate: form.messageTemplate.trim() || null,
 
     channels: form.channels,
-    conditionJson: {},
+    conditionJson: normalizeNotificationRuleConditionConfig(form.conditionJson),
+
     isActive: !!form.isActive,
   };
 }
@@ -357,6 +396,8 @@ function formFromRule(row: NotificationRuleRow): RuleForm {
     messageTemplate: row.messageTemplate || "",
 
     channels: Array.isArray(row.channels) && row.channels.length ? row.channels : ["in_app"],
+    conditionJson: normalizeNotificationRuleConditionConfig(row.conditionJson),
+
     isActive: !!row.isActive,
   };
 }
@@ -402,6 +443,40 @@ function sortValue(row: NotificationRuleRow, key: string): unknown {
   }
 }
 
+function TemplateVariableReference() {
+  return (
+    <details className="section-card" style={{ padding: 14 }}>
+      <summary style={{ cursor: "pointer", fontWeight: 700 }}>
+        Template Variable Reference
+      </summary>
+
+      <div className="section-stack" style={{ marginTop: 12 }}>
+        <div className="alert alert-info">
+          Use these variables in the Title Template and Message Template fields.
+        </div>
+
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          {TEMPLATE_VARIABLES.map((v) => (
+            <code
+              key={v}
+              style={{
+                display: "inline-flex",
+                padding: "4px 8px",
+                border: "1px solid var(--border)",
+                borderRadius: 8,
+                background: "var(--surface-muted)",
+                fontSize: 12,
+              }}
+            >
+              {v}
+            </code>
+          ))}
+        </div>
+      </div>
+    </details>
+  );
+}
+
 export default function AdminNotificationRulesPage() {
   const [rows, setRows] = useState<NotificationRuleRow[]>([]);
   const [events, setEvents] = useState<EventTypeRow[]>([]);
@@ -410,7 +485,7 @@ export default function AdminNotificationRulesPage() {
   const [roles, setRoles] = useState<RoleOption[]>([]);
   const [departments, setDepartments] = useState<DepartmentRow[]>([]);
 
-  const [form, setForm] = useState<RuleForm>(EMPTY_FORM);
+  const [form, setForm] = useState<RuleForm>(() => emptyForm());
   const [editingId, setEditingId] = useState<string | null>(null);
 
   const [filters, setFilters] = useState<Filters>(DEFAULT_FILTERS);
@@ -538,12 +613,12 @@ export default function AdminNotificationRulesPage() {
 
   function onChannelChange(channel: string, checked: boolean) {
     setForm((prev) => {
-      const set = new Set(prev.channels);
+      const next = new Set(prev.channels);
 
-      if (checked) set.add(channel);
-      else set.delete(channel);
+      if (checked) next.add(channel);
+      else next.delete(channel);
 
-      return { ...prev, channels: Array.from(set) };
+      return { ...prev, channels: Array.from(next) };
     });
   }
 
@@ -571,7 +646,7 @@ export default function AdminNotificationRulesPage() {
   }
 
   function resetForm() {
-    setForm(EMPTY_FORM);
+    setForm(emptyForm());
     setEditingId(null);
     setError("");
     setSuccessMsg("");
@@ -910,13 +985,18 @@ export default function AdminNotificationRulesPage() {
             <h1 className="page-title">Admin – Notification Rules</h1>
             <p className="page-subtitle">
               Configure when CAP should create in-app/email notification work items.
-              Rules created here are inert until the evaluator phase is added.
             </p>
           </div>
 
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
             <Link href="/admin/platform/events" className="btn btn-secondary">
               Event Catalog
+            </Link>
+            <Link href="/admin/platform/notification-rules/evaluate" className="btn btn-secondary">
+              Rule Evaluation
+            </Link>
+            <Link href="/admin/platform/notification-rules/runs" className="btn btn-secondary">
+              Rule Run History
             </Link>
             <Link href="/admin" className="btn btn-secondary">
               Back to Admin
@@ -935,7 +1015,7 @@ export default function AdminNotificationRulesPage() {
               {editingId ? "Edit Notification Rule" : "Add Notification Rule"}
             </h2>
             <div className="text-soft">
-              Event-based and status-duration rules are enabled for this foundation phase.
+              Event-based and status-duration rules can be narrowed with optional conditions.
             </div>
           </div>
 
@@ -1265,7 +1345,7 @@ export default function AdminNotificationRulesPage() {
                 rows={3}
                 value={form.recipientStaticEmails}
                 onChange={(e) => setFormValue("recipientStaticEmails", e.target.value)}
-                placeholder="artmanager@capamerica.com&#10;workflowalerts@capamerica.com"
+                placeholder={"artmanager@capamerica.com\nworkflowalerts@capamerica.com"}
                 disabled={saving}
               />
               <div className="field-help">
@@ -1299,12 +1379,24 @@ export default function AdminNotificationRulesPage() {
           </div>
 
           <div style={{ gridColumn: "1 / -1" }}>
+            <NotificationRuleConditionEditor
+              value={form.conditionJson}
+              onChange={(next) => setFormValue("conditionJson", next)}
+              disabled={saving}
+            />
+          </div>
+
+          <div style={{ gridColumn: "1 / -1" }}>
+            <TemplateVariableReference />
+          </div>
+
+          <div style={{ gridColumn: "1 / -1" }}>
             <label className="field-label">Title Template</label>
             <input
               className="input"
               value={form.titleTemplate}
               onChange={(e) => setFormValue("titleTemplate", e.target.value)}
-              placeholder="Workflow request has been in {{workflowStatusLabel}} for over 24 hours"
+              placeholder="Workflow {{requestNumber}} {{fieldLabel}} changed"
               disabled={saving}
             />
           </div>
@@ -1316,7 +1408,7 @@ export default function AdminNotificationRulesPage() {
               rows={4}
               value={form.messageTemplate}
               onChange={(e) => setFormValue("messageTemplate", e.target.value)}
-              placeholder="Workflow request {{sourceRecordLabel}} has been in {{workflowStatusLabel}} since {{statusEnteredAt}}."
+              placeholder="{{actorName}} changed Workflow {{requestNumber}} from {{previousValue}} to {{newValue}}."
               disabled={saving}
             />
           </div>

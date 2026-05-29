@@ -322,6 +322,8 @@ export default function NavBar() {
     { href: "/admin/notification-rules", label: "Notification Rules", show: meLoaded && isAdmin },
     { href: "/admin/platform/email-test", label: "Email Test", show: meLoaded && isAdmin },
     { href: "/admin/platform/notification-rules/evaluate", label: "Rule Evaluation", show: meLoaded && isAdmin },
+    { href: "/admin/platform/notification-rules/runs", label: "Rule Run History", show: meLoaded && isAdmin },
+    { href: "/admin/platform/notifications/status", label: "Notification Status", show: meLoaded && isAdmin },
   ].filter((x) => x.show !== false);
 
   const productionActive = productionItems.some((i) => i.href && isActive(pathname, i.href));
