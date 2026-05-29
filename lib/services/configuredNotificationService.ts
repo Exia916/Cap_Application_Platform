@@ -77,12 +77,12 @@ export async function createConfiguredNotificationForUser(
     input.fallbackPriority ??
     "normal";
 
-  const channels =
+  const channels: NotificationChannel[] =
     definition?.channels?.length
       ? definition.channels
       : input.fallbackChannels?.length
         ? input.fallbackChannels
-        : ["in_app"];
+        : (["in_app"] as NotificationChannel[]);
 
   return createNotificationForUser({
     eventType: input.eventType,

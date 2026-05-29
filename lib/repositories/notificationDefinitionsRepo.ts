@@ -34,7 +34,7 @@ export type UpsertNotificationDefinitionInput = {
 
 function normalizeChannels(channels?: NotificationChannel[] | null): NotificationChannel[] {
   const allowed = new Set<NotificationChannel>(["in_app", "email"]);
-  const input = channels?.length ? channels : ["in_app"];
+  const input = channels?.length ? channels : (["in_app"] as NotificationChannel[]);
   const out: NotificationChannel[] = [];
 
   for (const channel of input) {
