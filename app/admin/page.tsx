@@ -101,6 +101,11 @@ export default function AdminHomePage() {
           title: "Workflow Task Resync",
           description: "Dry-run and safely resync Workflow records into CAP Tasks & Assignments.",
         },
+        {
+          href: "/admin/notification-definitions",
+          title: "Notification Definitions",
+          description: "Configure notification templates, priority, active state, and requested channels.",
+        },
       ],
     },
     {
