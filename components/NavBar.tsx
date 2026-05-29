@@ -318,6 +318,10 @@ export default function NavBar() {
     { href: "/admin/users", label: "Admin Users", show: meLoaded && isAdmin },
     { href: "/admin/master-data", label: "Master Data (Lists)", show: meLoaded && isAdmin },
     { href: "/admin/logs", label: "Application Logs", show: meLoaded && isAdmin },
+    { href: "/admin/platform/events", label: "Platform Events", show: meLoaded && isAdmin },
+    { href: "/admin/notification-rules", label: "Notification Rules", show: meLoaded && isAdmin },
+    { href: "/admin/platform/email-test", label: "Email Test", show: meLoaded && isAdmin },
+    { href: "/admin/platform/notification-rules/evaluate", label: "Rule Evaluation", show: meLoaded && isAdmin },
   ].filter((x) => x.show !== false);
 
   const productionActive = productionItems.some((i) => i.href && isActive(pathname, i.href));
