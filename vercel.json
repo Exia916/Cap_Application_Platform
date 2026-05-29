@@ -1,0 +1,12 @@
+{
+  "crons": [
+    {
+      "path": "/api/platform/notification-rules/evaluate",
+      "schedule": "*/15 * * * *"
+    },
+    {
+      "path": "/api/platform/notifications/email/process-pending",
+      "schedule": "*/5 * * * *"
+    }
+  ]
+}
