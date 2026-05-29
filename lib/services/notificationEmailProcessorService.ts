@@ -222,7 +222,6 @@ async function listPendingEmailDeliveries(limit: number): Promise<PendingEmailDe
 
 async function markDeliverySent(input: {
   deliveryId: string;
-  responseMessage: string | null;
 }) {
   await db.query(
     `
@@ -238,7 +237,7 @@ async function markDeliverySent(input: {
       updated_at = NOW()
     WHERE id = $1::uuid
     `,
-    [input.deliveryId, input.responseMessage]
+    [input.deliveryId]
   );
 }
 
@@ -378,9 +377,7 @@ export async function processPendingEmailNotifications(
 
         await markDeliverySent({
           deliveryId: row.deliveryId,
-          responseMessage: sent.response || sent.messageId || null,
         });
-
         result.sent += 1;
         result.details.push({
           deliveryId: row.deliveryId,
