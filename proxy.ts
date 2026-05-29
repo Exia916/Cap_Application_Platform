@@ -16,7 +16,17 @@ const PUBLIC_PATHS = new Set([
   "/sitemap.xml",
 ]);
 
+const CRON_PROTECTED_API_PATHS = new Set([
+  "/api/platform/notification-rules/evaluate",
+  "/api/platform/notifications/email/process-pending",
+]);
+
 const PUBLIC_FILE = /\.(?:png|jpg|jpeg|gif|webp|svg|ico|css|js|map|txt|xml|woff|woff2|ttf)$/i;
+
+function normalizePath(pathname: string) {
+  if (!pathname || pathname === "/") return "/";
+  return pathname.replace(/\/+$/, "");
+}
 
 function isPublicPath(pathname: string) {
   if (PUBLIC_PATHS.has(pathname)) return true;
@@ -32,6 +42,10 @@ function isPublicPath(pathname: string) {
   if (PUBLIC_FILE.test(pathname)) return true;
 
   return false;
+}
+
+function isCronProtectedApiPath(pathname: string) {
+  return CRON_PROTECTED_API_PATHS.has(normalizePath(pathname));
 }
 
 function decodeJwtPayload(token: string): Record<string, unknown> | null {
@@ -96,6 +110,19 @@ export function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   if (isPublicPath(pathname)) {
+    return NextResponse.next();
+  }
+
+  /*
+   * Vercel Cron does not have the browser auth_token cookie.
+   *
+   * These routes are not public; they still perform their own authorization
+   * inside the route handler using CRON_SECRET / CAP_CRON_SECRET or Admin auth.
+   *
+   * This only prevents the global login redirect from blocking cron before the
+   * request reaches the route.
+   */
+  if (isCronProtectedApiPath(pathname)) {
     return NextResponse.next();
   }
 
