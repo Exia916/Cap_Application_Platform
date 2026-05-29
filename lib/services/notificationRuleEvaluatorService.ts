@@ -668,12 +668,11 @@ async function hasRuleRun(input: {
       WHERE rr.rule_id = $1::uuid
         AND rr.entity_type = $2
         AND rr.entity_id = $3
+        AND rr.trigger_type = 'status_duration'
         AND COALESCE(rr.workflow_status_id, -1) = COALESCE($4::int, -1)
-        AND COALESCE(rr.status_entered_at, '-infinity'::timestamptz)
-          = COALESCE($5::timestamptz, '-infinity'::timestamptz)
         AND COALESCE(rr.recipient_user_id, '00000000-0000-0000-0000-000000000000'::uuid)
-          = COALESCE($6::uuid, '00000000-0000-0000-0000-000000000000'::uuid)
-        AND lower(COALESCE(rr.recipient_email, '')) = lower(COALESCE($7, ''))
+          = COALESCE($5::uuid, '00000000-0000-0000-0000-000000000000'::uuid)
+        AND lower(COALESCE(rr.recipient_email, '')) = lower(COALESCE($6, ''))
       LIMIT 1
     ) AS exists
     `,
@@ -682,7 +681,6 @@ async function hasRuleRun(input: {
       input.entityType,
       input.entityId,
       input.workflowStatusId,
-      input.statusEnteredAt,
       input.recipientUserId,
       input.recipientEmail,
     ]
