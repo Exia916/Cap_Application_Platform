@@ -27,6 +27,7 @@ type MenuItem = {
 type OpenMenu =
   | null
   | "production"
+  | "logistics"
   | "recut"
   | "maintenance"
   | "manager"
@@ -260,6 +261,14 @@ export default function NavBar() {
   const canSeeCmmsMasterData = meLoaded && (isAdmin || role === "TECH");
   const canSeeReports = meLoaded && isManager;
 
+  const canSeeLogistics =
+    meLoaded &&
+    (isAdmin ||
+      role === "MANAGER" ||
+      role === "PURCHASING" ||
+      role === "OVERSEAS CUSTOMER SERVICE" ||
+      role === "OVERSEAS CS");
+
   function runGlobalSearch() {
     const q = globalQ.trim();
     if (!q || !canGlobalSearch) return;
@@ -283,6 +292,14 @@ export default function NavBar() {
   { href: "/production/sample-embroidery", label: "Sample Embroidery" },
   { href: "/platform/work-sessions", label: "Work Sessions" },
   ];
+
+  const logisticsItems: MenuItem[] = [
+    {
+      href: "/logistics/inbound-shipments",
+      label: "Inbound Shipments",
+      show: canSeeLogistics,
+    },
+  ].filter((x) => x.show !== false);
 
   const recutItems: MenuItem[] = [
     { href: "/recuts", label: "Recuts", show: canSeeRecuts },
@@ -327,6 +344,7 @@ export default function NavBar() {
   ].filter((x) => x.show !== false);
 
   const productionActive = productionItems.some((i) => i.href && isActive(pathname, i.href));
+  const logisticsActive = logisticsItems.some((i) => i.href && isActive(pathname, i.href));
   const recutActive = recutItems.some((i) => i.href && isActive(pathname, i.href));
   const maintenanceActive = maintenanceItems.some((i) => i.href && isActive(pathname, i.href));
   const managerActive = managerItems.some((i) => i.href && isActive(pathname, i.href));
@@ -342,6 +360,7 @@ export default function NavBar() {
   }
 
   const showHomeAsPrimary = navMode !== "small";
+  const showLogisticsAsPrimary = navMode !== "small";
   const showRecutAsPrimary = navMode !== "small";
   const showMaintenanceAsPrimary = navMode === "wide";
   const showManagerAsPrimary = navMode === "wide";
@@ -349,6 +368,7 @@ export default function NavBar() {
 
   const showMore =
     navMode !== "wide" ||
+    (!showLogisticsAsPrimary && logisticsItems.length > 0) ||
     (!showRecutAsPrimary && recutItems.length > 0) ||
     (!showMaintenanceAsPrimary && maintenanceItems.length > 0) ||
     (!showManagerAsPrimary && managerItems.length > 0) ||
@@ -376,6 +396,10 @@ export default function NavBar() {
   sections.push({ title: "Production", items: productionItems });
 }
 
+    if (!showLogisticsAsPrimary && logisticsItems.length > 0) {
+      sections.push({ title: "Logistics", items: logisticsItems });
+    }
+
     if (!showRecutAsPrimary && recutItems.length > 0) {
       sections.push({ title: "Recut", items: recutItems });
     }
@@ -395,11 +419,13 @@ export default function NavBar() {
     return sections;
   }, [
     showHomeAsPrimary,
+    showLogisticsAsPrimary,
     showRecutAsPrimary,
     showMaintenanceAsPrimary,
     showManagerAsPrimary,
     showAdminAsPrimary,
     productionItems,
+    logisticsItems,
     recutItems,
     maintenanceItems,
     managerItems,
@@ -494,6 +520,18 @@ export default function NavBar() {
                   onNavigate={() => setOpenMenu(null)}
                 />
               ) : null}
+
+              {showLogisticsAsPrimary && logisticsItems.length > 0 ? (
+                <Dropdown
+                  label="Logistics"
+                  active={logisticsActive}
+                  open={openMenu === "logistics"}
+                  onToggle={() => toggle("logistics")}
+                  items={logisticsItems}
+                  pathname={pathname}
+                  onNavigate={handleNavigate}
+                />
+              ) : null}
               
 
               {showRecutAsPrimary && recutItems.length > 0 ? (
@@ -548,6 +586,7 @@ export default function NavBar() {
                 <MoreMenu
                   open={openMenu === "more"}
                   active={
+                    (!showLogisticsAsPrimary && logisticsActive) ||
                     (!showRecutAsPrimary && recutActive) ||
                     (!showMaintenanceAsPrimary && maintenanceActive) ||
                     (!showManagerAsPrimary && managerActive) ||
@@ -762,6 +801,7 @@ export default function NavBar() {
               ...(canSeeProduction && productionItems.length > 0
   ? [{ title: "Production", items: productionItems }]
   : []),
+              ...(logisticsItems.length > 0 ? [{ title: "Logistics", items: logisticsItems }] : []),
               ...(recutItems.length > 0 ? [{ title: "Recut", items: recutItems }] : []),
               ...(maintenanceItems.length > 0
                 ? [{ title: "Maintenance", items: maintenanceItems }]
