@@ -27,6 +27,7 @@ type MenuItem = {
 type OpenMenu =
   | null
   | "production"
+  | "logistics"
   | "recut"
   | "maintenance"
   | "manager"
@@ -38,7 +39,7 @@ export default function NavBar() {
   const pathname = usePathname() || "";
   const router = useRouter();
 
-  const isLoginPage = pathname === "/login" || pathname.startsWith("/login/");
+  const isLoginPage = pathname === "/login";
 
   const [me, setMe] = useState<Me | null>(null);
   const [meLoaded, setMeLoaded] = useState(false);
@@ -212,7 +213,7 @@ export default function NavBar() {
 
   const canGlobalSearch = GLOBAL_SEARCH_ROLES.includes(role as any);
 
-    const DESIGN_LOOKUP_ROLES = [
+  const DESIGN_LOOKUP_ROLES = [
     "ADMIN",
     "MANAGER",
     "SUPERVISOR",
@@ -227,6 +228,19 @@ export default function NavBar() {
     "WAREHOUSE",
   ] as const;
 
+  const LOGISTICS_ROLES = [
+    "ADMIN",
+    "MANAGER",
+    "PURCHASING",
+    "OVERSEAS CUSTOMER SERVICE",
+  ] as const;
+
+  const canSeeDesignLookup =
+    meLoaded && (isAdmin || DESIGN_LOOKUP_ROLES.includes(role as any));
+
+  const canSeeLogistics =
+    meLoaded && (isAdmin || LOGISTICS_ROLES.includes(role as any));
+
   const canSeeProduction =
   meLoaded &&
   (isAdmin ||
@@ -234,9 +248,6 @@ export default function NavBar() {
     role === "MANAGER" ||
     role === "USER" ||
     role === "SALES");
-
-  const canSeeDesignLookup =
-    meLoaded && (isAdmin || DESIGN_LOOKUP_ROLES.includes(role as any));
 
   const canSeeRepairRequests =
     meLoaded && (isAdmin || role === "MANAGER" || role === "SUPERVISOR");
@@ -258,7 +269,6 @@ export default function NavBar() {
       role === "WAREHOUSE");
 
   const canSeeCmmsMasterData = meLoaded && (isAdmin || role === "TECH");
-  const canSeeReports = meLoaded && isManager;
 
   function runGlobalSearch() {
     const q = globalQ.trim();
@@ -284,6 +294,10 @@ export default function NavBar() {
   { href: "/platform/work-sessions", label: "Work Sessions" },
   ];
 
+  const logisticsItems: MenuItem[] = [
+    { href: "/inbound-shipments", label: "Inbound Shipments", show: canSeeLogistics },
+  ].filter((x) => x.show !== false);
+
   const recutItems: MenuItem[] = [
     { href: "/recuts", label: "Recuts", show: canSeeRecuts },
     { href: "/recuts/supervisor-review", label: "Supervisor Review", show: canSeeRecutReview },
@@ -306,11 +320,8 @@ export default function NavBar() {
   ].filter((x) => x.show !== false);
 
   const managerItems: MenuItem[] = [
-  { kind: "section" as const, label: "Manager Tools", show: meLoaded && isManager },
-  { href: "/manager", label: "Manager Home", show: meLoaded && isManager },
-  { href: "/reports", label: "Reports", show: canSeeReports },
-  { href: "/manager/tasks", label: "Task Oversight", show: meLoaded && isManager },
-].filter((x) => x.show !== false);
+    { href: "/manager", label: "Manager", show: meLoaded && isManager },
+  ].filter((x) => x.show !== false);
 
   const adminItems: MenuItem[] = [
     { kind: "section" as const, label: "Administration", show: meLoaded && isAdmin },
@@ -318,15 +329,10 @@ export default function NavBar() {
     { href: "/admin/users", label: "Admin Users", show: meLoaded && isAdmin },
     { href: "/admin/master-data", label: "Master Data (Lists)", show: meLoaded && isAdmin },
     { href: "/admin/logs", label: "Application Logs", show: meLoaded && isAdmin },
-    { href: "/admin/platform/events", label: "Platform Events", show: meLoaded && isAdmin },
-    { href: "/admin/notification-rules", label: "Notification Rules", show: meLoaded && isAdmin },
-    { href: "/admin/platform/email-test", label: "Email Test", show: meLoaded && isAdmin },
-    { href: "/admin/platform/notification-rules/evaluate", label: "Rule Evaluation", show: meLoaded && isAdmin },
-    { href: "/admin/platform/notification-rules/runs", label: "Rule Run History", show: meLoaded && isAdmin },
-    { href: "/admin/platform/notifications/status", label: "Notification Status", show: meLoaded && isAdmin },
   ].filter((x) => x.show !== false);
 
   const productionActive = productionItems.some((i) => i.href && isActive(pathname, i.href));
+  const logisticsActive = logisticsItems.some((i) => i.href && isActive(pathname, i.href));
   const recutActive = recutItems.some((i) => i.href && isActive(pathname, i.href));
   const maintenanceActive = maintenanceItems.some((i) => i.href && isActive(pathname, i.href));
   const managerActive = managerItems.some((i) => i.href && isActive(pathname, i.href));
@@ -342,6 +348,7 @@ export default function NavBar() {
   }
 
   const showHomeAsPrimary = navMode !== "small";
+  const showLogisticsAsPrimary = navMode === "wide";
   const showRecutAsPrimary = navMode !== "small";
   const showMaintenanceAsPrimary = navMode === "wide";
   const showManagerAsPrimary = navMode === "wide";
@@ -349,6 +356,7 @@ export default function NavBar() {
 
   const showMore =
     navMode !== "wide" ||
+    (!showLogisticsAsPrimary && logisticsItems.length > 0) ||
     (!showRecutAsPrimary && recutItems.length > 0) ||
     (!showMaintenanceAsPrimary && maintenanceItems.length > 0) ||
     (!showManagerAsPrimary && managerItems.length > 0) ||
@@ -363,11 +371,7 @@ export default function NavBar() {
         items: [
           { href: "/dashboard", label: "Home", show: true },
           { href: "/design-workflow", label: "Workflow", show: true },
-          {
-            href: "/design-lookup",
-            label: "Design Lookup",
-            show: canSeeDesignLookup,
-          },
+          { href: "/design-lookup", label: "Design Lookup", show: canSeeDesignLookup },
         ].filter((x) => x.show !== false),
       });
     }
@@ -375,6 +379,10 @@ export default function NavBar() {
     if (canSeeProduction && productionItems.length > 0) {
   sections.push({ title: "Production", items: productionItems });
 }
+
+    if (!showLogisticsAsPrimary && logisticsItems.length > 0) {
+      sections.push({ title: "Logistics", items: logisticsItems });
+    }
 
     if (!showRecutAsPrimary && recutItems.length > 0) {
       sections.push({ title: "Recut", items: recutItems });
@@ -395,15 +403,19 @@ export default function NavBar() {
     return sections;
   }, [
     showHomeAsPrimary,
+    showLogisticsAsPrimary,
     showRecutAsPrimary,
     showMaintenanceAsPrimary,
     showManagerAsPrimary,
     showAdminAsPrimary,
     productionItems,
+    logisticsItems,
     recutItems,
     maintenanceItems,
     managerItems,
     adminItems,
+    canSeeDesignLookup,
+    canSeeProduction,
   ]);
 
   if (isLoginPage) {
@@ -494,7 +506,18 @@ export default function NavBar() {
                   onNavigate={() => setOpenMenu(null)}
                 />
               ) : null}
-              
+
+              {showLogisticsAsPrimary && logisticsItems.length > 0 ? (
+                <Dropdown
+                  label="Logistics"
+                  active={logisticsActive}
+                  open={openMenu === "logistics"}
+                  onToggle={() => toggle("logistics")}
+                  items={logisticsItems}
+                  pathname={pathname}
+                  onNavigate={handleNavigate}
+                />
+              ) : null}
 
               {showRecutAsPrimary && recutItems.length > 0 ? (
                 <Dropdown
@@ -548,6 +571,7 @@ export default function NavBar() {
                 <MoreMenu
                   open={openMenu === "more"}
                   active={
+                    (!showLogisticsAsPrimary && logisticsActive) ||
                     (!showRecutAsPrimary && recutActive) ||
                     (!showMaintenanceAsPrimary && maintenanceActive) ||
                     (!showManagerAsPrimary && managerActive) ||
@@ -677,39 +701,12 @@ export default function NavBar() {
                   <div style={menuDivider} />
 
                   <Link
-                    href="/account"
-                    role="menuitem"
-                    style={menuItem}
-                    onClick={handleNavigate}
-                  >
-                    My Account
-                  </Link>
-
-                  <Link
                     href="/playbooks"
                     role="menuitem"
                     style={menuItem}
                     onClick={handleNavigate}
                   >
                     Playbooks
-                  </Link>
-
-                  <Link
-                    href="/my-work"
-                    role="menuitem"
-                    style={menuItem}
-                    onClick={handleNavigate}
-                  >
-                    My Work
-                  </Link>
-
-                  <Link
-                    href="/notifications"
-                    role="menuitem"
-                    style={menuItem}
-                    onClick={handleNavigate}
-                  >
-                    Notifications
                   </Link>
 
                   <div style={menuDivider} />
@@ -757,11 +754,15 @@ export default function NavBar() {
                 items: [
                   { href: "/dashboard", label: "Home", show: true },
                   { href: "/design-workflow", label: "Workflow", show: true },
-                ],
+                  { href: "/design-lookup", label: "Design Lookup", show: canSeeDesignLookup },
+                ].filter((x) => x.show !== false),
               },
               ...(canSeeProduction && productionItems.length > 0
   ? [{ title: "Production", items: productionItems }]
   : []),
+              ...(logisticsItems.length > 0
+                ? [{ title: "Logistics", items: logisticsItems }]
+                : []),
               ...(recutItems.length > 0 ? [{ title: "Recut", items: recutItems }] : []),
               ...(maintenanceItems.length > 0
                 ? [{ title: "Maintenance", items: maintenanceItems }]
