@@ -443,15 +443,13 @@ export default function InboundShipmentForm({ initialShipmentId }: Props) {
       return;
     }
 
-    async function loadShipment() {
+    async function loadShipment(shipmentId: string) {
       try {
         setLoading(true);
         setServerError(null);
 
         const res = await fetch(
-          `/api/inbound-shipments/${encodeURIComponent(
-            initialShipmentId
-          )}?includeVoided=true`,
+          `/api/inbound-shipments/${encodeURIComponent(shipmentId)}?includeVoided=true`,
           {
             cache: "no-store",
             credentials: "include",
@@ -528,7 +526,7 @@ export default function InboundShipmentForm({ initialShipmentId }: Props) {
       }
     }
 
-    loadShipment();
+    loadShipment(initialShipmentId);
   }, [initialShipmentId, isEditMode]);
 
   function updateLine(index: number, key: keyof LineForm, value: string) {
