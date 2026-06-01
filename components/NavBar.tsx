@@ -295,7 +295,7 @@ export default function NavBar() {
 
   const logisticsItems: MenuItem[] = [
     {
-      href: "/logistics/inbound-shipments",
+      href: "/inbound-shipments",
       label: "Inbound Shipments",
       show: canSeeLogistics,
     },
