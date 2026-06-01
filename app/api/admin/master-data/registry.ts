@@ -26,7 +26,9 @@ export type MasterKey =
   | "design_workflow_bins"
   | "design_workflow_customers"
   | "design_workflow_statuses"
-  | "design_workflow_styles";
+  | "design_workflow_styles"
+  | "inbound_shipment_statuses"
+  | "inbound_shipment_invoice_types";
 
 export type EditableField =
   | "code"
@@ -382,6 +384,28 @@ export const MASTER_DATA: Record<MasterKey, MasterRegistryItem> = {
     supportsInactive: true,
     allowDelete: false,
   },
+
+  inbound_shipment_statuses: {
+  key: "inbound_shipment_statuses",
+  table: "public.inbound_shipment_statuses",
+  idCol: "id",
+  editable: ["code", "label", "sort_order", "is_active"],
+  selectCols: ["id", "code", "label", "sort_order", "is_active", "created_at", "updated_at"],
+  orderBy: "sort_order ASC, code ASC",
+  supportsInactive: true,
+  allowDelete: false,
+},
+
+inbound_shipment_invoice_types: {
+  key: "inbound_shipment_invoice_types",
+  table: "public.inbound_shipment_invoice_types",
+  idCol: "id",
+  editable: ["code", "label", "sort_order", "is_active"],
+  selectCols: ["id", "code", "label", "sort_order", "is_active", "created_at", "updated_at"],
+  orderBy: "sort_order ASC, code ASC",
+  supportsInactive: true,
+  allowDelete: false,
+},
 };
 
 export function isMasterKey(value: string): value is MasterKey {

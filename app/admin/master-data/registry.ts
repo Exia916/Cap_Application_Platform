@@ -39,6 +39,10 @@ export const MASTER_KEYS = [
 
   // legacy
   "emb_type_locations",
+
+  // Logistics / Inbound Shipments lookups
+"inbound_shipment_statuses",
+"inbound_shipment_invoice_types",
 ] as const;
 
 export type MasterKey = (typeof MASTER_KEYS)[number];
@@ -393,6 +397,30 @@ export const MASTER_UI: Record<MasterKey, MasterUiConfig> = {
     columns: [
       { key: "code", label: "Code", type: "text", required: true, widthClass: "w-32" },
       { key: "description", label: "Description", type: "text", required: true },
+      { key: "sort_order", label: "Sort", type: "number", widthClass: "w-24" },
+      { key: "is_active", label: "Active", type: "boolean", widthClass: "w-24" },
+    ],
+  },
+
+  inbound_shipment_statuses: {
+    key: "inbound_shipment_statuses",
+    title: "Inbound Shipment Statuses",
+    description: "Status values used on Logistics / Inbound Shipments.",
+    columns: [
+      { key: "code", label: "Code", type: "text", required: true, widthClass: "w-40" },
+      { key: "label", label: "Label", type: "text", required: true },
+      { key: "sort_order", label: "Sort", type: "number", widthClass: "w-24" },
+      { key: "is_active", label: "Active", type: "boolean", widthClass: "w-24" },
+    ],
+  },
+
+  inbound_shipment_invoice_types: {
+    key: "inbound_shipment_invoice_types",
+    title: "Inbound Shipment Invoice Types",
+    description: "Invoice type values used on Logistics / Inbound Shipments.",
+    columns: [
+      { key: "code", label: "Code", type: "text", required: true, widthClass: "w-40" },
+      { key: "label", label: "Label", type: "text", required: true },
       { key: "sort_order", label: "Sort", type: "number", widthClass: "w-24" },
       { key: "is_active", label: "Active", type: "boolean", widthClass: "w-24" },
     ],
