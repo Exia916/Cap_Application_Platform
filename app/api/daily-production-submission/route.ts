@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAuthFromRequest } from "@/lib/auth";
+import { db } from "@/lib/db";
 import {
   getEmbroiderySubmissionWithLines,
   replaceEmbroiderySubmission,
@@ -60,6 +61,67 @@ function valuesEqual(a: unknown, b: unknown): boolean {
   const aa = a === undefined ? null : a;
   const bb = b === undefined ? null : b;
   return String(aa ?? "") === String(bb ?? "");
+}
+
+function normalizeDepartment(value: unknown): string {
+  return String(value ?? "")
+    .trim()
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .toUpperCase();
+}
+
+function isEmbroideryDepartmentValue(value: unknown): boolean {
+  const department = normalizeDepartment(value);
+  return department === "EMBROIDERY" || department === "EMB";
+}
+
+function authUserId(auth: any): string | null {
+  const value = auth?.id ?? auth?.userId ?? auth?.sub ?? null;
+  return value == null ? null : String(value);
+}
+
+async function getCurrentUserDepartment(auth: any): Promise<string | null> {
+  const userId = authUserId(auth);
+
+  if (userId) {
+    try {
+      const { rows } = await db.query<{ department: string | null }>(
+        `
+        SELECT department
+        FROM public.users
+        WHERE id = $1
+        LIMIT 1
+        `,
+        [userId]
+      );
+
+      if (rows[0]?.department != null) return rows[0].department;
+    } catch (err) {
+      console.error("daily-production-submission user department lookup by id failed:", err);
+    }
+  }
+
+  const employeeNumber = Number(auth?.employeeNumber);
+  if (Number.isFinite(employeeNumber)) {
+    try {
+      const { rows } = await db.query<{ department: string | null }>(
+        `
+        SELECT department
+        FROM public.users
+        WHERE employee_number = $1
+        LIMIT 1
+        `,
+        [employeeNumber]
+      );
+
+      if (rows[0]?.department != null) return rows[0].department;
+    } catch (err) {
+      console.error("daily-production-submission user department lookup by employee number failed:", err);
+    }
+  }
+
+  return auth?.department ?? null;
 }
 
 type NormalizedLine = {
@@ -303,8 +365,13 @@ export async function PUT(req: NextRequest) {
 
     const legacySalesOrder = toLegacySalesOrderNumber(normalizedSO.salesOrderBase);
     const machineNumber = toNullableInt(body.machineNumber);
+    if (machineNumber === null) throw new Error("Machine is required.");
+
     const headerNotes = cleanText(body.notes);
-    const annex = !!body.annex;
+    const currentUserDepartment = await getCurrentUserDepartment(auth);
+    const annex = isEmbroideryDepartmentValue(currentUserDepartment)
+      ? !!submission.annex
+      : !!body.annex;
 
     const rawLines = Array.isArray(body.lines) ? body.lines : [];
     if (rawLines.length === 0) throw new Error("At least one line is required.");

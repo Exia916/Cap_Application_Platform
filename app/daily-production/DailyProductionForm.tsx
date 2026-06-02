@@ -46,11 +46,13 @@ type LineFieldErrors = {
 
 type FormErrors = {
   salesOrder?: string;
+  machineNumber?: string;
   lines?: LineFieldErrors[];
 };
 
 function hasErrors(e: FormErrors) {
   if (e.salesOrder) return true;
+  if (e.machineNumber) return true;
   if (e.lines && e.lines.some((x) => Object.keys(x).length > 0)) return true;
   return false;
 }
@@ -66,6 +68,24 @@ function isValidSalesOrderInput(v: string) {
   return /^\d{7}.*$/.test(s);
 }
 
+function normalizeDepartment(value: unknown) {
+  return String(value ?? "")
+    .trim()
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .toUpperCase();
+}
+
+function isEmbroideryDepartmentValue(value: unknown) {
+  const department = normalizeDepartment(value);
+  return department === "EMBROIDERY" || department === "EMB";
+}
+
+function isAnnexEmbroideryDepartmentValue(value: unknown) {
+  const department = normalizeDepartment(value);
+  return department === "ANNEX EMBROIDERY" || department === "ANNEX EMB";
+}
+
 export default function DailyProductionForm(props: DailyProductionFormProps) {
   const { initialSubmissionId } = props;
 
@@ -77,6 +97,8 @@ export default function DailyProductionForm(props: DailyProductionFormProps) {
   const [headerNotes, setHeaderNotes] = useState("");
 
   const [annex, setAnnex] = useState(false);
+  const [isEmbroideryDepartment, setIsEmbroideryDepartment] = useState(false);
+  const [meLoaded, setMeLoaded] = useState(false);
   const annexTouchedRef = useRef(false);
   const originalEntryTsRef = useRef<string | null>(null);
 
@@ -95,11 +117,15 @@ export default function DailyProductionForm(props: DailyProductionFormProps) {
   const canRemove = useMemo(() => lines.length > 1, [lines.length]);
 
   const salesOrderRef = useRef<HTMLInputElement | null>(null);
+  const machineRef = useRef<HTMLInputElement | HTMLSelectElement | null>(null);
   const detailRefs = useRef<(HTMLInputElement | null)[]>([]);
   const locRefs = useRef<(HTMLSelectElement | null)[]>([]);
   const stitchesRefs = useRef<(HTMLInputElement | null)[]>([]);
   const piecesRefs = useRef<(HTMLInputElement | null)[]>([]);
   const jobberRefs = useRef<(HTMLInputElement | null)[]>([]);
+
+  const effectiveAnnex = isEmbroideryDepartment && !isEditMode ? false : annex;
+  const showAnnexField = meLoaded && !isEmbroideryDepartment;
 
   function inputClass(isError: boolean) {
     return `${isError ? "input input-error" : "input"}`;
@@ -180,15 +206,38 @@ export default function DailyProductionForm(props: DailyProductionFormProps) {
         if (!res.ok) return;
         const data = await res.json();
 
-        const dept = String((data as any)?.department ?? "").toLowerCase().trim();
-        const shouldAnnex = dept === "annex embroidery";
+        const dept =
+          (data as any)?.department ??
+          (data as any)?.user?.department ??
+          (data as any)?.departmentCode ??
+          (data as any)?.user?.departmentCode;
+
+        const isEmbroidery = isEmbroideryDepartmentValue(dept);
+        const shouldAnnex = isAnnexEmbroideryDepartmentValue(dept);
+
+        setIsEmbroideryDepartment(isEmbroidery);
+
+        if (isEmbroidery && !isEditMode) {
+          annexTouchedRef.current = true;
+          setAnnex(false);
+          setLines((prev) => prev.map((l) => ({ ...l, jobberSamplesRan: "" })));
+          setErrors((prev) => {
+            if (!prev.lines) return prev;
+            const next = prev.lines.map((le) => ({ ...le, jobberSamplesRan: undefined }));
+            return { ...prev, lines: next };
+          });
+          return;
+        }
 
         if (!annexTouchedRef.current) {
           setAnnex(shouldAnnex);
         }
-      } catch {}
+      } catch {
+      } finally {
+        setMeLoaded(true);
+      }
     })();
-  }, []);
+  }, [isEditMode]);
 
   useEffect(() => {
     if (!initialSubmissionId) return;
@@ -269,6 +318,8 @@ export default function DailyProductionForm(props: DailyProductionFormProps) {
       next.salesOrder = "Sales Order must begin with 7 digits.";
     }
 
+    if (!machineNumber.trim()) next.machineNumber = "Machine is required.";
+
     const lineErrors: LineFieldErrors[] = lines.map((l) => {
       const le: LineFieldErrors = {};
 
@@ -283,7 +334,7 @@ export default function DailyProductionForm(props: DailyProductionFormProps) {
       if (!String(l.pieces ?? "").trim()) le.pieces = "Pieces is required.";
       else if (!isWholeNumberString(l.pieces)) le.pieces = "Pieces must be a whole number.";
 
-      if (annex) {
+      if (effectiveAnnex) {
         if (!String(l.jobberSamplesRan ?? "").trim()) le.jobberSamplesRan = "Jobber Samples Ran is required.";
         else if (!isWholeNumberString(l.jobberSamplesRan)) {
           le.jobberSamplesRan = "Jobber Samples Ran must be a whole number.";
@@ -302,6 +353,10 @@ export default function DailyProductionForm(props: DailyProductionFormProps) {
     setErrors((prev) => ({ ...prev, salesOrder: undefined }));
   }
 
+  function clearMachineError() {
+    setErrors((prev) => ({ ...prev, machineNumber: undefined }));
+  }
+
   function clearLineFieldError(index: number, field: keyof LineFieldErrors) {
     setErrors((prev) => {
       if (!prev.lines) return prev;
@@ -314,6 +369,12 @@ export default function DailyProductionForm(props: DailyProductionFormProps) {
     if (v.salesOrder) {
       salesOrderRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
       salesOrderRef.current?.focus();
+      return;
+    }
+
+    if (v.machineNumber) {
+      machineRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+      machineRef.current?.focus();
       return;
     }
 
@@ -387,15 +448,15 @@ export default function DailyProductionForm(props: DailyProductionFormProps) {
         body: JSON.stringify({
           entryTs: isUpdate ? originalEntryTsRef.current : new Date().toISOString(),
           salesOrder: salesOrder.trim(),
-          machineNumber: machineNumber.trim() || null,
+          machineNumber: machineNumber.trim(),
           notes: headerNotes.trim() || null,
-          annex,
+          annex: effectiveAnnex,
           lines: lines.map((l) => ({
             detailNumber: l.detailNumber.trim(),
             embroideryLocation: l.embroideryLocation.trim(),
             stitches: l.stitches,
             pieces: l.pieces,
-            jobberSamplesRan: annex ? l.jobberSamplesRan : null,
+            jobberSamplesRan: effectiveAnnex ? l.jobberSamplesRan : null,
             is3d: !!l.is3d,
             isKnit: !!l.isKnit,
             detailComplete: !!l.detailComplete,
@@ -514,12 +575,20 @@ export default function DailyProductionForm(props: DailyProductionFormProps) {
             </div>
 
             <div className="md:col-span-3">
-              <label className="field-label">Machine</label>
+              <label className="field-label">
+                Machine <span className="text-red-600">*</span>
+              </label>
               {machineOptions.length > 0 ? (
                 <select
+                  ref={(el) => {
+                    machineRef.current = el;
+                  }}
                   value={machineNumber}
-                  onChange={(e) => setMachineNumber(e.target.value)}
-                  className={selectClass(false)}
+                  onChange={(e) => {
+                    setMachineNumber(e.target.value);
+                    clearMachineError();
+                  }}
+                  className={selectClass(!!errors.machineNumber)}
                 >
                   <option value="">Select…</option>
                   {machineOptions.map((m) => (
@@ -530,16 +599,24 @@ export default function DailyProductionForm(props: DailyProductionFormProps) {
                 </select>
               ) : (
                 <input
+                  ref={(el) => {
+                    machineRef.current = el;
+                  }}
                   value={machineNumber}
-                  onChange={(e) => setMachineNumber(e.target.value)}
-                  className={inputClass(false)}
+                  onChange={(e) => {
+                    setMachineNumber(e.target.value);
+                    clearMachineError();
+                  }}
+                  className={inputClass(!!errors.machineNumber)}
                   placeholder=""
                 />
               )}
+              {errors.machineNumber ? <div className="field-error">{errors.machineNumber}</div> : null}
               <div className="field-help">Machine assignment for this submission.</div>
             </div>
 
-            <div className="md:col-span-4">
+            {showAnnexField ? (
+              <div className="md:col-span-4">
               <label className="field-label">Submission Type</label>
               <div className="flex items-center gap-3 pt-2">
                 <label className="inline-flex items-center gap-3 text-sm font-medium select-none cursor-pointer">
@@ -565,10 +642,11 @@ export default function DailyProductionForm(props: DailyProductionFormProps) {
                   <span className="font-semibold">Annex</span>
                 </label>
               </div>
-              <div className="field-help">
-                When enabled, each line requires Jobber Samples Ran.
+                <div className="field-help">
+                  When enabled, each line requires Jobber Samples Ran.
+                </div>
               </div>
-            </div>
+            ) : null}
 
             <div className="md:col-span-12">
               <label className="field-label">Header Notes</label>
@@ -642,7 +720,7 @@ export default function DailyProductionForm(props: DailyProductionFormProps) {
                       {le.detailNumber ? <div className="field-error">{le.detailNumber}</div> : null}
                     </div>
 
-                    <div className={annex ? "md:col-span-3" : "md:col-span-4"}>
+                    <div className={effectiveAnnex ? "md:col-span-3" : "md:col-span-4"}>
                       <label className="field-label">
                         Location <span className="text-red-600">*</span>
                       </label>
@@ -707,7 +785,7 @@ export default function DailyProductionForm(props: DailyProductionFormProps) {
                       {le.pieces ? <div className="field-error">{le.pieces}</div> : null}
                     </div>
 
-                    {annex ? (
+                    {effectiveAnnex ? (
                       <div className="md:col-span-3">
                         <label className="field-label">
                           Jobber Samples Ran <span className="text-red-600">*</span>
