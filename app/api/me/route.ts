@@ -38,12 +38,19 @@ function emptyResponse(error = "Not authenticated"): MeResponse {
   };
 }
 
+function authUserId(auth: any): string | null {
+  const value = auth?.id ?? auth?.userId ?? auth?.sub ?? null;
+  return value == null ? null : String(value);
+}
+
 export async function GET(req: NextRequest) {
   const auth = await getAuthFromRequest(req as any);
 
   if (!auth) {
     return NextResponse.json(emptyResponse(), { status: 401 });
   }
+
+  const userId = authUserId(auth);
 
   const basePayload: FlatUser = {
     username: (auth as any).username ?? null,
@@ -60,14 +67,7 @@ export async function GET(req: NextRequest) {
           : null,
     role: (auth as any).role ?? null,
     department: (auth as any).department ?? null,
-    userId:
-      (auth as any).id != null
-        ? String((auth as any).id)
-        : (auth as any).userId != null
-          ? String((auth as any).userId)
-          : (auth as any).sub != null
-            ? String((auth as any).sub)
-            : null,
+    userId,
 
     email: null,
     emailNotificationsEnabled: true,
@@ -75,9 +75,7 @@ export async function GET(req: NextRequest) {
     managerUserId: null,
   };
 
-  const authUserId = (auth as any).id ? String((auth as any).id) : "";
-
-  if (!authUserId) {
+  if (!userId) {
     return NextResponse.json<MeResponse>(
       {
         ...basePayload,
@@ -89,6 +87,11 @@ export async function GET(req: NextRequest) {
 
   try {
     const { rows } = await db.query<{
+      username: string | null;
+      displayName: string | null;
+      employeeNumber: number | null;
+      role: string | null;
+      department: string | null;
       email: string | null;
       emailNotificationsEnabled: boolean;
       inAppNotificationsEnabled: boolean;
@@ -96,6 +99,11 @@ export async function GET(req: NextRequest) {
     }>(
       `
       SELECT
+        username,
+        display_name AS "displayName",
+        employee_number AS "employeeNumber",
+        role,
+        department,
         email,
         COALESCE(email_notifications_enabled, true) AS "emailNotificationsEnabled",
         COALESCE(in_app_notifications_enabled, true) AS "inAppNotificationsEnabled",
@@ -104,13 +112,18 @@ export async function GET(req: NextRequest) {
       WHERE id = $1
       LIMIT 1
       `,
-      [authUserId]
+      [userId]
     );
 
     const dbUser = rows[0];
 
     const payload: FlatUser = {
       ...basePayload,
+      username: dbUser?.username ?? basePayload.username,
+      displayName: dbUser?.displayName ?? basePayload.displayName,
+      employeeNumber: dbUser?.employeeNumber ?? basePayload.employeeNumber,
+      role: dbUser?.role ?? basePayload.role,
+      department: dbUser?.department ?? basePayload.department,
       email: dbUser?.email ?? null,
       emailNotificationsEnabled: dbUser?.emailNotificationsEnabled ?? true,
       inAppNotificationsEnabled: dbUser?.inAppNotificationsEnabled ?? true,
@@ -125,7 +138,7 @@ export async function GET(req: NextRequest) {
       { status: 200 }
     );
   } catch (err) {
-    console.error("GET /api/me notification fields failed:", err);
+    console.error("GET /api/me failed:", err);
 
     return NextResponse.json<MeResponse>(
       {
