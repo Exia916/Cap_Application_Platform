@@ -3,6 +3,7 @@ import { getAuthFromRequest } from "@/lib/auth";
 import {
   createAttachment,
   listAttachmentsByEntity,
+  normalizeAttachmentCategory,
 } from "@/lib/repositories/attachmentsRepo";
 import { saveUploadedFile, canInlineMimeType } from "@/lib/platform/fileStorage";
 import { createActivityHistory } from "@/lib/repositories/activityHistoryRepo";
@@ -57,6 +58,10 @@ export async function GET(req: NextRequest) {
     const { searchParams } = new URL(req.url);
     const entityType = String(searchParams.get("entityType") || "").trim();
     const entityId = String(searchParams.get("entityId") || "").trim();
+    const attachmentCategory = normalizeAttachmentCategory(
+      searchParams.get("attachmentCategory") ?? searchParams.get("category")
+    );
+
     const limitRaw = Number.parseInt(String(searchParams.get("limit") || "100"), 10);
     const limit = Number.isFinite(limitRaw) ? Math.min(Math.max(limitRaw, 1), 500) : 100;
 
@@ -73,6 +78,7 @@ export async function GET(req: NextRequest) {
 
     const rows = await listAttachmentsByEntity(entityType, entityId, limit, {
       includeOsSecure: canManageOsSecureFiles,
+      attachmentCategory,
     });
 
     const responseRows = rows.map((row) => ({
@@ -85,6 +91,7 @@ export async function GET(req: NextRequest) {
         rows: responseRows,
         supportsOsSecureFiles,
         canManageOsSecureFiles,
+        attachmentCategory,
       },
       { status: 200 }
     );
@@ -108,6 +115,9 @@ export async function POST(req: NextRequest) {
     const form = await req.formData();
     const entityType = String(form.get("entityType") || "").trim();
     const entityId = String(form.get("entityId") || "").trim();
+    const attachmentCategory = normalizeAttachmentCategory(
+      form.get("attachmentCategory") ?? form.get("category")
+    );
     const attachmentComment = String(form.get("attachmentComment") || "").trim() || null;
     const visibility = normalizeAttachmentVisibility(form.get("visibility"));
     const file = form.get("file");
@@ -151,6 +161,7 @@ export async function POST(req: NextRequest) {
     const row = await createAttachment({
       entityType,
       entityId,
+      attachmentCategory,
       originalFileName: stored.originalFileName,
       storedFileName: stored.storedFileName,
       storedRelativePath: stored.storedRelativePath,
@@ -184,6 +195,7 @@ export async function POST(req: NextRequest) {
         newValue: {
           attachmentId: row.id,
           originalFileName: row.originalFileName,
+          attachmentCategory: row.attachmentCategory,
           visibility: row.visibility,
           mimeType: row.mimeType,
           fileSizeBytes: row.fileSizeBytes,

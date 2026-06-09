@@ -27,6 +27,14 @@ export type SortDir = "asc" | "desc";
 
 const STATUS_TABLE = "public.inbound_shipment_statuses";
 const INVOICE_TYPE_TABLE = "public.inbound_shipment_invoice_types";
+const FORWARDER_TABLE = "public.inbound_shipment_forwarders";
+const SHIPMENT_TYPE_TABLE = "public.inbound_shipment_types";
+
+type LookupTableName =
+  | typeof STATUS_TABLE
+  | typeof INVOICE_TYPE_TABLE
+  | typeof FORWARDER_TABLE
+  | typeof SHIPMENT_TYPE_TABLE;
 
 export type InboundShipmentLine = {
   id: string;
@@ -36,7 +44,13 @@ export type InboundShipmentLine = {
   customerName: string | null;
   logo: string | null;
   tracking: string | null;
+
+  /**
+   * Legacy field. Line Destination has been removed from the active UI.
+   * Kept here only so older API consumers do not break if they still read it.
+   */
   lineDestination: string | null;
+
   quantity: number | null;
   cartonCount: number | null;
   notes: string | null;
@@ -88,12 +102,32 @@ export type InboundShipment = {
   sealNumber: string | null;
   port: string | null;
   carrier: string | null;
+
+  forwarderId: number | null;
+  forwarderCode: string | null;
+  forwarderLabel: string | null;
+
+  /**
+   * Compatibility alias for older UI/list code.
+   * Prefer forwarderLabel going forward.
+   */
   forwarder: string | null;
+
+  shipmentTypeId: number | null;
+  shipmentTypeCode: string | null;
+  shipmentTypeLabel: string | null;
+
+  /**
+   * Compatibility alias for older UI/list code.
+   * Prefer shipmentTypeLabel going forward.
+   */
   shipmentType: string | null;
+
   containerDestination: string;
   etd: string | null;
   eta: string | null;
   cartonCount: number | null;
+  tariffPercentage: number | null;
   notes: string | null;
   createdAt: string;
   createdBy: string | null;
@@ -121,7 +155,12 @@ export type InboundShipmentLineInput = {
   customerName?: string | null;
   logo?: string | null;
   tracking?: string | null;
+
+  /**
+   * Legacy input. Ignored going forward because Line Destination was removed.
+   */
   lineDestination?: string | null;
+
   quantity?: number | string | null;
   cartonCount?: number | string | null;
   notes?: string | null;
@@ -168,12 +207,36 @@ export type InboundShipmentWriteInput = {
   sealNumber?: string | null;
   port?: string | null;
   carrier?: string | null;
+
+  /**
+   * Preferred field going forward.
+   */
+  forwarderId?: number | string | null;
+
+  /**
+   * Compatibility fields for old payloads or temporary UI.
+   */
   forwarder?: string | null;
+  forwarderCode?: string | null;
+  forwarderLabel?: string | null;
+
+  /**
+   * Preferred field going forward.
+   */
+  shipmentTypeId?: number | string | null;
+
+  /**
+   * Compatibility fields for old payloads or temporary UI.
+   */
   shipmentType?: string | null;
+  shipmentTypeCode?: string | null;
+  shipmentTypeLabel?: string | null;
+
   containerDestination: string;
   etd?: string | null;
   eta?: string | null;
   cartonCount?: number | string | null;
+  tariffPercentage?: number | string | null;
   notes?: string | null;
   lines?: InboundShipmentLineInput[];
   invoices?: InboundShipmentInvoiceInput[];
@@ -229,7 +292,6 @@ type NormalizedLine = {
   customerName: string | null;
   logo: string | null;
   tracking: string | null;
-  lineDestination: string | null;
   quantity: number | null;
   cartonCount: number | null;
   notes: string | null;
@@ -245,6 +307,13 @@ type NormalizedInvoice = {
   sortOrder: number;
 };
 
+type ResolvedOptionalLookup = {
+  id: number | null;
+  code: string | null;
+  label: string | null;
+  legacyText: string | null;
+};
+
 type NormalizedInput = {
   statusId: number;
   statusCode: string;
@@ -255,12 +324,22 @@ type NormalizedInput = {
   sealNumber: string | null;
   port: string | null;
   carrier: string | null;
-  forwarder: string | null;
-  shipmentType: string | null;
+
+  forwarderId: number | null;
+  forwarderCode: string | null;
+  forwarderLabel: string | null;
+  forwarderLegacyText: string | null;
+
+  shipmentTypeId: number | null;
+  shipmentTypeCode: string | null;
+  shipmentTypeLabel: string | null;
+  shipmentTypeLegacyText: string | null;
+
   containerDestination: string;
   etd: string | null;
   eta: string | null;
   cartonCount: number | null;
+  tariffPercentage: number | null;
   notes: string | null;
   lines: NormalizedLine[];
   invoices: NormalizedInvoice[];
@@ -319,6 +398,31 @@ function cleanNonNegativeNumber(value: unknown, label: string): number | null {
   return n;
 }
 
+function cleanNonNegativeDecimal(
+  value: unknown,
+  label: string,
+  maxDecimals = 2
+): number | null {
+  if (value === null || value === undefined || value === "") return null;
+
+  const raw = String(value).trim().replace(/%$/, "").trim();
+  if (!raw) return null;
+
+  const decimalRegex = new RegExp(`^\\d+(\\.\\d{1,${maxDecimals}})?$`);
+
+  if (!decimalRegex.test(raw)) {
+    throw new Error(`${label} must be a non-negative number with up to ${maxDecimals} decimals.`);
+  }
+
+  const n = Number(raw);
+
+  if (!Number.isFinite(n) || n < 0) {
+    throw new Error(`${label} must be a non-negative number.`);
+  }
+
+  return n;
+}
+
 function cleanPositiveInt(value: unknown, label: string): number | null {
   if (value === null || value === undefined || value === "") return null;
 
@@ -340,7 +444,7 @@ function tokenToNumericId(token: string): number | null {
 
 async function getLookupById(
   queryable: Queryable,
-  tableName: typeof STATUS_TABLE | typeof INVOICE_TYPE_TABLE,
+  tableName: LookupTableName,
   id: number
 ): Promise<InboundShipmentLookupOption | null> {
   const { rows } = await queryable.query<InboundShipmentLookupOption>(
@@ -363,7 +467,7 @@ async function getLookupById(
 
 async function getLookupByToken(
   queryable: Queryable,
-  tableName: typeof STATUS_TABLE | typeof INVOICE_TYPE_TABLE,
+  tableName: LookupTableName,
   token: string
 ): Promise<InboundShipmentLookupOption | null> {
   const numericId = tokenToNumericId(token);
@@ -405,7 +509,8 @@ async function resolveStatus(
     return found;
   }
 
-  const statusToken = cleanText(input.statusCode) ?? cleanText(input.statusLabel) ?? cleanText(input.status);
+  const statusToken =
+    cleanText(input.statusCode) ?? cleanText(input.statusLabel) ?? cleanText(input.status);
 
   if (!statusToken) {
     throw new Error("Status is required.");
@@ -448,11 +553,78 @@ async function resolveInvoiceTypeId(
   return found.id;
 }
 
+async function resolveOptionalLookup(
+  queryable: Queryable,
+  tableName: LookupTableName,
+  idValue: unknown,
+  tokens: unknown[],
+  label: string
+): Promise<ResolvedOptionalLookup> {
+  const lookupId = cleanPositiveInt(idValue, label);
+
+  if (lookupId != null) {
+    const found = await getLookupById(queryable, tableName, lookupId);
+    if (!found) throw new Error(`Invalid ${label.toLowerCase()}.`);
+
+    return {
+      id: found.id,
+      code: found.code,
+      label: found.label,
+      legacyText: found.label,
+    };
+  }
+
+  const token = tokens.map((x) => cleanText(x)).find((x): x is string => Boolean(x));
+
+  if (!token) {
+    return {
+      id: null,
+      code: null,
+      label: null,
+      legacyText: null,
+    };
+  }
+
+  const found = await getLookupByToken(queryable, tableName, token);
+
+  if (!found) {
+    return {
+      id: null,
+      code: null,
+      label: null,
+      legacyText: token,
+    };
+  }
+
+  return {
+    id: found.id,
+    code: found.code,
+    label: found.label,
+    legacyText: found.label,
+  };
+}
+
 async function normalizeInput(
   queryable: Queryable,
   input: InboundShipmentWriteInput
 ): Promise<NormalizedInput> {
   const status = await resolveStatus(queryable, input);
+
+  const forwarder = await resolveOptionalLookup(
+    queryable,
+    FORWARDER_TABLE,
+    input.forwarderId,
+    [input.forwarderCode, input.forwarderLabel, input.forwarder],
+    "Forwarder"
+  );
+
+  const shipmentType = await resolveOptionalLookup(
+    queryable,
+    SHIPMENT_TYPE_TABLE,
+    input.shipmentTypeId,
+    [input.shipmentTypeCode, input.shipmentTypeLabel, input.shipmentType],
+    "Shipment Type"
+  );
 
   const containerDestination = cleanRequiredText(
     input.containerDestination,
@@ -466,7 +638,6 @@ async function normalizeInput(
       customerName: cleanText(line.customerName),
       logo: cleanText(line.logo),
       tracking: cleanText(line.tracking),
-      lineDestination: cleanText(line.lineDestination),
       quantity: cleanNonNegativeInt(line.quantity, "Quantity"),
       cartonCount: cleanNonNegativeInt(line.cartonCount, "Line Carton Count"),
       notes: cleanText(line.notes),
@@ -479,7 +650,6 @@ async function normalizeInput(
           line.customerName ||
           line.logo ||
           line.tracking ||
-          line.lineDestination ||
           line.quantity != null ||
           line.cartonCount != null ||
           line.notes
@@ -541,12 +711,22 @@ async function normalizeInput(
     sealNumber: cleanText(input.sealNumber),
     port: cleanText(input.port),
     carrier: cleanText(input.carrier),
-    forwarder: cleanText(input.forwarder),
-    shipmentType: cleanText(input.shipmentType),
+
+    forwarderId: forwarder.id,
+    forwarderCode: forwarder.code,
+    forwarderLabel: forwarder.label,
+    forwarderLegacyText: forwarder.legacyText,
+
+    shipmentTypeId: shipmentType.id,
+    shipmentTypeCode: shipmentType.code,
+    shipmentTypeLabel: shipmentType.label,
+    shipmentTypeLegacyText: shipmentType.legacyText,
+
     containerDestination,
     etd: cleanDate(input.etd),
     eta: cleanDate(input.eta),
     cartonCount: cleanNonNegativeInt(input.cartonCount, "Carton Count"),
+    tariffPercentage: cleanNonNegativeDecimal(input.tariffPercentage, "Tariff Percentage", 2),
     notes: cleanText(input.notes),
     lines,
     invoices,
@@ -580,12 +760,22 @@ function shipmentSelectSql() {
       s.seal_number AS "sealNumber",
       s.port,
       s.carrier,
-      s.forwarder,
-      s.shipment_type AS "shipmentType",
+
+      s.forwarder_id AS "forwarderId",
+      fw.code AS "forwarderCode",
+      fw.label AS "forwarderLabel",
+      COALESCE(fw.label, s.forwarder) AS "forwarder",
+
+      s.shipment_type_id AS "shipmentTypeId",
+      typ.code AS "shipmentTypeCode",
+      typ.label AS "shipmentTypeLabel",
+      COALESCE(typ.label, s.shipment_type) AS "shipmentType",
+
       s.container_destination AS "containerDestination",
       s.etd,
       s.eta,
       s.carton_count AS "cartonCount",
+      s.tariff_percentage::float AS "tariffPercentage",
       s.notes,
       s.created_at AS "createdAt",
       s.created_by AS "createdBy",
@@ -598,6 +788,10 @@ function shipmentSelectSql() {
     FROM public.inbound_shipments s
     JOIN public.inbound_shipment_statuses st
       ON st.id = s.status_id
+    LEFT JOIN public.inbound_shipment_forwarders fw
+      ON fw.id = s.forwarder_id
+    LEFT JOIN public.inbound_shipment_types typ
+      ON typ.id = s.shipment_type_id
   `;
 }
 
@@ -722,7 +916,11 @@ function buildWhere(filters: InboundShipmentListFilters) {
         OR COALESCE(s.seal_number, '') ILIKE ${p}
         OR COALESCE(s.port, '') ILIKE ${p}
         OR COALESCE(s.carrier, '') ILIKE ${p}
+        OR COALESCE(fw.code, '') ILIKE ${p}
+        OR COALESCE(fw.label, '') ILIKE ${p}
         OR COALESCE(s.forwarder, '') ILIKE ${p}
+        OR COALESCE(typ.code, '') ILIKE ${p}
+        OR COALESCE(typ.label, '') ILIKE ${p}
         OR COALESCE(s.shipment_type, '') ILIKE ${p}
         OR COALESCE(s.container_destination, '') ILIKE ${p}
         OR COALESCE(s.notes, '') ILIKE ${p}
@@ -735,7 +933,6 @@ function buildWhere(filters: InboundShipmentListFilters) {
               OR COALESCE(lx.customer_name, '') ILIKE ${p}
               OR COALESCE(lx.logo, '') ILIKE ${p}
               OR COALESCE(lx.tracking, '') ILIKE ${p}
-              OR COALESCE(lx.line_destination, '') ILIKE ${p}
             )
         )
         OR EXISTS (
@@ -762,8 +959,13 @@ function buildWhere(filters: InboundShipmentListFilters) {
   addIlikeFilter(where, params, "s.hbl_number", filters.hblNumber);
   addIlikeFilter(where, params, "s.port", filters.port);
   addIlikeFilter(where, params, "s.carrier", filters.carrier);
-  addIlikeFilter(where, params, "s.forwarder", filters.forwarder);
-  addIlikeFilter(where, params, "s.shipment_type", filters.shipmentType);
+  addIlikeFilter(where, params, "COALESCE(fw.label, s.forwarder, '')", filters.forwarder);
+  addIlikeFilter(
+    where,
+    params,
+    "COALESCE(typ.label, s.shipment_type, '')",
+    filters.shipmentType
+  );
   addIlikeFilter(where, params, "s.container_destination", filters.containerDestination);
 
   if (filters.etdFrom) {
@@ -837,12 +1039,13 @@ function resolveOrderBy(sortBy?: string | null, sortDir?: SortDir | null) {
     hblNumber: `s.hbl_number ${dir} NULLS LAST`,
     port: `s.port ${dir} NULLS LAST`,
     carrier: `s.carrier ${dir} NULLS LAST`,
-    forwarder: `s.forwarder ${dir} NULLS LAST`,
-    shipmentType: `s.shipment_type ${dir} NULLS LAST`,
+    forwarder: `COALESCE(fw.label, s.forwarder) ${dir} NULLS LAST`,
+    shipmentType: `COALESCE(typ.label, s.shipment_type) ${dir} NULLS LAST`,
     containerDestination: `s.container_destination ${dir}`,
     etd: `s.etd ${dir} NULLS LAST`,
     eta: `s.eta ${dir} NULLS LAST`,
     cartonCount: `s.carton_count ${dir} NULLS LAST`,
+    tariffPercentage: `s.tariff_percentage ${dir} NULLS LAST`,
     lineCount: `"lineCount" ${dir}`,
     invoiceCount: `"invoiceCount" ${dir}`,
     createdAt: `s.created_at ${dir}`,
@@ -931,13 +1134,12 @@ async function insertLines(
         customer_name,
         logo,
         tracking,
-        line_destination,
         quantity,
         carton_count,
         notes,
         sort_order
       )
-      VALUES ($1,$2,$3::bigint,$4,$5,$6,$7,$8,$9,$10,$11)
+      VALUES ($1,$2,$3::bigint,$4,$5,$6,$7,$8,$9,$10)
       `,
       [
         inboundShipmentId,
@@ -946,7 +1148,6 @@ async function insertLines(
         line.customerName,
         line.logo,
         line.tracking,
-        line.lineDestination,
         line.quantity,
         line.cartonCount,
         line.notes,
@@ -1003,10 +1204,14 @@ export async function listInboundShipments(
 
   const countResult = await db.query<{ total: number }>(
     `
-    SELECT COUNT(*)::int AS total
+    SELECT COUNT(DISTINCT s.id)::int AS total
     FROM public.inbound_shipments s
     JOIN public.inbound_shipment_statuses st
       ON st.id = s.status_id
+    LEFT JOIN public.inbound_shipment_forwarders fw
+      ON fw.id = s.forwarder_id
+    LEFT JOIN public.inbound_shipment_types typ
+      ON typ.id = s.shipment_type_id
     ${whereSql}
     `,
     params
@@ -1031,12 +1236,22 @@ export async function listInboundShipments(
       s.seal_number AS "sealNumber",
       s.port,
       s.carrier,
-      s.forwarder,
-      s.shipment_type AS "shipmentType",
+
+      s.forwarder_id AS "forwarderId",
+      fw.code AS "forwarderCode",
+      fw.label AS "forwarderLabel",
+      COALESCE(fw.label, s.forwarder) AS "forwarder",
+
+      s.shipment_type_id AS "shipmentTypeId",
+      typ.code AS "shipmentTypeCode",
+      typ.label AS "shipmentTypeLabel",
+      COALESCE(typ.label, s.shipment_type) AS "shipmentType",
+
       s.container_destination AS "containerDestination",
       s.etd,
       s.eta,
       s.carton_count AS "cartonCount",
+      s.tariff_percentage::float AS "tariffPercentage",
       s.notes,
       s.created_at AS "createdAt",
       s.created_by AS "createdBy",
@@ -1052,12 +1267,16 @@ export async function listInboundShipments(
     FROM public.inbound_shipments s
     JOIN public.inbound_shipment_statuses st
       ON st.id = s.status_id
+    LEFT JOIN public.inbound_shipment_forwarders fw
+      ON fw.id = s.forwarder_id
+    LEFT JOIN public.inbound_shipment_types typ
+      ON typ.id = s.shipment_type_id
     LEFT JOIN public.inbound_shipment_lines l
       ON l.inbound_shipment_id = s.id
     LEFT JOIN public.inbound_shipment_invoices i
       ON i.inbound_shipment_id = s.id
     ${whereSql}
-    GROUP BY s.id, st.id
+    GROUP BY s.id, st.id, fw.id, typ.id
     ORDER BY ${orderBy}
     LIMIT $${dataParams.length - 1}
     OFFSET $${dataParams.length}
@@ -1150,17 +1369,20 @@ export async function createInboundShipment(
         seal_number,
         port,
         carrier,
+        forwarder_id,
         forwarder,
+        shipment_type_id,
         shipment_type,
         container_destination,
         etd,
         eta,
         carton_count,
+        tariff_percentage,
         notes,
         created_by,
         updated_by
       )
-      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::date,$12::date,$13,$14,$15,$15)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13::date,$14::date,$15,$16,$17,$18,$18)
       RETURNING
         id,
         inbound_shipment_number AS "inboundShipmentNumber"
@@ -1173,12 +1395,15 @@ export async function createInboundShipment(
         normalized.sealNumber,
         normalized.port,
         normalized.carrier,
-        normalized.forwarder,
-        normalized.shipmentType,
+        normalized.forwarderId,
+        normalized.forwarderLegacyText,
+        normalized.shipmentTypeId,
+        normalized.shipmentTypeLegacyText,
         normalized.containerDestination,
         normalized.etd,
         normalized.eta,
         normalized.cartonCount,
+        normalized.tariffPercentage,
         normalized.notes,
         normalized.changedBy,
       ]
@@ -1199,6 +1424,13 @@ export async function createInboundShipment(
         statusId: normalized.statusId,
         statusCode: normalized.statusCode,
         statusLabel: normalized.statusLabel,
+        forwarderId: normalized.forwarderId,
+        forwarderCode: normalized.forwarderCode,
+        forwarderLabel: normalized.forwarderLabel,
+        shipmentTypeId: normalized.shipmentTypeId,
+        shipmentTypeCode: normalized.shipmentTypeCode,
+        shipmentTypeLabel: normalized.shipmentTypeLabel,
+        tariffPercentage: normalized.tariffPercentage,
         lineCount: normalized.lines.length,
         invoiceCount: normalized.invoices.length,
       },
@@ -1275,15 +1507,18 @@ export async function updateInboundShipment(
         seal_number = $6,
         port = $7,
         carrier = $8,
-        forwarder = $9,
-        shipment_type = $10,
-        container_destination = $11,
-        etd = $12::date,
-        eta = $13::date,
-        carton_count = $14,
-        notes = $15,
+        forwarder_id = $9,
+        forwarder = $10,
+        shipment_type_id = $11,
+        shipment_type = $12,
+        container_destination = $13,
+        etd = $14::date,
+        eta = $15::date,
+        carton_count = $16,
+        tariff_percentage = $17,
+        notes = $18,
         updated_at = now(),
-        updated_by = $16
+        updated_by = $19
       WHERE id = $1
         AND COALESCE(is_voided, false) = false
       `,
@@ -1296,12 +1531,15 @@ export async function updateInboundShipment(
         normalized.sealNumber,
         normalized.port,
         normalized.carrier,
-        normalized.forwarder,
-        normalized.shipmentType,
+        normalized.forwarderId,
+        normalized.forwarderLegacyText,
+        normalized.shipmentTypeId,
+        normalized.shipmentTypeLegacyText,
         normalized.containerDestination,
         normalized.etd,
         normalized.eta,
         normalized.cartonCount,
+        normalized.tariffPercentage,
         normalized.notes,
         normalized.changedBy,
       ]
@@ -1356,6 +1594,13 @@ export async function updateInboundShipment(
         statusId: normalized.statusId,
         statusCode: normalized.statusCode,
         statusLabel: normalized.statusLabel,
+        forwarderId: normalized.forwarderId,
+        forwarderCode: normalized.forwarderCode,
+        forwarderLabel: normalized.forwarderLabel,
+        shipmentTypeId: normalized.shipmentTypeId,
+        shipmentTypeCode: normalized.shipmentTypeCode,
+        shipmentTypeLabel: normalized.shipmentTypeLabel,
+        tariffPercentage: normalized.tariffPercentage,
         lineCount: normalized.lines.length,
         invoiceCount: normalized.invoices.length,
       },
@@ -1522,6 +1767,46 @@ export async function listInboundShipmentInvoiceTypeOptions(): Promise<
       sort_order AS "sortOrder",
       is_active AS "isActive"
     FROM public.inbound_shipment_invoice_types
+    WHERE COALESCE(is_active, true) = true
+    ORDER BY sort_order ASC, label ASC
+    `
+  );
+
+  return rows;
+}
+
+export async function listInboundShipmentForwarderOptions(): Promise<
+  InboundShipmentLookupOption[]
+> {
+  const { rows } = await db.query<InboundShipmentLookupOption>(
+    `
+    SELECT
+      id,
+      code,
+      label,
+      sort_order AS "sortOrder",
+      is_active AS "isActive"
+    FROM public.inbound_shipment_forwarders
+    WHERE COALESCE(is_active, true) = true
+    ORDER BY sort_order ASC, label ASC
+    `
+  );
+
+  return rows;
+}
+
+export async function listInboundShipmentTypeOptions(): Promise<
+  InboundShipmentLookupOption[]
+> {
+  const { rows } = await db.query<InboundShipmentLookupOption>(
+    `
+    SELECT
+      id,
+      code,
+      label,
+      sort_order AS "sortOrder",
+      is_active AS "isActive"
+    FROM public.inbound_shipment_types
     WHERE COALESCE(is_active, true) = true
     ORDER BY sort_order ASC, label ASC
     `

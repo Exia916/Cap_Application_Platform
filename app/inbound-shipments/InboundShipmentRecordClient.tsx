@@ -6,7 +6,11 @@ import { useRouter } from "next/navigation";
 import AttachmentsPanel from "@/components/platform/AttachmentsPanel";
 import CommentsPanel from "@/components/platform/CommentsPanel";
 import ActivityHistoryPanel from "@/components/platform/ActivityHistoryPanel";
-import { INBOUND_SHIPMENT_ENTITY_TYPE } from "@/lib/inboundShipments/constants";
+import {
+  INBOUND_SHIPMENT_ATTACHMENT_CATEGORY_GENERAL,
+  INBOUND_SHIPMENT_ATTACHMENT_CATEGORY_PURCHASE_ORDER,
+  INBOUND_SHIPMENT_ENTITY_TYPE,
+} from "@/lib/inboundShipments/constants";
 
 type MeResponse = {
   username?: string | null;
@@ -30,12 +34,22 @@ type ShipmentDetail = {
   sealNumber: string | null;
   port: string | null;
   carrier: string | null;
+
+  forwarderId?: number | null;
+  forwarderCode?: string | null;
+  forwarderLabel?: string | null;
   forwarder: string | null;
+
+  shipmentTypeId?: number | null;
+  shipmentTypeCode?: string | null;
+  shipmentTypeLabel?: string | null;
   shipmentType: string | null;
+
   containerDestination: string | null;
   etd: string | null;
   eta: string | null;
   cartonCount: number | null;
+  tariffPercentage?: number | string | null;
   notes: string | null;
 
   createdAt: string;
@@ -55,7 +69,7 @@ type ShipmentDetail = {
     customerName: string | null;
     logo: string | null;
     tracking: string | null;
-    lineDestination: string | null;
+    lineDestination?: string | null;
     quantity: number | null;
     cartonCount: number | null;
     notes: string | null;
@@ -110,6 +124,15 @@ function fmtMoney(v?: number | null): string {
     style: "currency",
     currency: "USD",
   });
+}
+
+function fmtPercent(v?: number | string | null): string {
+  if (v == null || v === "") return "";
+
+  const n = Number(v);
+  if (!Number.isFinite(n)) return "";
+
+  return `${n.toFixed(2)}%`;
 }
 
 function statusBadge(row: ShipmentDetail) {
@@ -307,6 +330,9 @@ export default function InboundShipmentRecordClient({ id }: { id: string }) {
     );
   }
 
+  const forwarderDisplay = row.forwarderLabel || row.forwarder;
+  const shipmentTypeDisplay = row.shipmentTypeLabel || row.shipmentType;
+
   return (
     <main className="record-shell">
       <div className="record-header">
@@ -396,9 +422,10 @@ export default function InboundShipmentRecordClient({ id }: { id: string }) {
             <MetaItem label="HBL #" value={row.hblNumber} />
             <MetaItem label="Port" value={row.port} />
             <MetaItem label="Carrier" value={row.carrier} />
-            <MetaItem label="Forwarder" value={row.forwarder} />
-            <MetaItem label="Shipment Type" value={row.shipmentType} />
+            <MetaItem label="Forwarder" value={forwarderDisplay} />
+            <MetaItem label="Shipment Type" value={shipmentTypeDisplay} />
             <MetaItem label="Container Destination" value={row.containerDestination} />
+            <MetaItem label="Tariff %" value={fmtPercent(row.tariffPercentage)} />
             <MetaItem label="ETD" value={fmtDateOnly(row.etd)} />
             <MetaItem label="ETA" value={fmtDateOnly(row.eta)} />
             <MetaItem label="Carton Count" value={row.cartonCount} />
@@ -466,7 +493,6 @@ export default function InboundShipmentRecordClient({ id }: { id: string }) {
                       <th>Customer</th>
                       <th>Logo</th>
                       <th>Tracking</th>
-                      <th>Line Destination</th>
                       <th>Quantity</th>
                       <th>Carton Count</th>
                       <th>Notes</th>
@@ -479,7 +505,6 @@ export default function InboundShipmentRecordClient({ id }: { id: string }) {
                         <td>{line.customerName || "—"}</td>
                         <td>{line.logo || "—"}</td>
                         <td>{line.tracking || "—"}</td>
-                        <td>{line.lineDestination || "—"}</td>
                         <td>{line.quantity ?? "—"}</td>
                         <td>{line.cartonCount ?? "—"}</td>
                         <td>{line.notes || "—"}</td>
@@ -494,10 +519,30 @@ export default function InboundShipmentRecordClient({ id }: { id: string }) {
 
         <section className="record-section-card">
           <div className="record-section-header">
-            <h2 className="record-section-title">Attachments</h2>
+            <h2 className="record-section-title">Shipment Attachments</h2>
           </div>
 
-          <AttachmentsPanel entityType={INBOUND_SHIPMENT_ENTITY_TYPE} entityId={row.id} />
+          <AttachmentsPanel
+            entityType={INBOUND_SHIPMENT_ENTITY_TYPE}
+            entityId={row.id}
+            attachmentCategory={INBOUND_SHIPMENT_ATTACHMENT_CATEGORY_GENERAL}
+            emptyMessage="No shipment attachments yet."
+            dialogTitle="Shipment Attachment"
+          />
+        </section>
+
+        <section className="record-section-card">
+          <div className="record-section-header">
+            <h2 className="record-section-title">Purchase Order Attachments</h2>
+          </div>
+
+          <AttachmentsPanel
+            entityType={INBOUND_SHIPMENT_ENTITY_TYPE}
+            entityId={row.id}
+            attachmentCategory={INBOUND_SHIPMENT_ATTACHMENT_CATEGORY_PURCHASE_ORDER}
+            emptyMessage="No purchase order attachments yet."
+            dialogTitle="Purchase Order Attachment"
+          />
         </section>
 
         <section className="record-section-card">

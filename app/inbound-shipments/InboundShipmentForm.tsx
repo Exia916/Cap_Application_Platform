@@ -9,6 +9,8 @@ import {
 } from "react";
 import { useRouter } from "next/navigation";
 
+const LEGACY_LOOKUP_VALUE = "__legacy__";
+
 type LookupOption = {
   id: number;
   code: string;
@@ -31,7 +33,6 @@ type LineForm = {
   customerName: string;
   logo: string;
   tracking: string;
-  lineDestination: string;
   quantity: string;
   cartonCount: string;
   notes: string;
@@ -57,26 +58,38 @@ type LoadedShipment = {
   sealNumber: string | null;
   port: string | null;
   carrier: string | null;
+
+  forwarderId?: number | null;
+  forwarderCode?: string | null;
+  forwarderLabel?: string | null;
   forwarder: string | null;
+
+  shipmentTypeId?: number | null;
+  shipmentTypeCode?: string | null;
+  shipmentTypeLabel?: string | null;
   shipmentType: string | null;
+
   containerDestination: string | null;
   etd: string | null;
   eta: string | null;
   cartonCount: number | null;
+  tariffPercentage?: number | string | null;
   notes: string | null;
   isVoided: boolean;
   voidReason: string | null;
+
   lines: Array<{
     poNumber: string | null;
     customerId: string | null;
     customerName: string | null;
     logo: string | null;
     tracking: string | null;
-    lineDestination: string | null;
+    lineDestination?: string | null;
     quantity: number | null;
     cartonCount: number | null;
     notes: string | null;
   }>;
+
   invoices: Array<{
     invoiceNumber: string | null;
     invoiceTypeId: number | null;
@@ -94,6 +107,7 @@ type FormErrors = {
   statusId?: string;
   containerDestination?: string;
   cartonCount?: string;
+  tariffPercentage?: string;
   lines?: string;
   invoices?: string;
 };
@@ -105,7 +119,6 @@ function emptyLine(): LineForm {
     customerName: "",
     logo: "",
     tracking: "",
-    lineDestination: "",
     quantity: "",
     cartonCount: "",
     notes: "",
@@ -128,6 +141,12 @@ function dateOnly(v?: string | null) {
   if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
   if (/^\d{4}-\d{2}-\d{2}T/.test(s)) return s.slice(0, 10);
   return "";
+}
+
+function formatDecimalInput(v?: number | string | null) {
+  if (v === null || v === undefined || v === "") return "";
+  const n = Number(v);
+  return Number.isFinite(n) ? String(n) : "";
 }
 
 function isNonNegativeIntegerString(v: string) {
@@ -364,6 +383,8 @@ export default function InboundShipmentForm({ initialShipmentId }: Props) {
 
   const [statusOptions, setStatusOptions] = useState<LookupOption[]>([]);
   const [invoiceTypeOptions, setInvoiceTypeOptions] = useState<LookupOption[]>([]);
+  const [forwarderOptions, setForwarderOptions] = useState<LookupOption[]>([]);
+  const [shipmentTypeOptions, setShipmentTypeOptions] = useState<LookupOption[]>([]);
 
   const [loading, setLoading] = useState(isEditMode);
   const [saving, setSaving] = useState(false);
@@ -380,12 +401,18 @@ export default function InboundShipmentForm({ initialShipmentId }: Props) {
   const [sealNumber, setSealNumber] = useState("");
   const [port, setPort] = useState("");
   const [carrier, setCarrier] = useState("");
-  const [forwarder, setForwarder] = useState("");
-  const [shipmentType, setShipmentType] = useState("");
+
+  const [forwarderId, setForwarderId] = useState("");
+  const [forwarderLegacyText, setForwarderLegacyText] = useState("");
+
+  const [shipmentTypeId, setShipmentTypeId] = useState("");
+  const [shipmentTypeLegacyText, setShipmentTypeLegacyText] = useState("");
+
   const [containerDestination, setContainerDestination] = useState("");
   const [etd, setEtd] = useState("");
   const [eta, setEta] = useState("");
   const [cartonCount, setCartonCount] = useState("");
+  const [tariffPercentage, setTariffPercentage] = useState("");
   const [notes, setNotes] = useState("");
 
   const [lines, setLines] = useState<LineForm[]>([emptyLine()]);
@@ -400,19 +427,30 @@ export default function InboundShipmentForm({ initialShipmentId }: Props) {
   useEffect(() => {
     async function loadLookups() {
       try {
-        const [statusRes, invoiceTypeRes] = await Promise.all([
-          fetch("/api/inbound-shipments/lookups/statuses", {
-            cache: "no-store",
-            credentials: "include",
-          }),
-          fetch("/api/inbound-shipments/lookups/invoice-types", {
-            cache: "no-store",
-            credentials: "include",
-          }),
-        ]);
+        const [statusRes, invoiceTypeRes, forwarderRes, shipmentTypeRes] =
+          await Promise.all([
+            fetch("/api/inbound-shipments/lookups/statuses", {
+              cache: "no-store",
+              credentials: "include",
+            }),
+            fetch("/api/inbound-shipments/lookups/invoice-types", {
+              cache: "no-store",
+              credentials: "include",
+            }),
+            fetch("/api/inbound-shipments/lookups/forwarders", {
+              cache: "no-store",
+              credentials: "include",
+            }),
+            fetch("/api/inbound-shipments/lookups/shipment-types", {
+              cache: "no-store",
+              credentials: "include",
+            }),
+          ]);
 
         const statusData = await statusRes.json().catch(() => ({}));
         const invoiceTypeData = await invoiceTypeRes.json().catch(() => ({}));
+        const forwarderData = await forwarderRes.json().catch(() => ({}));
+        const shipmentTypeData = await shipmentTypeRes.json().catch(() => ({}));
 
         if (statusRes.ok) {
           setStatusOptions(Array.isArray(statusData?.rows) ? statusData.rows : []);
@@ -421,6 +459,18 @@ export default function InboundShipmentForm({ initialShipmentId }: Props) {
         if (invoiceTypeRes.ok) {
           setInvoiceTypeOptions(
             Array.isArray(invoiceTypeData?.rows) ? invoiceTypeData.rows : []
+          );
+        }
+
+        if (forwarderRes.ok) {
+          setForwarderOptions(
+            Array.isArray(forwarderData?.rows) ? forwarderData.rows : []
+          );
+        }
+
+        if (shipmentTypeRes.ok) {
+          setShipmentTypeOptions(
+            Array.isArray(shipmentTypeData?.rows) ? shipmentTypeData.rows : []
           );
         }
       } catch {
@@ -482,12 +532,34 @@ export default function InboundShipmentForm({ initialShipmentId }: Props) {
         setSealNumber(row.sealNumber ?? "");
         setPort(row.port ?? "");
         setCarrier(row.carrier ?? "");
-        setForwarder(row.forwarder ?? "");
-        setShipmentType(row.shipmentType ?? "");
+
+        if (row.forwarderId) {
+          setForwarderId(String(row.forwarderId));
+          setForwarderLegacyText("");
+        } else if (row.forwarder) {
+          setForwarderId(LEGACY_LOOKUP_VALUE);
+          setForwarderLegacyText(row.forwarder);
+        } else {
+          setForwarderId("");
+          setForwarderLegacyText("");
+        }
+
+        if (row.shipmentTypeId) {
+          setShipmentTypeId(String(row.shipmentTypeId));
+          setShipmentTypeLegacyText("");
+        } else if (row.shipmentType) {
+          setShipmentTypeId(LEGACY_LOOKUP_VALUE);
+          setShipmentTypeLegacyText(row.shipmentType);
+        } else {
+          setShipmentTypeId("");
+          setShipmentTypeLegacyText("");
+        }
+
         setContainerDestination(row.containerDestination ?? "");
         setEtd(dateOnly(row.etd));
         setEta(dateOnly(row.eta));
         setCartonCount(row.cartonCount != null ? String(row.cartonCount) : "");
+        setTariffPercentage(formatDecimalInput(row.tariffPercentage));
         setNotes(row.notes ?? "");
 
         setLines(
@@ -498,7 +570,6 @@ export default function InboundShipmentForm({ initialShipmentId }: Props) {
                 customerName: line.customerName ?? "",
                 logo: line.logo ?? "",
                 tracking: line.tracking ?? "",
-                lineDestination: line.lineDestination ?? "",
                 quantity: line.quantity != null ? String(line.quantity) : "",
                 cartonCount:
                   line.cartonCount != null ? String(line.cartonCount) : "",
@@ -571,6 +642,11 @@ export default function InboundShipmentForm({ initialShipmentId }: Props) {
       next.cartonCount = "Carton Count must be a non-negative whole number.";
     }
 
+    if (!isNonNegativeNumberString(tariffPercentage)) {
+      next.tariffPercentage =
+        "Tariff % must be a non-negative number with up to 2 decimals.";
+    }
+
     const selectedStatus = statusOptions.find((s) => String(s.id) === String(statusId));
     const isDraft = selectedStatus?.code === "DRAFT";
 
@@ -580,7 +656,6 @@ export default function InboundShipmentForm({ initialShipmentId }: Props) {
           line.customerName.trim() ||
           line.logo.trim() ||
           line.tracking.trim() ||
-          line.lineDestination.trim() ||
           line.quantity.trim() ||
           line.cartonCount.trim() ||
           line.notes.trim()
@@ -651,6 +726,14 @@ export default function InboundShipmentForm({ initialShipmentId }: Props) {
     try {
       setSaving(true);
 
+      const selectedForwarderId =
+        forwarderId && forwarderId !== LEGACY_LOOKUP_VALUE ? Number(forwarderId) : null;
+
+      const selectedShipmentTypeId =
+        shipmentTypeId && shipmentTypeId !== LEGACY_LOOKUP_VALUE
+          ? Number(shipmentTypeId)
+          : null;
+
       const payload = {
         statusId: statusId ? Number(statusId) : null,
         mblNumber: mblNumber.trim() || null,
@@ -659,13 +742,28 @@ export default function InboundShipmentForm({ initialShipmentId }: Props) {
         sealNumber: sealNumber.trim() || null,
         port: port.trim() || null,
         carrier: carrier.trim() || null,
-        forwarder: forwarder.trim() || null,
-        shipmentType: shipmentType.trim() || null,
+
+        forwarderId: selectedForwarderId,
+        forwarder:
+          forwarderId === LEGACY_LOOKUP_VALUE
+            ? forwarderLegacyText.trim() || null
+            : null,
+
+        shipmentTypeId: selectedShipmentTypeId,
+        shipmentType:
+          shipmentTypeId === LEGACY_LOOKUP_VALUE
+            ? shipmentTypeLegacyText.trim() || null
+            : null,
+
         containerDestination: containerDestination.trim(),
         etd: etd || null,
         eta: eta || null,
         cartonCount: cartonCount.trim() ? Number(cartonCount) : null,
+        tariffPercentage: tariffPercentage.trim()
+          ? Number(tariffPercentage.trim())
+          : null,
         notes: notes.trim() || null,
+
         lines: lines
           .filter((line) =>
             Boolean(
@@ -673,7 +771,6 @@ export default function InboundShipmentForm({ initialShipmentId }: Props) {
                 line.customerName.trim() ||
                 line.logo.trim() ||
                 line.tracking.trim() ||
-                line.lineDestination.trim() ||
                 line.quantity.trim() ||
                 line.cartonCount.trim() ||
                 line.notes.trim()
@@ -685,7 +782,6 @@ export default function InboundShipmentForm({ initialShipmentId }: Props) {
             customerName: line.customerName.trim() || null,
             logo: line.logo.trim() || null,
             tracking: line.tracking.trim() || null,
-            lineDestination: line.lineDestination.trim() || null,
             quantity: line.quantity.trim() ? Number(line.quantity) : null,
             cartonCount: line.cartonCount.trim()
               ? Number(line.cartonCount)
@@ -693,6 +789,7 @@ export default function InboundShipmentForm({ initialShipmentId }: Props) {
             notes: line.notes.trim() || null,
             sortOrder: idx,
           })),
+
         invoices: invoices
           .filter((invoice) =>
             Boolean(
@@ -881,21 +978,57 @@ export default function InboundShipmentForm({ initialShipmentId }: Props) {
             </FieldBlock>
 
             <FieldBlock label="Forwarder">
-              <input
-                className="input"
-                value={forwarder}
+              <select
+                className="select"
+                value={forwarderId}
                 disabled={saving || isVoided}
-                onChange={(e) => setForwarder(e.target.value)}
-              />
+                onChange={(e) => {
+                  const next = e.target.value;
+                  setForwarderId(next);
+                  if (next !== LEGACY_LOOKUP_VALUE) {
+                    setForwarderLegacyText("");
+                  }
+                }}
+              >
+                <option value="">Select forwarder...</option>
+                {forwarderLegacyText ? (
+                  <option value={LEGACY_LOOKUP_VALUE}>
+                    Existing value: {forwarderLegacyText}
+                  </option>
+                ) : null}
+                {forwarderOptions.map((opt) => (
+                  <option key={opt.id} value={String(opt.id)}>
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
             </FieldBlock>
 
             <FieldBlock label="Shipment Type">
-              <input
-                className="input"
-                value={shipmentType}
+              <select
+                className="select"
+                value={shipmentTypeId}
                 disabled={saving || isVoided}
-                onChange={(e) => setShipmentType(e.target.value)}
-              />
+                onChange={(e) => {
+                  const next = e.target.value;
+                  setShipmentTypeId(next);
+                  if (next !== LEGACY_LOOKUP_VALUE) {
+                    setShipmentTypeLegacyText("");
+                  }
+                }}
+              >
+                <option value="">Select shipment type...</option>
+                {shipmentTypeLegacyText ? (
+                  <option value={LEGACY_LOOKUP_VALUE}>
+                    Existing value: {shipmentTypeLegacyText}
+                  </option>
+                ) : null}
+                {shipmentTypeOptions.map((opt) => (
+                  <option key={opt.id} value={String(opt.id)}>
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
             </FieldBlock>
 
             <FieldBlock
@@ -911,6 +1044,17 @@ export default function InboundShipmentForm({ initialShipmentId }: Props) {
                 value={containerDestination}
                 disabled={saving || isVoided}
                 onChange={(e) => setContainerDestination(e.target.value)}
+              />
+            </FieldBlock>
+
+            <FieldBlock label="Tariff %" error={errors.tariffPercentage}>
+              <input
+                className={`input${errors.tariffPercentage ? " input-error" : ""}`}
+                inputMode="decimal"
+                placeholder="Example: 25.50"
+                value={tariffPercentage}
+                disabled={saving || isVoided}
+                onChange={(e) => setTariffPercentage(e.target.value)}
               />
             </FieldBlock>
 
@@ -1081,7 +1225,7 @@ export default function InboundShipmentForm({ initialShipmentId }: Props) {
             <div>
               <h2 style={{ margin: 0 }}>Line Details</h2>
               <p className="page-subtitle" style={{ marginTop: 4 }}>
-                Add PO, customer, logo, tracking, and destination details.
+                Add PO, customer, logo, and tracking details.
               </p>
             </div>
 
@@ -1106,7 +1250,6 @@ export default function InboundShipmentForm({ initialShipmentId }: Props) {
                     <th style={{ minWidth: 260 }}>Customer</th>
                     <th>Logo</th>
                     <th>Tracking</th>
-                    <th>Line Destination</th>
                     <th>Quantity</th>
                     <th>Carton Count</th>
                     <th>Notes</th>
@@ -1159,16 +1302,6 @@ export default function InboundShipmentForm({ initialShipmentId }: Props) {
                           disabled={saving || isVoided}
                           onChange={(e) =>
                             updateLine(idx, "tracking", e.target.value)
-                          }
-                        />
-                      </td>
-                      <td>
-                        <input
-                          className="input"
-                          value={line.lineDestination}
-                          disabled={saving || isVoided}
-                          onChange={(e) =>
-                            updateLine(idx, "lineDestination", e.target.value)
                           }
                         />
                       </td>

@@ -27,12 +27,23 @@ type ShipmentRow = {
   hblNumber: string | null;
   port: string | null;
   carrier: string | null;
+
+  forwarderId?: number | null;
+  forwarderCode?: string | null;
+  forwarderLabel?: string | null;
   forwarder: string | null;
+
+  shipmentTypeId?: number | null;
+  shipmentTypeCode?: string | null;
+  shipmentTypeLabel?: string | null;
   shipmentType: string | null;
+
   containerDestination: string | null;
   etd: string | null;
   eta: string | null;
   cartonCount: number | null;
+  tariffPercentage?: number | string | null;
+
   lineCount: number;
   invoiceCount: number;
 
@@ -95,6 +106,15 @@ function fmtDateOnly(v?: string | null): string {
   return Number.isNaN(d.getTime()) ? s : ymdChicago(d);
 }
 
+function fmtPercent(v?: number | string | null): string {
+  if (v == null || v === "") return "";
+
+  const n = Number(v);
+  if (!Number.isFinite(n)) return "";
+
+  return `${n.toFixed(2)}%`;
+}
+
 function statusBadge(row: ShipmentRow) {
   const code = String(row.statusCode || "").toUpperCase();
 
@@ -108,10 +128,20 @@ function statusBadge(row: ShipmentRow) {
   return <span className={cls}>{row.statusLabel || row.status || ""}</span>;
 }
 
+function forwarderDisplay(row: ShipmentRow) {
+  return row.forwarderLabel || row.forwarder || "";
+}
+
+function shipmentTypeDisplay(row: ShipmentRow) {
+  return row.shipmentTypeLabel || row.shipmentType || "";
+}
+
 export default function InboundShipmentsPage() {
   const router = useRouter();
 
   const [statusOptions, setStatusOptions] = useState<LookupOption[]>([]);
+  const [forwarderOptions, setForwarderOptions] = useState<LookupOption[]>([]);
+  const [shipmentTypeOptions, setShipmentTypeOptions] = useState<LookupOption[]>([]);
 
   const [etaFrom, setEtaFrom] = useState("");
   const [etaTo, setEtaTo] = useState("");
@@ -150,15 +180,39 @@ export default function InboundShipmentsPage() {
       try {
         setLookupLoading(true);
 
-        const res = await fetch("/api/inbound-shipments/lookups/statuses", {
-          cache: "no-store",
-          credentials: "include",
-        });
+        const [statusRes, forwarderRes, shipmentTypeRes] = await Promise.all([
+          fetch("/api/inbound-shipments/lookups/statuses", {
+            cache: "no-store",
+            credentials: "include",
+          }),
+          fetch("/api/inbound-shipments/lookups/forwarders", {
+            cache: "no-store",
+            credentials: "include",
+          }),
+          fetch("/api/inbound-shipments/lookups/shipment-types", {
+            cache: "no-store",
+            credentials: "include",
+          }),
+        ]);
 
-        const data = await res.json().catch(() => ({}));
+        const statusData = await statusRes.json().catch(() => ({}));
+        const forwarderData = await forwarderRes.json().catch(() => ({}));
+        const shipmentTypeData = await shipmentTypeRes.json().catch(() => ({}));
 
-        if (res.ok) {
-          setStatusOptions(Array.isArray(data?.rows) ? data.rows : []);
+        if (statusRes.ok) {
+          setStatusOptions(Array.isArray(statusData?.rows) ? statusData.rows : []);
+        }
+
+        if (forwarderRes.ok) {
+          setForwarderOptions(
+            Array.isArray(forwarderData?.rows) ? forwarderData.rows : []
+          );
+        }
+
+        if (shipmentTypeRes.ok) {
+          setShipmentTypeOptions(
+            Array.isArray(shipmentTypeData?.rows) ? shipmentTypeData.rows : []
+          );
         }
       } finally {
         setLookupLoading(false);
@@ -184,10 +238,15 @@ export default function InboundShipmentsPage() {
     if (debouncedFilters.hblNumber.trim()) sp.set("hblNumber", debouncedFilters.hblNumber.trim());
     if (debouncedFilters.port.trim()) sp.set("port", debouncedFilters.port.trim());
     if (debouncedFilters.carrier.trim()) sp.set("carrier", debouncedFilters.carrier.trim());
-    if (debouncedFilters.forwarder.trim()) sp.set("forwarder", debouncedFilters.forwarder.trim());
+
+    if (debouncedFilters.forwarder.trim()) {
+      sp.set("forwarder", debouncedFilters.forwarder.trim());
+    }
+
     if (debouncedFilters.shipmentType.trim()) {
       sp.set("shipmentType", debouncedFilters.shipmentType.trim());
     }
+
     if (debouncedFilters.containerDestination.trim()) {
       sp.set("containerDestination", debouncedFilters.containerDestination.trim());
     }
@@ -350,19 +409,45 @@ export default function InboundShipmentsPage() {
         key: "forwarder",
         header: "Forwarder",
         sortable: true,
-        filterable: true,
-        placeholder: "Forwarder",
-        render: (r) => r.forwarder ?? "",
-        getSearchText: (r) => r.forwarder ?? "",
+        filterRender: (
+          <select
+            className="select"
+            value={filters.forwarder}
+            disabled={lookupLoading}
+            onChange={(e) => onFilterChange("forwarder", e.target.value)}
+          >
+            <option value="">All</option>
+            {forwarderOptions.map((opt) => (
+              <option key={opt.id} value={opt.label}>
+                {opt.label}
+              </option>
+            ))}
+          </select>
+        ),
+        render: (r) => forwarderDisplay(r),
+        getSearchText: (r) => forwarderDisplay(r),
       },
       {
         key: "shipmentType",
         header: "Shipment Type",
         sortable: true,
-        filterable: true,
-        placeholder: "Type",
-        render: (r) => r.shipmentType ?? "",
-        getSearchText: (r) => r.shipmentType ?? "",
+        filterRender: (
+          <select
+            className="select"
+            value={filters.shipmentType}
+            disabled={lookupLoading}
+            onChange={(e) => onFilterChange("shipmentType", e.target.value)}
+          >
+            <option value="">All</option>
+            {shipmentTypeOptions.map((opt) => (
+              <option key={opt.id} value={opt.label}>
+                {opt.label}
+              </option>
+            ))}
+          </select>
+        ),
+        render: (r) => shipmentTypeDisplay(r),
+        getSearchText: (r) => shipmentTypeDisplay(r),
       },
       {
         key: "containerDestination",
@@ -437,6 +522,13 @@ export default function InboundShipmentsPage() {
         getSearchText: (r) => String(r.cartonCount ?? ""),
       },
       {
+        key: "tariffPercentage",
+        header: "Tariff %",
+        sortable: true,
+        render: (r) => fmtPercent(r.tariffPercentage),
+        getSearchText: (r) => fmtPercent(r.tariffPercentage),
+      },
+      {
         key: "lineCount",
         header: "Lines",
         sortable: true,
@@ -495,7 +587,11 @@ export default function InboundShipmentsPage() {
       etdFrom,
       etdTo,
       filters.status,
+      filters.forwarder,
+      filters.shipmentType,
+      forwarderOptions,
       lookupLoading,
+      shipmentTypeOptions,
       statusOptions,
     ]
   );
@@ -506,7 +602,7 @@ export default function InboundShipmentsPage() {
         <div className="page-header-title-wrap">
           <h1 className="page-title">Inbound Shipments</h1>
           <p className="page-subtitle">
-            Track inbound containers, POs, invoices, destinations, and shipment documents.
+            Track inbound containers, POs, invoices, destinations, tariffs, and shipment documents.
           </p>
         </div>
 
@@ -549,12 +645,13 @@ export default function InboundShipmentsPage() {
           "HBL #": r.hblNumber,
           Port: r.port,
           Carrier: r.carrier,
-          Forwarder: r.forwarder,
-          "Shipment Type": r.shipmentType,
+          Forwarder: forwarderDisplay(r),
+          "Shipment Type": shipmentTypeDisplay(r),
           "Container Destination": r.containerDestination,
           ETD: fmtDateOnly(r.etd),
           ETA: fmtDateOnly(r.eta),
           "Carton Count": r.cartonCount,
+          "Tariff %": fmtPercent(r.tariffPercentage),
           Lines: r.lineCount,
           Invoices: r.invoiceCount,
         })}
