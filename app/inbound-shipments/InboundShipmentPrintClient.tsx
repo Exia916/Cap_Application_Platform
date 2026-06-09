@@ -18,12 +18,22 @@ type ShipmentDetail = {
   sealNumber: string | null;
   port: string | null;
   carrier: string | null;
+
+  forwarderId?: number | null;
+  forwarderCode?: string | null;
+  forwarderLabel?: string | null;
   forwarder: string | null;
+
+  shipmentTypeId?: number | null;
+  shipmentTypeCode?: string | null;
+  shipmentTypeLabel?: string | null;
   shipmentType: string | null;
+
   containerDestination: string | null;
   etd: string | null;
   eta: string | null;
   cartonCount: number | null;
+  tariffPercentage?: number | string | null;
   notes: string | null;
 
   createdAt: string;
@@ -43,7 +53,7 @@ type ShipmentDetail = {
     customerName: string | null;
     logo: string | null;
     tracking: string | null;
-    lineDestination: string | null;
+    lineDestination?: string | null;
     quantity: number | null;
     cartonCount: number | null;
     notes: string | null;
@@ -96,6 +106,15 @@ function fmtMoney(v?: number | null): string {
     style: "currency",
     currency: "USD",
   });
+}
+
+function fmtPercent(v?: number | string | null): string {
+  if (v == null || v === "") return "";
+
+  const n = Number(v);
+  if (!Number.isFinite(n)) return "";
+
+  return `${n.toFixed(2)}%`;
 }
 
 function display(v: ReactNode) {
@@ -205,6 +224,9 @@ export default function InboundShipmentPrintClient({ id }: { id: string }) {
       </main>
     );
   }
+
+  const forwarderDisplay = row.forwarderLabel || row.forwarder;
+  const shipmentTypeDisplay = row.shipmentTypeLabel || row.shipmentType;
 
   return (
     <main className="print-page-wrap">
@@ -588,16 +610,17 @@ export default function InboundShipmentPrintClient({ id }: { id: string }) {
             <PrintField label="Port" value={row.port} />
             <PrintField label="Carrier" value={row.carrier} />
 
-            <PrintField label="Forwarder" value={row.forwarder} />
-            <PrintField label="Shipment Type" value={row.shipmentType} />
+            <PrintField label="Forwarder" value={forwarderDisplay} />
+            <PrintField label="Shipment Type" value={shipmentTypeDisplay} />
             <PrintField label="Container Destination" value={row.containerDestination} />
-            <PrintField label="Carton Count" value={row.cartonCount} />
+            <PrintField label="Tariff %" value={fmtPercent(row.tariffPercentage)} />
 
             <PrintField label="ETD" value={fmtDateOnly(row.etd)} />
             <PrintField label="ETA" value={fmtDateOnly(row.eta)} />
+            <PrintField label="Carton Count" value={row.cartonCount} />
             <PrintField label="Updated By" value={row.updatedBy} />
-            <PrintField label="Updated At" value={fmtDateTime(row.updatedAt)} />
 
+            <PrintField label="Updated At" value={fmtDateTime(row.updatedAt)} />
             <PrintField label="Notes" value={row.notes} full pre />
           </div>
         </section>
@@ -622,9 +645,7 @@ export default function InboundShipmentPrintClient({ id }: { id: string }) {
                 {row.invoices.map((invoice) => (
                   <tr key={invoice.id}>
                     <td>{display(invoice.invoiceNumber)}</td>
-                    <td>
-                      {display(invoice.invoiceTypeLabel || invoice.invoiceType)}
-                    </td>
+                    <td>{display(invoice.invoiceTypeLabel || invoice.invoiceType)}</td>
                     <td>{display(fmtDateOnly(invoice.invoiceDate))}</td>
                     <td>{display(fmtMoney(invoice.amount))}</td>
                     <td>{display(invoice.notes)}</td>
@@ -644,13 +665,12 @@ export default function InboundShipmentPrintClient({ id }: { id: string }) {
             <table className="print-table">
               <thead>
                 <tr>
-                  <th style={{ width: "10%" }}>PO #</th>
-                  <th style={{ width: "20%" }}>Customer</th>
-                  <th style={{ width: "13%" }}>Logo</th>
-                  <th style={{ width: "13%" }}>Tracking</th>
-                  <th style={{ width: "15%" }}>Line Destination</th>
-                  <th style={{ width: "8%" }}>Quantity</th>
-                  <th style={{ width: "9%" }}>Carton Count</th>
+                  <th style={{ width: "12%" }}>PO #</th>
+                  <th style={{ width: "24%" }}>Customer</th>
+                  <th style={{ width: "16%" }}>Logo</th>
+                  <th style={{ width: "18%" }}>Tracking</th>
+                  <th style={{ width: "10%" }}>Quantity</th>
+                  <th style={{ width: "10%" }}>Carton Count</th>
                   <th>Notes</th>
                 </tr>
               </thead>
@@ -661,7 +681,6 @@ export default function InboundShipmentPrintClient({ id }: { id: string }) {
                     <td>{display(line.customerName)}</td>
                     <td>{display(line.logo)}</td>
                     <td>{display(line.tracking)}</td>
-                    <td>{display(line.lineDestination)}</td>
                     <td>{display(line.quantity)}</td>
                     <td>{display(line.cartonCount)}</td>
                     <td>{display(line.notes)}</td>
@@ -678,7 +697,7 @@ export default function InboundShipmentPrintClient({ id }: { id: string }) {
           <div className="print-field-grid">
             <PrintField
               label="Supporting Documents"
-              value="Attachments, comments, and activity history are available on the CAP record."
+              value="Shipment attachments, purchase order attachments, comments, and activity history are available on the CAP record."
               full
             />
           </div>

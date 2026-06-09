@@ -4,10 +4,13 @@ import {
   type AttachmentVisibility,
 } from "@/lib/platform/attachmentVisibility";
 
+export const DEFAULT_ATTACHMENT_CATEGORY = "general";
+
 export type AttachmentRow = {
   id: number;
   entityType: string;
   entityId: string;
+  attachmentCategory: string;
   originalFileName: string;
   storedFileName: string;
   storedRelativePath: string;
@@ -29,6 +32,7 @@ export type AttachmentRow = {
 export type CreateAttachmentInput = {
   entityType: string;
   entityId: string;
+  attachmentCategory?: string | null;
   originalFileName: string;
   storedFileName: string;
   storedRelativePath: string;
@@ -59,10 +63,20 @@ export type DeleteAttachmentInput = {
 
 export type ListAttachmentsOptions = {
   includeOsSecure?: boolean;
+  attachmentCategory?: string | null;
 };
 
 function cleanText(v: unknown): string {
   return String(v ?? "").trim();
+}
+
+export function normalizeAttachmentCategory(v: unknown): string {
+  const cleaned = cleanText(v)
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+
+  return cleaned || DEFAULT_ATTACHMENT_CATEGORY;
 }
 
 const SELECT_SQL = `
@@ -70,6 +84,7 @@ const SELECT_SQL = `
     id,
     entity_type as "entityType",
     entity_id as "entityId",
+    COALESCE(attachment_category, 'general') as "attachmentCategory",
     original_file_name as "originalFileName",
     stored_file_name as "storedFileName",
     stored_relative_path as "storedRelativePath",
@@ -92,7 +107,8 @@ const SELECT_SQL = `
 export async function attachmentFileNameExists(
   entityType: string,
   entityId: string,
-  originalFileName: string
+  originalFileName: string,
+  attachmentCategory: string | null = DEFAULT_ATTACHMENT_CATEGORY
 ): Promise<boolean> {
   const { rows } = await db.query<{ exists: boolean }>(
     `
@@ -101,11 +117,17 @@ export async function attachmentFileNameExists(
         from public.attachments
         where entity_type = $1
           and entity_id = $2
-          and lower(original_file_name) = lower($3)
+          and attachment_category = $3
+          and lower(original_file_name) = lower($4)
           and is_deleted = false
       ) as exists
     `,
-    [cleanText(entityType), cleanText(entityId), cleanText(originalFileName)]
+    [
+      cleanText(entityType),
+      cleanText(entityId),
+      normalizeAttachmentCategory(attachmentCategory),
+      cleanText(originalFileName),
+    ]
   );
 
   return !!rows[0]?.exists;
@@ -114,12 +136,20 @@ export async function attachmentFileNameExists(
 export async function createAttachment(input: CreateAttachmentInput): Promise<AttachmentRow> {
   const entityType = cleanText(input.entityType);
   const entityId = cleanText(input.entityId);
+  const attachmentCategory = normalizeAttachmentCategory(input.attachmentCategory);
   const originalFileName = cleanText(input.originalFileName);
   const visibility = normalizeAttachmentVisibility(input.visibility);
 
-  if (await attachmentFileNameExists(entityType, entityId, originalFileName)) {
+  if (
+    await attachmentFileNameExists(
+      entityType,
+      entityId,
+      originalFileName,
+      attachmentCategory
+    )
+  ) {
     throw new Error(
-      "A file with this name already exists for this record. Please rename the file and try again."
+      "A file with this name already exists for this attachment section. Please rename the file and try again."
     );
   }
 
@@ -128,6 +158,7 @@ export async function createAttachment(input: CreateAttachmentInput): Promise<At
       insert into public.attachments (
         entity_type,
         entity_id,
+        attachment_category,
         original_file_name,
         stored_file_name,
         stored_relative_path,
@@ -143,11 +174,12 @@ export async function createAttachment(input: CreateAttachmentInput): Promise<At
         uploaded_by_name,
         employee_number
       )
-      values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
+      values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
       returning
         id,
         entity_type as "entityType",
         entity_id as "entityId",
+        COALESCE(attachment_category, 'general') as "attachmentCategory",
         original_file_name as "originalFileName",
         stored_file_name as "storedFileName",
         stored_relative_path as "storedRelativePath",
@@ -168,6 +200,7 @@ export async function createAttachment(input: CreateAttachmentInput): Promise<At
     [
       entityType,
       entityId,
+      attachmentCategory,
       originalFileName,
       cleanText(input.storedFileName),
       cleanText(input.storedRelativePath),
@@ -195,12 +228,14 @@ export async function listAttachmentsByEntity(
   options?: ListAttachmentsOptions
 ): Promise<AttachmentRow[]> {
   const includeOsSecure = options?.includeOsSecure === true;
+  const attachmentCategory = normalizeAttachmentCategory(options?.attachmentCategory);
 
   const { rows } = await db.query<AttachmentRow>(
     `
       ${SELECT_SQL}
       where entity_type = $1
         and entity_id = $2
+        and attachment_category = $5
         and is_deleted = false
         and (
           $4::boolean = true
@@ -209,7 +244,7 @@ export async function listAttachmentsByEntity(
       order by created_at desc, id desc
       limit $3
     `,
-    [cleanText(entityType), cleanText(entityId), limit, includeOsSecure]
+    [cleanText(entityType), cleanText(entityId), limit, includeOsSecure, attachmentCategory]
   );
 
   return rows;
@@ -266,6 +301,7 @@ export async function updateAttachment(
         id,
         entity_type as "entityType",
         entity_id as "entityId",
+        COALESCE(attachment_category, 'general') as "attachmentCategory",
         original_file_name as "originalFileName",
         stored_file_name as "storedFileName",
         stored_relative_path as "storedRelativePath",

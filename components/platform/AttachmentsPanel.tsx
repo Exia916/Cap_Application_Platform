@@ -6,6 +6,7 @@ type AttachmentVisibility = "standard" | "os_secure";
 
 type Attachment = {
   id: number;
+  attachmentCategory?: string | null;
   originalFileName: string;
   fileSizeBytes: number | null;
   mimeType: string | null;
@@ -19,6 +20,9 @@ type Attachment = {
 type Props = {
   entityType: string;
   entityId: string;
+  attachmentCategory?: string;
+  emptyMessage?: string;
+  dialogTitle?: string;
 };
 
 type OpenWithState =
@@ -36,6 +40,16 @@ type CommentDialogState =
 
 function normalizeVisibility(v?: string | null): AttachmentVisibility {
   return v === "os_secure" ? "os_secure" : "standard";
+}
+
+function normalizeAttachmentCategory(v?: string | null): string {
+  const cleaned = String(v || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+
+  return cleaned || "general";
 }
 
 function fmtFileSize(bytes?: number | null) {
@@ -68,7 +82,9 @@ function fileIcon(name: string, mimeType?: string | null) {
   if (mt.includes("excel") || [".xls", ".xlsx", ".csv"].includes(ext)) return "📗";
   if (mt.includes("word") || [".doc", ".docx", ".rtf"].includes(ext)) return "📘";
   if (mt.includes("zip") || [".zip", ".rar", ".7z"].includes(ext)) return "🗜️";
-  if (mt.startsWith("text/") || [".txt", ".log", ".json", ".xml"].includes(ext)) return "📄";
+  if (mt.startsWith("text/") || [".txt", ".log", ".json", ".xml"].includes(ext)) {
+    return "📄";
+  }
   if ([".eml", ".msg"].includes(ext)) return "✉️";
   return "📎";
 }
@@ -86,7 +102,18 @@ function previewKind(att?: Attachment | null): "image" | "pdf" | "text" | "none"
   return "none";
 }
 
-export default function AttachmentsPanel({ entityType, entityId }: Props) {
+export default function AttachmentsPanel({
+  entityType,
+  entityId,
+  attachmentCategory = "general",
+  emptyMessage = "No attachments yet.",
+  dialogTitle = "Attachment",
+}: Props) {
+  const normalizedAttachmentCategory = useMemo(
+    () => normalizeAttachmentCategory(attachmentCategory),
+    [attachmentCategory]
+  );
+
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [selectedId, setSelectedId] = useState<number | null>(null);
 
@@ -188,10 +215,16 @@ export default function AttachmentsPanel({ entityType, entityId }: Props) {
       setLoading(true);
       setError(null);
 
-      const res = await fetch(
-        `/api/platform/attachments?entityType=${encodeURIComponent(entityType)}&entityId=${encodeURIComponent(entityId)}`,
-        { cache: "no-store", credentials: "include" }
-      );
+      const params = new URLSearchParams({
+        entityType,
+        entityId,
+        attachmentCategory: normalizedAttachmentCategory,
+      });
+
+      const res = await fetch(`/api/platform/attachments?${params.toString()}`, {
+        cache: "no-store",
+        credentials: "include",
+      });
 
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
@@ -228,7 +261,7 @@ export default function AttachmentsPanel({ entityType, entityId }: Props) {
   useEffect(() => {
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [entityType, entityId]);
+  }, [entityType, entityId, normalizedAttachmentCategory]);
 
   async function uploadFiles(files: File[]) {
     if (!files.length || uploading) return;
@@ -246,6 +279,7 @@ export default function AttachmentsPanel({ entityType, entityId }: Props) {
         form.append("file", file);
         form.append("entityType", entityType);
         form.append("entityId", entityId);
+        form.append("attachmentCategory", normalizedAttachmentCategory);
         form.append(
           "visibility",
           canManageOsSecureFiles ? uploadVisibility : "standard"
@@ -894,7 +928,7 @@ export default function AttachmentsPanel({ entityType, entityId }: Props) {
                       ) : attachments.length === 0 ? (
                         <tr>
                           <td colSpan={4}>
-                            <div className="dw-attach-preview-empty">No attachments yet.</div>
+                            <div className="dw-attach-preview-empty">{emptyMessage}</div>
                           </td>
                         </tr>
                       ) : (
@@ -1116,7 +1150,7 @@ export default function AttachmentsPanel({ entityType, entityId }: Props) {
         <div className="dw-attach-dialog-backdrop">
           <div className="dw-attach-dialog">
             <div className="dw-attach-dialog-head">
-              <span>Design Request Attachment</span>
+              <span>{dialogTitle}</span>
               <button
                 type="button"
                 onClick={() => setCommentDialog({ open: false })}
