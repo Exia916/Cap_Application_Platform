@@ -814,6 +814,18 @@ export default function DesignRequestWindow({
     window.open(url, "_blank", "noopener,noreferrer");
   }
 
+    function openDesignLookupFromTapeNumber() {
+    const tapeNumber = String(form.tapeNumber || "").trim();
+
+    if (!tapeNumber) return;
+
+    window.open(
+      `/design-lookup?name=${encodeURIComponent(tapeNumber)}`,
+      "_blank",
+      "noopener,noreferrer"
+    );
+  }
+
   function updateField<K extends keyof typeof form>(key: K, value: (typeof form)[K]) {
     setForm((prev) => ({ ...prev, [key]: value }));
   }
@@ -1184,13 +1196,30 @@ export default function DesignRequestWindow({
                   />
                 </FieldStack>
 
-                <FieldRow label="Tape Number">
-                  <input
-                    className="input"
-                    value={form.tapeNumber}
-                    onChange={(e) => updateField("tapeNumber", e.target.value)}
-                    disabled={readOnly || !!record?.isVoided}
-                  />
+                                <FieldRow label="Tape Number">
+                  <div style={tapeLookupRow}>
+                    <input
+                      className="input"
+                      value={form.tapeNumber}
+                      onChange={(e) => updateField("tapeNumber", e.target.value)}
+                      disabled={readOnly || !!record?.isVoided}
+                      style={{ flex: 1 }}
+                    />
+
+                    <button
+                      type="button"
+                      className="btn btn-secondary btn-sm"
+                      onClick={openDesignLookupFromTapeNumber}
+                      disabled={!String(form.tapeNumber || "").trim()}
+                      title={
+                        String(form.tapeNumber || "").trim()
+                          ? "Search Design Lookup by Tape Number"
+                          : "Enter a Tape Number first"
+                      }
+                    >
+                      Lookup
+                    </button>
+                  </div>
                 </FieldRow>
 
                 <FieldRow label="Rush">
@@ -1729,6 +1758,12 @@ const fieldLabel: React.CSSProperties = {
   fontWeight: 700,
   fontSize: 12,
   color: "var(--text)",
+};
+
+const tapeLookupRow: React.CSSProperties = {
+  display: "flex",
+  gap: 8,
+  alignItems: "center",
 };
 
 const checkboxRow: React.CSSProperties = {
