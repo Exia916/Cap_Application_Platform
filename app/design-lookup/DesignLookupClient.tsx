@@ -1,6 +1,13 @@
 "use client";
 
-import { useMemo, useState, type CSSProperties, type FormEvent } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  type CSSProperties,
+  type FormEvent,
+} from "react";
 import type { WilcomDesign, WilcomDesignSearchResponse } from "./types";
 import DesignLookupResults from "./DesignLookupResults";
 import DesignLookupModal from "./DesignLookupModal";
@@ -11,8 +18,14 @@ function userFriendlyFetchError(status: number, fallback: string) {
   return fallback || "Failed to search Wilcom designs.";
 }
 
-export default function DesignLookupClient() {
-  const [design, setDesign] = useState("");
+export default function DesignLookupClient({
+  initialSearch = "",
+}: {
+  initialSearch?: string;
+}) {
+  const normalizedInitialSearch = initialSearch.trim();
+
+  const [design, setDesign] = useState(normalizedInitialSearch);
   const [rows, setRows] = useState<WilcomDesign[]>([]);
   const [selectedDesign, setSelectedDesign] = useState<WilcomDesign | null>(null);
 
@@ -22,10 +35,10 @@ export default function DesignLookupClient() {
 
   const canSearch = useMemo(() => design.trim().length > 0, [design]);
 
-  async function runSearch(e?: FormEvent) {
-    e?.preventDefault();
+  const searchDesigns = useCallback(async (searchText: string) => {
+    const nextSearch = searchText.trim();
 
-    if (!canSearch) {
+    if (!nextSearch) {
       setError("Enter a design, description, customer, or keyword to search.");
       setRows([]);
       setHasSearched(false);
@@ -33,11 +46,7 @@ export default function DesignLookupClient() {
     }
 
     const qs = new URLSearchParams();
-
-    if (design.trim()) {
-      qs.set("name", design.trim());
-    }
-
+    qs.set("name", nextSearch);
     qs.set("limit", "50");
 
     setLoading(true);
@@ -66,6 +75,18 @@ export default function DesignLookupClient() {
     } finally {
       setLoading(false);
     }
+  }, []);
+
+  useEffect(() => {
+    if (!normalizedInitialSearch) return;
+
+    setDesign(normalizedInitialSearch);
+    void searchDesigns(normalizedInitialSearch);
+  }, [normalizedInitialSearch, searchDesigns]);
+
+  async function runSearch(e?: FormEvent) {
+    e?.preventDefault();
+    await searchDesigns(design);
   }
 
   function clearSearch() {
