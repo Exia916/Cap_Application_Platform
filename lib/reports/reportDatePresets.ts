@@ -2,11 +2,13 @@
 
 export type ReportDatePresetKey =
   | "today"
+  | "tomorrow"
   | "yesterday"
   | "currentShiftDate"
   | "last7Days"
   | "last14Days"
   | "last30Days"
+  | "next7Days"
   | "thisWeek"
   | "lastWeek"
   | "thisMonth"
@@ -20,11 +22,13 @@ export type ReportDatePreset = {
 
 export const REPORT_DATE_PRESETS: ReportDatePreset[] = [
   { key: "today", label: "Today" },
+  { key: "tomorrow", label: "Tomorrow" },
   { key: "yesterday", label: "Yesterday" },
   { key: "currentShiftDate", label: "Current Shift Date" },
   { key: "last7Days", label: "Last 7 Days" },
   { key: "last14Days", label: "Last 14 Days" },
   { key: "last30Days", label: "Last 30 Days" },
+  { key: "next7Days", label: "Next 7 Days" },
   { key: "thisWeek", label: "This Week" },
   { key: "lastWeek", label: "Last Week" },
   { key: "thisMonth", label: "This Month" },
@@ -69,6 +73,14 @@ export function getReportDatePresetRange(
         to: toDateInput(today),
       };
 
+    case "tomorrow": {
+      const d = addDays(today, 1);
+      return {
+        from: toDateInput(d),
+        to: toDateInput(d),
+      };
+    }
+
     case "yesterday": {
       const d = addDays(today, -1);
       return {
@@ -103,6 +115,12 @@ export function getReportDatePresetRange(
       return {
         from: toDateInput(addDays(today, -29)),
         to: toDateInput(today),
+      };
+
+    case "next7Days":
+      return {
+        from: toDateInput(today),
+        to: toDateInput(addDays(today, 6)),
       };
 
     case "thisWeek": {

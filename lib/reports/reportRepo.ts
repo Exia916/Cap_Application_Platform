@@ -4,8 +4,11 @@ import { db } from "@/lib/db";
 import type { AuthUserWithLegacy } from "@/lib/auth";
 import { buildReportQuery } from "./reportQueryBuilder";
 import type {
+  ReportCalculatedColumn,
+  ReportFilterLogic,
   ReportRunRequest,
   ReportRunResult,
+  ReportSortConfig,
   SavedReportInput,
   SavedReportRow,
 } from "./reportTypes";
@@ -16,6 +19,19 @@ function userId(user: AuthUserWithLegacy) {
 
 function userName(user: AuthUserWithLegacy) {
   return user.displayName || user.name || user.username || "Unknown";
+}
+
+function userRole(user: AuthUserWithLegacy) {
+  return String(user.role || "").trim().toUpperCase();
+}
+
+function userDepartment(user: AuthUserWithLegacy) {
+  return String(user.department || "");
+}
+
+function canEditSavedReportRow(row: any, user: AuthUserWithLegacy) {
+  if (userRole(user) === "ADMIN") return true;
+  return String(row.ownerUserId || "") === userId(user);
 }
 
 /**
@@ -33,7 +49,77 @@ function toNullableJsonb(value: unknown) {
   return value == null ? null : JSON.stringify(value);
 }
 
-function mapSavedReport(row: any): SavedReportRow {
+function normalizeFilterLogic(value: unknown): ReportFilterLogic | undefined {
+  const normalized = String(value || "").trim().toUpperCase();
+  return normalized === "OR" || normalized === "AND"
+    ? (normalized as ReportFilterLogic)
+    : undefined;
+}
+
+function normalizeSortConfig(value: unknown): ReportSortConfig | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+
+  const raw = value as Record<string, unknown>;
+  const column = String(raw.column || "").trim();
+  const direction =
+    String(raw.direction || "").toLowerCase() === "asc" ? "asc" : "desc";
+
+  if (!column) return null;
+
+  return {
+    column,
+    direction,
+  };
+}
+
+function normalizeCalculatedColumns(value: unknown): ReportCalculatedColumn[] {
+  if (!Array.isArray(value)) return [];
+
+  return value
+    .filter((item) => item && typeof item === "object" && !Array.isArray(item))
+    .map((item) => item as ReportCalculatedColumn)
+    .filter((item) => String(item.label || "").trim());
+}
+
+/**
+ * saved_reports does not currently have a dedicated filter_logic or
+ * calculated_columns column. Store both in chart_config so runtime/edit pages
+ * can round-trip the settings without changing the saved_reports table shape.
+ */
+function normalizeChartConfigForSave(input: SavedReportInput) {
+  const base =
+    input.chartConfig &&
+    typeof input.chartConfig === "object" &&
+    !Array.isArray(input.chartConfig)
+      ? { ...(input.chartConfig as Record<string, unknown>) }
+      : {};
+
+  const filterLogic = normalizeFilterLogic(input.filterLogic);
+
+  if (filterLogic) {
+    base.filterLogic = filterLogic;
+  }
+
+  const calculatedColumns = normalizeCalculatedColumns(input.calculatedColumns);
+
+  if (calculatedColumns.length) {
+    base.calculatedColumns = calculatedColumns;
+  } else {
+    delete base.calculatedColumns;
+  }
+
+  return Object.keys(base).length ? base : null;
+}
+
+function mapSavedReport(row: any, user?: AuthUserWithLegacy): SavedReportRow {
+  const chartConfig = row.chartConfig ?? null;
+  const filterLogic = normalizeFilterLogic(
+    row.filterLogic ?? chartConfig?.filterLogic
+  );
+  const calculatedColumns = normalizeCalculatedColumns(
+    row.calculatedColumns ?? chartConfig?.calculatedColumns
+  );
+
   return {
     id: row.id,
     reportName: row.reportName,
@@ -48,15 +134,18 @@ function mapSavedReport(row: any): SavedReportRow {
     sharedDepartments: row.sharedDepartments ?? [],
     selectedColumns: row.selectedColumns ?? [],
     filters: row.filters ?? {},
-    sort: row.sortConfig ?? null,
+    filterLogic,
+    sort: normalizeSortConfig(row.sortConfig),
     grouping: row.grouping ?? [],
     aggregations: row.aggregations ?? [],
+    calculatedColumns,
     visualization: row.visualization ?? "datatable",
-    chartConfig: row.chartConfig ?? null,
+    chartConfig,
     lastRunAt: row.lastRunAt,
     lastRunBy: row.lastRunBy,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
+    canEdit: user ? canEditSavedReportRow(row, user) : undefined,
   };
 }
 
@@ -109,7 +198,13 @@ export async function runReport(
       toJsonb(request.selectedColumns, []),
       toJsonb(request.sort, {}),
       toJsonb(request.grouping, []),
-      toJsonb(request.aggregations, []),
+      toJsonb(
+        {
+          aggregations: request.aggregations ?? [],
+          calculatedColumns: request.calculatedColumns ?? [],
+        },
+        {}
+      ),
     ]
   );
 
@@ -188,8 +283,8 @@ export async function runReport(
 export async function listSavedReportsForUser(
   user: AuthUserWithLegacy
 ): Promise<SavedReportRow[]> {
-  const role = String(user.role || "").toUpperCase();
-  const department = String(user.department || "");
+  const role = userRole(user);
+  const department = userDepartment(user);
   const uid = userId(user);
 
   const { rows } = await db.query<any>(
@@ -220,25 +315,26 @@ export async function listSavedReportsForUser(
     FROM public.saved_reports
     WHERE is_archived = false
       AND (
-        owner_user_id = $1
+        $4 = 'ADMIN'
+        OR owner_user_id = $1
         OR visibility = 'public_internal'
         OR (visibility = 'role' AND $2 = ANY(shared_roles))
         OR (visibility = 'department' AND $3 = ANY(shared_departments))
       )
     ORDER BY updated_at DESC, report_name ASC
     `,
-    [uid, role, department]
+    [uid, role, department, role]
   );
 
-  return rows.map(mapSavedReport);
+  return rows.map((row) => mapSavedReport(row, user));
 }
 
 export async function getSavedReportById(
   id: string,
   user: AuthUserWithLegacy
 ): Promise<SavedReportRow | null> {
-  const role = String(user.role || "").toUpperCase();
-  const department = String(user.department || "");
+  const role = userRole(user);
+  const department = userDepartment(user);
   const uid = userId(user);
 
   const { rows } = await db.query<any>(
@@ -270,23 +366,26 @@ export async function getSavedReportById(
     WHERE id = $1
       AND is_archived = false
       AND (
-        owner_user_id = $2
+        $5 = 'ADMIN'
+        OR owner_user_id = $2
         OR visibility = 'public_internal'
         OR (visibility = 'role' AND $3 = ANY(shared_roles))
         OR (visibility = 'department' AND $4 = ANY(shared_departments))
       )
     LIMIT 1
     `,
-    [id, uid, role, department]
+    [id, uid, role, department, role]
   );
 
-  return rows[0] ? mapSavedReport(rows[0]) : null;
+  return rows[0] ? mapSavedReport(rows[0], user) : null;
 }
 
 export async function createSavedReport(
   input: SavedReportInput,
   user: AuthUserWithLegacy
 ): Promise<{ id: string }> {
+  const chartConfig = normalizeChartConfigForSave(input);
+
   const { rows } = await db.query<{ id: string }>(
     `
     INSERT INTO public.saved_reports (
@@ -350,7 +449,7 @@ export async function createSavedReport(
       toJsonb(input.grouping, []),
       toJsonb(input.aggregations, []),
       input.visualization ?? "datatable",
-      toNullableJsonb(input.chartConfig),
+      toNullableJsonb(chartConfig),
       userName(user),
     ]
   );
@@ -362,8 +461,10 @@ export async function updateSavedReport(
   id: string,
   input: SavedReportInput,
   user: AuthUserWithLegacy
-): Promise<void> {
-  await db.query(
+): Promise<boolean> {
+  const chartConfig = normalizeChartConfigForSave(input);
+
+  const result = await db.query(
     `
     UPDATE public.saved_reports
     SET
@@ -383,6 +484,7 @@ export async function updateSavedReport(
       updated_at = now(),
       updated_by = $15
     WHERE id = $1
+      AND is_archived = false
       AND (
         owner_user_id = $16
         OR $17 = 'ADMIN'
@@ -402,19 +504,57 @@ export async function updateSavedReport(
       toJsonb(input.grouping, []),
       toJsonb(input.aggregations, []),
       input.visualization ?? "datatable",
-      toNullableJsonb(input.chartConfig),
+      toNullableJsonb(chartConfig),
       userName(user),
       userId(user),
-      String(user.role || "").toUpperCase(),
+      userRole(user),
     ]
+  );
+
+  return Number(result.rowCount ?? 0) > 0;
+}
+
+export async function duplicateSavedReport(
+  id: string,
+  user: AuthUserWithLegacy
+): Promise<{ id: string }> {
+  const original = await getSavedReportById(id, user);
+
+  if (!original) {
+    throw new Error("Report not found.");
+  }
+
+  return createSavedReport(
+    {
+      reportName: `Copy of ${original.reportName}`.slice(0, 240),
+      description: original.description,
+      datasetKey: original.datasetKey,
+      visibility: "private",
+      sharedRoles: [],
+      sharedDepartments: [],
+      selectedColumns: original.selectedColumns,
+      filters: original.filters,
+      filterLogic: original.filterLogic,
+      sort: original.sort,
+      grouping: original.grouping,
+      aggregations: original.aggregations,
+      calculatedColumns: original.calculatedColumns ?? [],
+      visualization: original.visualization,
+      chartConfig: {
+        ...(original.chartConfig ?? {}),
+        calculatedColumns: original.calculatedColumns ?? [],
+        duplicatedFromReportId: original.id,
+      },
+    },
+    user
   );
 }
 
 export async function archiveSavedReport(
   id: string,
   user: AuthUserWithLegacy
-): Promise<void> {
-  await db.query(
+): Promise<boolean> {
+  const result = await db.query(
     `
     UPDATE public.saved_reports
     SET
@@ -422,11 +562,14 @@ export async function archiveSavedReport(
       updated_at = now(),
       updated_by = $2
     WHERE id = $1
+      AND is_archived = false
       AND (
         owner_user_id = $3
         OR $4 = 'ADMIN'
       )
     `,
-    [id, userName(user), userId(user), String(user.role || "").toUpperCase()]
+    [id, userName(user), userId(user), userRole(user)]
   );
+
+  return Number(result.rowCount ?? 0) > 0;
 }

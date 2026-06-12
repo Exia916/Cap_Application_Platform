@@ -1,8 +1,11 @@
 // lib/reports/reportQueryBuilder.ts
 
+import { humanizeReportLabel } from "./reportFormatters";
 import { getReportDataset } from "./reportRegistry";
 import type {
   ReportAggregation,
+  ReportCalculatedColumn,
+  ReportCalculatedColumnAggregatePart,
   ReportColumn,
   ReportFilterLogic,
   ReportFilterValue,
@@ -63,8 +66,157 @@ function aggregateAlias(aggregation: ReportAggregation) {
 function aggregateLabel(aggregation: ReportAggregation, column: ReportColumn) {
   if (aggregation.label?.trim()) return aggregation.label.trim();
 
-  const fn = aggregation.function.toUpperCase();
-  return `${fn} ${column.label}`;
+  return humanizeReportLabel(`${aggregation.function}_${column.key}`);
+}
+
+function hasNonBlankValue(value: unknown) {
+  return value !== null && value !== undefined && String(value).trim() !== "";
+}
+
+function slugForAlias(value: string) {
+  const slug = String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .slice(0, 40);
+
+  return slug || "value";
+}
+
+function calculatedColumnAlias(
+  calculatedColumn: ReportCalculatedColumn,
+  index: number
+) {
+  const idPart = calculatedColumn.id
+    ? slugForAlias(calculatedColumn.id)
+    : slugForAlias(calculatedColumn.label);
+
+  return `calc_${index + 1}_${idPart}`;
+}
+
+function normalizeDecimals(value: unknown) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return 2;
+  return Math.max(0, Math.min(6, Math.trunc(n)));
+}
+
+function normalizeScale(value: unknown) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return 1;
+  return Math.max(-1000000, Math.min(1000000, n));
+}
+
+function buildAggregateExpression(input: {
+  part: ReportCalculatedColumnAggregatePart;
+  columnMap: Map<string, ReportColumn>;
+}) {
+  const { part, columnMap } = input;
+
+  const column = getColumnOrThrow(columnMap, part.column);
+  const fn = part.function;
+
+  if (fn !== "count" && !column.aggregatable) {
+    throw new Error(`${column.label} cannot be used in a calculated column.`);
+  }
+
+  switch (fn) {
+    case "count":
+      return {
+        expression: "COUNT(*)",
+        column,
+      };
+
+    case "sum":
+      return {
+        expression: `SUM(${column.sql})`,
+        column,
+      };
+
+    case "avg":
+      return {
+        expression: `AVG(${column.sql})`,
+        column,
+      };
+
+    case "min":
+      return {
+        expression: `MIN(${column.sql})`,
+        column,
+      };
+
+    case "max":
+      return {
+        expression: `MAX(${column.sql})`,
+        column,
+      };
+
+    default:
+      throw new Error("Invalid calculated column function.");
+  }
+}
+
+function buildCalculatedColumnExpression(input: {
+  calculatedColumn: ReportCalculatedColumn;
+  columnMap: Map<string, ReportColumn>;
+}) {
+  const { calculatedColumn, columnMap } = input;
+
+  const label = calculatedColumn.label?.trim();
+  if (!label) {
+    throw new Error("Calculated column label is required.");
+  }
+
+  if (calculatedColumn.formulaType === "aggregate") {
+    if (!calculatedColumn.aggregate?.column || !calculatedColumn.aggregate?.function) {
+      throw new Error(`Calculated column "${label}" is missing its aggregate setup.`);
+    }
+
+    const aggregate = buildAggregateExpression({
+      part: calculatedColumn.aggregate,
+      columnMap,
+    });
+
+    return `ROUND((${aggregate.expression})::numeric, ${normalizeDecimals(
+      calculatedColumn.decimals
+    )})`;
+  }
+
+  if (calculatedColumn.formulaType === "ratio") {
+    if (
+      !calculatedColumn.numerator?.column ||
+      !calculatedColumn.numerator?.function ||
+      !calculatedColumn.denominator?.column ||
+      !calculatedColumn.denominator?.function
+    ) {
+      throw new Error(`Calculated column "${label}" is missing its ratio setup.`);
+    }
+
+    const numerator = buildAggregateExpression({
+      part: calculatedColumn.numerator,
+      columnMap,
+    });
+
+    const denominator = buildAggregateExpression({
+      part: calculatedColumn.denominator,
+      columnMap,
+    });
+
+    const scale = normalizeScale(calculatedColumn.scale);
+    const decimals = normalizeDecimals(calculatedColumn.decimals);
+
+    return `
+      ROUND(
+        (
+          (${numerator.expression})::numeric
+          / NULLIF((${denominator.expression})::numeric, 0)
+        ) * ${scale},
+        ${decimals}
+      )
+    `;
+  }
+
+  throw new Error(`Invalid calculated column formula type for "${label}".`);
 }
 
 function buildFilterClause(input: {
@@ -82,25 +234,36 @@ function buildFilterClause(input: {
       return `${colSql} = $${params.length}`;
     }
 
+    case "notEquals": {
+      params.push(filter.value ?? null);
+      return `${colSql} IS DISTINCT FROM $${params.length}`;
+    }
+
     case "contains": {
-      params.push(`%${String(filter.value ?? "").trim()}%`);
+      const value = String(filter.value ?? "").trim();
+      if (!value) return null;
+
+      params.push(`%${value}%`);
       return `CAST(${colSql} AS text) ILIKE $${params.length}`;
     }
 
     case "startsWith": {
-      params.push(`${String(filter.value ?? "").trim()}%`);
+      const value = String(filter.value ?? "").trim();
+      if (!value) return null;
+
+      params.push(`${value}%`);
       return `CAST(${colSql} AS text) ILIKE $${params.length}`;
     }
 
     case "dateRange": {
       const clauses: string[] = [];
 
-      if (filter.from) {
+      if (hasNonBlankValue(filter.from)) {
         params.push(filter.from);
         clauses.push(`${colSql} >= $${params.length}::date`);
       }
 
-      if (filter.to) {
+      if (hasNonBlankValue(filter.to)) {
         params.push(filter.to);
         clauses.push(`${colSql} <= $${params.length}::date`);
       }
@@ -111,25 +274,45 @@ function buildFilterClause(input: {
     case "numberRange": {
       const clauses: string[] = [];
 
-      if (filter.from !== null && filter.from !== undefined && filter.from !== "") {
-        params.push(Number(filter.from));
-        clauses.push(`${colSql} >= $${params.length}`);
+      if (hasNonBlankValue(filter.from)) {
+        const value = Number(filter.from);
+        if (Number.isFinite(value)) {
+          params.push(value);
+          clauses.push(`${colSql} >= $${params.length}`);
+        }
       }
 
-      if (filter.to !== null && filter.to !== undefined && filter.to !== "") {
-        params.push(Number(filter.to));
-        clauses.push(`${colSql} <= $${params.length}`);
+      if (hasNonBlankValue(filter.to)) {
+        const value = Number(filter.to);
+        if (Number.isFinite(value)) {
+          params.push(value);
+          clauses.push(`${colSql} <= $${params.length}`);
+        }
       }
 
       return clauses.length ? clauses.join(" AND ") : null;
     }
 
     case "in": {
-      const values = Array.isArray(filter.values) ? filter.values : [];
+      const values = Array.isArray(filter.values)
+        ? filter.values.filter((v) => hasNonBlankValue(v))
+        : [];
+
       if (!values.length) return null;
 
       params.push(values.map((v) => String(v)));
       return `CAST(${colSql} AS text) = ANY($${params.length}::text[])`;
+    }
+
+    case "notIn": {
+      const values = Array.isArray(filter.values)
+        ? filter.values.filter((v) => hasNonBlankValue(v))
+        : [];
+
+      if (!values.length) return null;
+
+      params.push(values.map((v) => String(v)));
+      return `NOT (CAST(${colSql} AS text) = ANY($${params.length}::text[]))`;
     }
 
     case "isTrue":
@@ -166,8 +349,14 @@ export function buildReportQuery(request: ReportRunRequest): BuiltReportQuery {
   const aggregations = Array.isArray(request.aggregations)
     ? request.aggregations
     : [];
+  const calculatedColumns = Array.isArray(request.calculatedColumns)
+    ? request.calculatedColumns.filter((column) => column?.label?.trim())
+    : [];
 
-  const hasGroupingOrAggregations = groupingKeys.length > 0 || aggregations.length > 0;
+  const hasGroupingOrAggregations =
+    groupingKeys.length > 0 ||
+    aggregations.length > 0 ||
+    calculatedColumns.length > 0;
 
   const filters = request.filters ?? {};
   for (const [key, filter] of Object.entries(filters)) {
@@ -225,6 +414,30 @@ export function buildReportQuery(request: ReportRunRequest): BuiltReportQuery {
         type: "number",
       });
     }
+
+    calculatedColumns.forEach((calculatedColumn, index) => {
+      const alias = calculatedColumnAlias(calculatedColumn, index);
+
+      if (!isSafeIdent(alias)) {
+        throw new Error(`Invalid calculated column alias: ${alias}`);
+      }
+
+      const expression = buildCalculatedColumnExpression({
+        calculatedColumn,
+        columnMap,
+      });
+
+      selectParts.push(`${expression} AS ${quoteIdent(alias)}`);
+
+      outputColumns.push({
+        key: alias,
+        label: calculatedColumn.label.trim(),
+        type: "number",
+        calculated: true,
+        format: calculatedColumn.format,
+        decimals: calculatedColumn.decimals,
+      });
+    });
   } else {
     for (const key of selectedColumnKeys) {
       const column = getColumnOrThrow(columnMap, key);
@@ -250,9 +463,12 @@ export function buildReportQuery(request: ReportRunRequest): BuiltReportQuery {
   let orderBySql = "";
 
   if (sort?.column) {
-    const dir = String(sort.direction || "desc").toLowerCase() === "asc" ? "ASC" : "DESC";
+    const dir =
+      String(sort.direction || "desc").toLowerCase() === "asc" ? "ASC" : "DESC";
     const outputKeys = new Set(outputColumns.map((c) => c.key));
 
+    // Only allow sorting by output aliases that were generated from whitelisted
+    // dataset metadata, safe aggregation aliases, or safe calculated aliases.
     if (outputKeys.has(sort.column)) {
       orderBySql = `ORDER BY ${quoteIdent(sort.column)} ${dir}`;
     }

@@ -21,11 +21,13 @@ export type ReportVisualization =
 
 export type ReportFilterOperator =
   | "equals"
+  | "notEquals"
   | "contains"
   | "startsWith"
   | "dateRange"
   | "numberRange"
   | "in"
+  | "notIn"
   | "isTrue"
   | "isFalse";
 
@@ -37,6 +39,74 @@ export type ReportAggregateFunction =
   | "min"
   | "max"
   | "count";
+
+export type ReportCalculatedColumnFormulaType =
+  | "aggregate"
+  | "ratio";
+
+export type ReportCalculatedColumnFormat =
+  | "number"
+  | "percent"
+  | "decimal";
+
+export type ReportCalculatedColumnAggregatePart = {
+  column: string;
+  function: ReportAggregateFunction;
+};
+
+export type ReportCalculatedColumn = {
+  /**
+   * Stable client-side id for editing/removing rows in the builder.
+   * It is not used directly as a SQL alias.
+   */
+  id?: string;
+
+  /**
+   * User-facing label shown in report results, CSV, PDF, and chart labels.
+   */
+  label: string;
+
+  /**
+   * aggregate:
+   *   Examples:
+   *   - Average Stitches = AVG(metric_total_stitches)
+   *   - Total Pieces = SUM(metric_pieces)
+   *
+   * ratio:
+   *   Examples:
+   *   - Stitches per Piece = SUM(metric_total_stitches) / SUM(metric_pieces)
+   *   - Reject Rate = SUM(rejected_quantity) / SUM(inspected_quantity) * 100
+   */
+  formulaType: ReportCalculatedColumnFormulaType;
+
+  /**
+   * Used when formulaType = aggregate.
+   */
+  aggregate?: ReportCalculatedColumnAggregatePart;
+
+  /**
+   * Used when formulaType = ratio.
+   */
+  numerator?: ReportCalculatedColumnAggregatePart;
+  denominator?: ReportCalculatedColumnAggregatePart;
+
+  /**
+   * Optional multiplier for ratio formulas.
+   * Example:
+   * - Reject Rate % can use scale 100.
+   */
+  scale?: number;
+
+  /**
+   * Optional display hint. Query output remains numeric.
+   */
+  format?: ReportCalculatedColumnFormat;
+
+  /**
+   * Optional decimal-place hint for future display/export formatting.
+   */
+  decimals?: number;
+};
 
 export type ReportColumn = {
   key: string;
@@ -56,6 +126,7 @@ export type ReportDatasetCategory =
   | "recuts"
   | "maintenance"
   | "workflow"
+  | "logistics"
   | "cross_module"
   | "admin";
 
@@ -102,6 +173,13 @@ export type ReportRunRequest = {
   sort?: ReportSortConfig | null;
   grouping?: string[];
   aggregations?: ReportAggregation[];
+
+  /**
+   * User-created calculated summary columns.
+   * These are evaluated server-side from whitelisted dataset columns.
+   */
+  calculatedColumns?: ReportCalculatedColumn[];
+
   visualization?: ReportVisualization;
   page?: number;
   pageSize?: number;
@@ -111,6 +189,21 @@ export type ReportOutputColumn = {
   key: string;
   label: string;
   type: ReportColumnType;
+
+  /**
+   * Marks output columns generated from calculatedColumns.
+   */
+  calculated?: boolean;
+
+  /**
+   * Optional display/export hint.
+   */
+  format?: ReportCalculatedColumnFormat;
+
+  /**
+   * Optional decimal-place hint.
+   */
+  decimals?: number;
 };
 
 export type ReportRunResult = {
@@ -134,6 +227,13 @@ export type SavedReportInput = {
   sort: ReportSortConfig | null;
   grouping: string[];
   aggregations: ReportAggregation[];
+
+  /**
+   * Saved calculated summary columns.
+   * Stored in chart_config to avoid changing the saved_reports table.
+   */
+  calculatedColumns?: ReportCalculatedColumn[];
+
   visualization: ReportVisualization;
   chartConfig?: Record<string, unknown> | null;
 };
@@ -156,10 +256,17 @@ export type SavedReportRow = {
   sort: ReportSortConfig | null;
   grouping: string[];
   aggregations: ReportAggregation[];
+
+  /**
+   * Saved calculated summary columns.
+   */
+  calculatedColumns?: ReportCalculatedColumn[];
+
   visualization: ReportVisualization;
   chartConfig: Record<string, unknown> | null;
   lastRunAt: string | null;
   lastRunBy: string | null;
   createdAt: string;
   updatedAt: string;
+  canEdit?: boolean;
 };

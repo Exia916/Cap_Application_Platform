@@ -1,18 +1,32 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import DataTable, { type Column, type SortDir } from "@/components/DataTable";
 import type { ReportDatePresetKey } from "@/lib/reports/reportDatePresets";
 import { getReportDatePresetRange } from "@/lib/reports/reportDatePresets";
-import type { ReportFilterLogic } from "@/lib/reports/reportTypes";
+import type {
+  ReportCalculatedColumn,
+  ReportFilterLogic,
+  ReportFilterValue,
+} from "@/lib/reports/reportTypes";
+import {
+  formatReportCell,
+  humanizeReportLabel,
+} from "@/lib/reports/reportFormatters";
 import {
   getDefaultReportTemplate,
   getReportTemplate,
   REPORT_TEMPLATES,
   type ReportTemplate,
 } from "@/lib/reports/reportTemplates";
+import ReportCalculatedColumnsBuilder from "./ReportCalculatedColumnsBuilder";
 import ReportFilterBuilder from "./ReportFilterBuilder";
+import {
+  buildReportFilters,
+  splitReportFilters,
+} from "./reportFilterState";
 import ReportSummaryCards from "./ReportSummaryCards";
 import ReportVisualization from "./ReportVisualization";
 
@@ -37,20 +51,41 @@ type Dataset = {
   columns: DatasetColumn[];
 };
 
-type FilterValue = {
-  operator: string;
-  value?: string | number | boolean | null;
-  values?: Array<string | number | boolean>;
-  from?: string | number | null;
-  to?: string | number | null;
-};
+type FilterValue = ReportFilterValue;
 
 type RunResult = {
-  columns: Array<{ key: string; label: string; type: string }>;
+  columns: Array<{
+    key: string;
+    label: string;
+    type: string;
+    calculated?: boolean;
+    format?: string;
+    decimals?: number;
+  }>;
   rows: Record<string, any>[];
   total: number;
   page: number;
   pageSize: number;
+};
+
+type SavedReportForEdit = {
+  id: string;
+  reportName: string;
+  description: string | null;
+  datasetKey: string;
+  visibility: string;
+  sharedRoles: string[];
+  sharedDepartments: string[];
+  selectedColumns: string[];
+  filters: Record<string, FilterValue>;
+  filterLogic?: ReportFilterLogic;
+  sort: { column: string; direction: "asc" | "desc" } | null;
+  grouping: string[];
+  aggregations: any[];
+  calculatedColumns?: ReportCalculatedColumn[];
+  visualization: string;
+  chartConfig?: Record<string, any> | null;
+  canEdit?: boolean;
 };
 
 const VISUALIZATIONS = [
@@ -63,67 +98,6 @@ const VISUALIZATIONS = [
   { key: "donut", label: "Donut Chart" },
   { key: "heatmap", label: "Heatmap" },
 ];
-
-function formatDateOnly(value: unknown) {
-  if (value === null || value === undefined || value === "") return "";
-
-  const raw = String(value);
-
-  const match = raw.match(/^(\d{4})-(\d{2})-(\d{2})/);
-  if (match) {
-    return `${match[2]}/${match[3]}/${match[1]}`;
-  }
-
-  const d = new Date(raw);
-  if (Number.isNaN(d.getTime())) return raw;
-
-  return new Intl.DateTimeFormat("en-US", {
-    timeZone: "America/Chicago",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).format(d);
-}
-
-function formatDateTime(value: unknown) {
-  if (value === null || value === undefined || value === "") return "";
-
-  const d = new Date(String(value));
-  if (Number.isNaN(d.getTime())) return String(value);
-
-  return new Intl.DateTimeFormat("en-US", {
-    timeZone: "America/Chicago",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "numeric",
-    minute: "2-digit",
-  }).format(d);
-}
-
-function formatNumber(value: number) {
-  return new Intl.NumberFormat("en-US", {
-    maximumFractionDigits: 2,
-  }).format(value);
-}
-
-function fmtCell(value: unknown, type?: string) {
-  if (value === null || value === undefined) return "";
-
-  if (type === "date") return formatDateOnly(value);
-  if (type === "datetime") return formatDateTime(value);
-
-  if (typeof value === "number") return formatNumber(value);
-
-  const asNumber = Number(value);
-  if (type === "number" && Number.isFinite(asNumber)) {
-    return formatNumber(asNumber);
-  }
-
-  if (typeof value === "boolean") return value ? "Yes" : "No";
-
-  return String(value);
-}
 
 function buildTemplateDateRange(template: ReportTemplate | null) {
   if (!template) return { from: "", to: "" };
@@ -142,7 +116,7 @@ function moveArrayItem<T>(items: T[], index: number, direction: -1 | 1) {
 }
 
 function getReportColumnWidth(column: { key: string; type: string }) {
-  if (column.key === "record_url") return 90;
+  if (column.key === "record_url") return 120;
   if (column.type === "date") return 130;
   if (column.type === "datetime") return 180;
   if (column.type === "number") return 140;
@@ -172,7 +146,48 @@ function getReportColumnWidth(column: { key: string; type: string }) {
   return 180;
 }
 
-export default function ReportBuilderClient() {
+function formatCalculatedCell(value: unknown, column: RunResult["columns"][number]) {
+  if (value === null || value === undefined || value === "") return "";
+
+  const numeric = Number(value);
+
+  if (column.type === "number" && Number.isFinite(numeric)) {
+    const decimals =
+      typeof column.decimals === "number" && Number.isFinite(column.decimals)
+        ? Math.max(0, Math.min(6, Math.trunc(column.decimals)))
+        : undefined;
+
+    if (column.format === "percent") {
+      return `${numeric.toLocaleString(undefined, {
+        minimumFractionDigits: decimals ?? 2,
+        maximumFractionDigits: decimals ?? 2,
+      })}%`;
+    }
+
+    if (column.format === "decimal") {
+      return numeric.toLocaleString(undefined, {
+        minimumFractionDigits: decimals ?? 2,
+        maximumFractionDigits: decimals ?? 2,
+      });
+    }
+
+    return numeric.toLocaleString(undefined, {
+      minimumFractionDigits: decimals,
+      maximumFractionDigits: decimals,
+    });
+  }
+
+  return formatReportCell(value, column.type);
+}
+
+export default function ReportBuilderClient({
+  savedReportId,
+}: {
+  savedReportId?: string;
+}) {
+  const router = useRouter();
+  const isEditMode = !!savedReportId;
+
   const [mode, setMode] = useState<"simple" | "advanced">("simple");
   const [advancedOutputMode, setAdvancedOutputMode] = useState<"detail" | "summary">(
     "summary"
@@ -202,6 +217,9 @@ export default function ReportBuilderClient() {
   const [aggregateColumn, setAggregateColumn] = useState("");
   const [aggregateFunction, setAggregateFunction] = useState("sum");
   const [aggregations, setAggregations] = useState<any[]>([]);
+  const [calculatedColumns, setCalculatedColumns] = useState<ReportCalculatedColumn[]>(
+    []
+  );
 
   const [visualization, setVisualization] = useState("datatable");
 
@@ -220,22 +238,20 @@ export default function ReportBuilderClient() {
   const [loading, setLoading] = useState(true);
   const [running, setRunning] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [exportingPdf, setExportingPdf] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
-  const requestFilters = useMemo(() => {
-    const filters: Record<string, FilterValue> = { ...fieldFilters };
-
-    if (dateColumn && (dateFrom || dateTo)) {
-      filters[dateColumn] = {
-        operator: "dateRange",
-        from: dateFrom || null,
-        to: dateTo || null,
-      };
-    }
-
-    return filters;
-  }, [fieldFilters, dateColumn, dateFrom, dateTo]);
+  const requestFilters = useMemo(
+    () =>
+      buildReportFilters({
+        dateColumn,
+        dateFrom,
+        dateTo,
+        fieldFilters,
+      }),
+    [dateColumn, dateFrom, dateTo, fieldFilters]
+  );
 
   function applyTemplate(nextTemplate: ReportTemplate, loadedDatasets = datasets) {
     const targetDataset = loadedDatasets.find((d) => d.key === nextTemplate.datasetKey);
@@ -254,10 +270,11 @@ export default function ReportBuilderClient() {
     setDatePreset(nextTemplate.defaultDatePreset);
     setDateFrom(range.from);
     setDateTo(range.to);
-    setFilterLogic("AND");
-    setFieldFilters({});
+    setFilterLogic(nextTemplate.defaultFilterLogic ?? "AND");
+    setFieldFilters({ ...((nextTemplate.defaultFilters ?? {}) as Record<string, FilterValue>) });
     setGrouping(nextTemplate.defaultGrouping);
     setAggregations(nextTemplate.defaultAggregations);
+    setCalculatedColumns([]);
     setAggregateColumn(nextTemplate.defaultAggregations[0]?.column ?? "");
     setAggregateFunction(nextTemplate.defaultAggregations[0]?.function ?? "sum");
     setVisualization(nextTemplate.defaultVisualization);
@@ -286,6 +303,7 @@ export default function ReportBuilderClient() {
     setFieldFilters({});
     setGrouping([]);
     setAggregations([]);
+    setCalculatedColumns([]);
     setAggregateColumn("");
     setAggregateFunction("sum");
     setVisualization("datatable");
@@ -296,24 +314,110 @@ export default function ReportBuilderClient() {
     setPageIndex(0);
   }
 
+  function hydrateSavedReport(report: SavedReportForEdit, loadedDatasets: Dataset[]) {
+    const targetDataset = loadedDatasets.find((d) => d.key === report.datasetKey);
+
+    if (!targetDataset) {
+      setError(`Dataset is not available: ${report.datasetKey}`);
+      return;
+    }
+
+    const chartConfig = report.chartConfig ?? {};
+    const nextTemplateKey =
+      typeof chartConfig.templateKey === "string" ? chartConfig.templateKey : "";
+    const nextTemplate = getReportTemplate(nextTemplateKey);
+    const preferredDateColumn = nextTemplate?.defaultDateColumn ?? "";
+
+    const split = splitReportFilters(
+      report.filters,
+      targetDataset.columns,
+      preferredDateColumn
+    );
+
+    const savedCalculatedColumns = Array.isArray(report.calculatedColumns)
+      ? report.calculatedColumns
+      : Array.isArray(chartConfig.calculatedColumns)
+        ? (chartConfig.calculatedColumns as ReportCalculatedColumn[])
+        : [];
+
+    setDatasetKey(report.datasetKey);
+    setSelectedColumns(
+      report.selectedColumns?.length ? report.selectedColumns : targetDataset.defaultColumns
+    );
+    setDateColumn(split.dateColumn);
+    setDatePreset(split.datePreset);
+    setDateFrom(split.dateFrom);
+    setDateTo(split.dateTo);
+    setFieldFilters(split.fieldFilters as Record<string, FilterValue>);
+    setFilterLogic(report.filterLogic || (chartConfig.filterLogic === "OR" ? "OR" : "AND"));
+
+    setGrouping(report.grouping ?? []);
+    setAggregations(report.aggregations ?? []);
+    setCalculatedColumns(savedCalculatedColumns);
+    setAggregateColumn(report.aggregations?.[0]?.column ?? "");
+    setAggregateFunction(report.aggregations?.[0]?.function ?? "sum");
+
+    setVisualization(report.visualization || "datatable");
+    setSortBy(report.sort?.column || targetDataset.defaultSort?.column || "");
+    setSortDir(report.sort?.direction || targetDataset.defaultSort?.direction || "desc");
+
+    setReportName(report.reportName || "");
+    setDescription(report.description || "");
+    setVisibility(report.visibility || "private");
+    setSharedRoles(report.sharedRoles ?? []);
+    setSharedDepartments((report.sharedDepartments ?? []).join(", "));
+
+    setTemplateKey(nextTemplate?.key ?? "");
+    setMode(chartConfig.mode === "advanced" ? "advanced" : nextTemplate ? "simple" : "advanced");
+    setAdvancedOutputMode(chartConfig.advancedOutputMode === "detail" ? "detail" : "summary");
+
+    setResult(null);
+    setPageIndex(0);
+  }
+
   async function loadDatasets() {
     try {
       setLoading(true);
       setError(null);
 
-      const res = await fetch("/api/reports/datasets", {
+      const datasetsRes = await fetch("/api/reports/datasets", {
         credentials: "include",
         cache: "no-store",
       });
 
-      const data = await res.json().catch(() => ({}));
+      const datasetsData = await datasetsRes.json().catch(() => ({}));
 
-      if (!res.ok) {
-        throw new Error(data?.error || "Failed to load report datasets.");
+      if (!datasetsRes.ok) {
+        throw new Error(datasetsData?.error || "Failed to load report datasets.");
       }
 
-      const loaded = Array.isArray(data?.datasets) ? data.datasets : [];
+      const loaded = Array.isArray(datasetsData?.datasets) ? datasetsData.datasets : [];
       setDatasets(loaded);
+
+      if (isEditMode) {
+        const reportRes = await fetch(
+          `/api/reports/saved/${encodeURIComponent(savedReportId!)}`,
+          {
+            credentials: "include",
+            cache: "no-store",
+          }
+        );
+
+        const reportData = await reportRes.json().catch(() => ({}));
+
+        if (!reportRes.ok) {
+          throw new Error(reportData?.error || "Failed to load saved report.");
+        }
+
+        const report = reportData.report as SavedReportForEdit;
+
+        if (!report?.canEdit) {
+          throw new Error("You do not have permission to edit this report.");
+        }
+
+        hydrateSavedReport(report, loaded);
+        return;
+      }
 
       const defaultTemplate = getDefaultReportTemplate();
       if (defaultTemplate) {
@@ -331,7 +435,7 @@ export default function ReportBuilderClient() {
   useEffect(() => {
     loadDatasets();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [savedReportId]);
 
   function activeAggregations() {
     if (aggregations.length) return aggregations;
@@ -364,7 +468,21 @@ export default function ReportBuilderClient() {
     return activeAggregations();
   }
 
-  async function run(nextPageIndex = pageIndex, nextPageSize = pageSize) {
+  function effectiveCalculatedColumns() {
+    if (mode === "advanced" && advancedOutputMode === "detail") {
+      return [];
+    }
+
+    return calculatedColumns.filter((column) => String(column.label || "").trim());
+  }
+
+  async function run(
+    nextPageIndex = pageIndex,
+    nextPageSize = pageSize,
+    nextSort: { column: string; direction: "asc" | "desc" } | null = sortBy
+      ? { column: sortBy, direction: sortDir }
+      : null
+  ) {
     if (!dataset) return;
 
     try {
@@ -381,9 +499,10 @@ export default function ReportBuilderClient() {
           selectedColumns,
           filters: requestFilters,
           filterLogic,
-          sort: sortBy ? { column: sortBy, direction: sortDir } : null,
+          sort: nextSort,
           grouping: effectiveGrouping(),
           aggregations: effectiveAggregations(),
+          calculatedColumns: effectiveCalculatedColumns(),
           visualization,
           page: nextPageIndex + 1,
           pageSize: nextPageSize,
@@ -417,35 +536,44 @@ export default function ReportBuilderClient() {
       setError(null);
       setSuccessMsg(null);
 
-      const res = await fetch("/api/reports/saved", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({
-          reportName: reportName.trim(),
-          description: description.trim() || null,
-          datasetKey: dataset.key,
-          visibility,
-          sharedRoles,
-          sharedDepartments: sharedDepartments
-            .split(",")
-            .map((x) => x.trim())
-            .filter(Boolean),
-          selectedColumns,
-          filters: requestFilters,
+      const payload = {
+        reportName: reportName.trim(),
+        description: description.trim() || null,
+        datasetKey: dataset.key,
+        visibility,
+        sharedRoles,
+        sharedDepartments: sharedDepartments
+          .split(",")
+          .map((x) => x.trim())
+          .filter(Boolean),
+        selectedColumns,
+        filters: requestFilters,
+        filterLogic,
+        sort: sortBy ? { column: sortBy, direction: sortDir } : null,
+        grouping: effectiveGrouping(),
+        aggregations: effectiveAggregations(),
+        calculatedColumns: effectiveCalculatedColumns(),
+        visualization,
+        chartConfig: {
+          templateKey: template?.key ?? null,
+          mode,
+          advancedOutputMode,
           filterLogic,
-          sort: sortBy ? { column: sortBy, direction: sortDir } : null,
-          grouping: effectiveGrouping(),
-          aggregations: effectiveAggregations(),
-          visualization,
-          chartConfig: {
-            templateKey: template?.key ?? null,
-            mode,
-            advancedOutputMode,
-            filterLogic,
-          },
-        }),
-      });
+          calculatedColumns: effectiveCalculatedColumns(),
+        },
+      };
+
+      const res = await fetch(
+        isEditMode
+          ? `/api/reports/saved/${encodeURIComponent(savedReportId!)}`
+          : "/api/reports/saved",
+        {
+          method: isEditMode ? "PUT" : "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify(payload),
+        }
+      );
 
       const data = await res.json().catch(() => ({}));
 
@@ -453,7 +581,11 @@ export default function ReportBuilderClient() {
         throw new Error(data?.error || "Failed to save report.");
       }
 
-      setSuccessMsg("Report saved.");
+      setSuccessMsg(isEditMode ? "Report updated." : "Report saved.");
+
+      if (!isEditMode && data?.id) {
+        router.push(`/reports/${data.id}/edit`);
+      }
     } catch (err: any) {
       setError(err?.message || "Failed to save report.");
     } finally {
@@ -476,6 +608,7 @@ export default function ReportBuilderClient() {
         sort: sortBy ? { column: sortBy, direction: sortDir } : null,
         grouping: effectiveGrouping(),
         aggregations: effectiveAggregations(),
+        calculatedColumns: effectiveCalculatedColumns(),
         visualization,
         pageSize: 10000,
       }),
@@ -500,10 +633,67 @@ export default function ReportBuilderClient() {
     URL.revokeObjectURL(url);
   }
 
+
+  async function exportPdf() {
+    if (!dataset) return;
+
+    try {
+      setExportingPdf(true);
+      setError(null);
+      setSuccessMsg(null);
+
+      const res = await fetch("/api/reports/export/pdf", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          reportName: reportName.trim() || dataset.label || "CAP Report",
+          reportDescription: description.trim() || dataset.description || null,
+          tablePreviewLimit: 100,
+          request: {
+            savedReportId: savedReportId ?? null,
+            datasetKey: dataset.key,
+            selectedColumns,
+            filters: requestFilters,
+            filterLogic,
+            sort: sortBy ? { column: sortBy, direction: sortDir } : null,
+            grouping: effectiveGrouping(),
+            aggregations: effectiveAggregations(),
+            calculatedColumns: effectiveCalculatedColumns(),
+            visualization,
+            page: 1,
+            pageSize: 100,
+          },
+        }),
+      });
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data?.error || "PDF export failed.");
+      }
+
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${reportName.trim() || "cap-report"}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+
+      URL.revokeObjectURL(url);
+    } catch (err: any) {
+      setError(err?.message || "PDF export failed.");
+    } finally {
+      setExportingPdf(false);
+    }
+  }
+
   const tableColumns: Column<Record<string, any>>[] = useMemo(() => {
     return (result?.columns ?? []).map((column) => ({
       key: column.key,
-      header: column.label,
+      header: column.key === "record_url" ? "Open Record" : humanizeReportLabel(column.label),
       sortable: true,
       width: getReportColumnWidth(column),
       render: (row) => {
@@ -516,7 +706,7 @@ export default function ReportBuilderClient() {
 
           return (
             <Link href={href} className="btn btn-secondary btn-sm">
-              Open
+              Open Record
             </Link>
           );
         }
@@ -529,7 +719,7 @@ export default function ReportBuilderClient() {
                 : "report-output-cell"
             }
           >
-            {fmtCell(value, column.type)}
+            {formatCalculatedCell(value, column)}
           </span>
         );
       },
@@ -564,13 +754,18 @@ export default function ReportBuilderClient() {
   }
 
   function onToggleSort(key: string) {
-    if (sortBy !== key) {
-      setSortBy(key);
-      setSortDir("asc");
-      return;
-    }
+    const outputKeys = new Set((result?.columns ?? []).map((column) => column.key));
+    if (result && !outputKeys.has(key)) return;
 
-    setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    const nextSortBy = key;
+    const nextSortDir: SortDir =
+      sortBy !== key ? "asc" : sortDir === "asc" ? "desc" : "asc";
+
+    setSortBy(nextSortBy);
+    setSortDir(nextSortDir);
+    setPageIndex(0);
+
+    run(0, pageSize, { column: nextSortBy, direction: nextSortDir });
   }
 
   const selectedColumnDetails = selectedColumns
@@ -646,14 +841,25 @@ export default function ReportBuilderClient() {
 
       <div className="page-header">
         <div>
-          <h1 className="page-title">Create New Report</h1>
+          <h1 className="page-title">
+            {isEditMode ? "Edit Saved Report" : "Create New Report"}
+          </h1>
           <p className="page-subtitle">
-            Start from a guided template or switch to Advanced Mode for full report setup.
+            {isEditMode
+              ? "Update the saved report definition, default filters, columns, grouping, formulas, and visualization."
+              : "Start from a guided template or switch to Advanced Mode for full report setup."}
           </p>
         </div>
 
         <div className="record-actions">
-          <button type="button" className="btn btn-secondary" onClick={() => run(0, pageSize)}>
+          <button
+            type="button"
+            className="btn btn-secondary"
+            onClick={() => {
+              setPageIndex(0);
+              run(0, pageSize);
+            }}
+          >
             {running ? "Running…" : "Run Report"}
           </button>
 
@@ -661,8 +867,17 @@ export default function ReportBuilderClient() {
             Export CSV
           </button>
 
+          <button
+            type="button"
+            className="btn btn-secondary"
+            onClick={exportPdf}
+            disabled={exportingPdf || !dataset}
+          >
+            {exportingPdf ? "Exporting PDF…" : "Export PDF"}
+          </button>
+
           <button type="button" className="btn btn-primary" onClick={saveReport} disabled={saving}>
-            {saving ? "Saving…" : "Save Report"}
+            {saving ? "Saving…" : isEditMode ? "Save Changes" : "Save Report"}
           </button>
         </div>
       </div>
@@ -935,12 +1150,12 @@ export default function ReportBuilderClient() {
           </div>
 
           <div className="card section-stack">
-            <h2>Grouping & Aggregation</h2>
+            <h2>Grouping, Aggregation & Calculated Columns</h2>
 
             {advancedOutputMode === "detail" ? (
               <div className="alert alert-info">
-                Detail Rows mode ignores Group By and Aggregation. Switch to Grouped Summary to
-                use these options.
+                Detail Rows mode ignores Group By, Aggregation, and Calculated Summary Columns.
+                Switch to Grouped Summary to use these options.
               </div>
             ) : null}
 
@@ -1053,6 +1268,13 @@ export default function ReportBuilderClient() {
                 <div className="text-soft">No group-by columns selected.</div>
               )}
             </div>
+
+            <ReportCalculatedColumnsBuilder
+              columns={dataset?.columns ?? []}
+              calculatedColumns={calculatedColumns}
+              onCalculatedColumnsChange={setCalculatedColumns}
+              disabled={advancedOutputMode === "detail"}
+            />
           </div>
         </>
       ) : null}
