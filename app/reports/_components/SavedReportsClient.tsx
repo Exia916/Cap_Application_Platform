@@ -1,7 +1,12 @@
+// app/reports/_components/SavedReportsClient.tsx
+
 "use client";
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+
+import { formatReportDateTime } from "@/lib/reports/reportFormatters";
 
 type SavedReport = {
   id: string;
@@ -12,17 +17,15 @@ type SavedReport = {
   ownerName: string | null;
   lastRunAt: string | null;
   updatedAt: string;
+  canEdit?: boolean;
 };
 
-function fmtDate(v?: string | null) {
-  if (!v) return "";
-  const d = new Date(v);
-  return Number.isNaN(d.getTime()) ? String(v) : d.toLocaleString();
-}
-
 export default function SavedReportsClient() {
+  const router = useRouter();
+
   const [rows, setRows] = useState<SavedReport[]>([]);
   const [loading, setLoading] = useState(true);
+  const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   async function load() {
@@ -47,6 +50,34 @@ export default function SavedReportsClient() {
       setError(err?.message || "Failed to load saved reports.");
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function duplicateReport(id: string) {
+    try {
+      setBusyId(id);
+      setError(null);
+
+      const res = await fetch(`/api/reports/saved/${encodeURIComponent(id)}/duplicate`, {
+        method: "POST",
+        credentials: "include",
+      });
+
+      const data = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        throw new Error(data?.error || "Failed to duplicate report.");
+      }
+
+      if (data?.id) {
+        router.push(`/reports/${data.id}/edit`);
+      } else {
+        await load();
+      }
+    } catch (err: any) {
+      setError(err?.message || "Failed to duplicate report.");
+    } finally {
+      setBusyId(null);
     }
   }
 
@@ -76,7 +107,7 @@ export default function SavedReportsClient() {
         <div className="card text-muted">No saved reports found.</div>
       ) : null}
 
-      {!loading && !error && rows.length > 0 ? (
+      {!loading && rows.length > 0 ? (
         <div className="card" style={{ padding: 0, overflow: "hidden" }}>
           <table className="table-clean">
             <thead>
@@ -106,12 +137,29 @@ export default function SavedReportsClient() {
                     <span className="badge badge-neutral">{row.visibility}</span>
                   </td>
                   <td>{row.ownerName || ""}</td>
-                  <td>{fmtDate(row.lastRunAt)}</td>
-                  <td>{fmtDate(row.updatedAt)}</td>
+                  <td>{formatReportDateTime(row.lastRunAt)}</td>
+                  <td>{formatReportDateTime(row.updatedAt)}</td>
                   <td>
-                    <Link href={`/reports/${row.id}`} className="btn btn-secondary btn-sm">
-                      Open
-                    </Link>
+                    <div className="record-actions">
+                      <Link href={`/reports/${row.id}`} className="btn btn-secondary btn-sm">
+                        Open
+                      </Link>
+
+                      {row.canEdit ? (
+                        <Link href={`/reports/${row.id}/edit`} className="btn btn-secondary btn-sm">
+                          Edit
+                        </Link>
+                      ) : null}
+
+                      <button
+                        type="button"
+                        className="btn btn-secondary btn-sm"
+                        onClick={() => duplicateReport(row.id)}
+                        disabled={busyId === row.id}
+                      >
+                        {busyId === row.id ? "Copying…" : "Duplicate"}
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}

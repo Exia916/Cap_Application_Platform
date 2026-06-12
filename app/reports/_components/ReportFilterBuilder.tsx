@@ -6,7 +6,11 @@ import {
   REPORT_DATE_PRESETS,
   type ReportDatePresetKey,
 } from "@/lib/reports/reportDatePresets";
-import type { ReportFilterLogic } from "@/lib/reports/reportTypes";
+import type {
+  ReportFilterLogic,
+  ReportFilterValue,
+} from "@/lib/reports/reportTypes";
+import { formatReportFilterValue } from "@/lib/reports/reportFormatters";
 
 type DatasetColumn = {
   key: string;
@@ -15,13 +19,7 @@ type DatasetColumn = {
   filterable: boolean;
 };
 
-type FilterValue = {
-  operator: string;
-  value?: string | number | boolean | null;
-  values?: Array<string | number | boolean>;
-  from?: string | number | null;
-  to?: string | number | null;
-};
+type FilterValue = ReportFilterValue;
 
 type Props = {
   datasetKey: string;
@@ -74,6 +72,12 @@ const DROPDOWN_COLUMN_HINTS = [
   "designer_name",
   "digitizer_name",
   "created_by_name",
+  "forwarder",
+  "shipment_type",
+  "container_destination",
+  "port",
+  "carrier",
+  "inbound_shipment_number",
 ];
 
 function shouldUseDropdown(column: DatasetColumn | undefined) {
@@ -85,13 +89,7 @@ function shouldUseDropdown(column: DatasetColumn | undefined) {
 }
 
 function filterValueLabel(filter: FilterValue) {
-  if (filter.operator === "contains") return `contains "${filter.value ?? ""}"`;
-  if (filter.operator === "startsWith") return `starts with "${filter.value ?? ""}"`;
-  if (filter.operator === "equals") return `= ${filter.value ?? ""}`;
-  if (filter.operator === "isTrue") return "Yes";
-  if (filter.operator === "isFalse") return "No";
-  if (filter.operator === "in") return `in ${(filter.values ?? []).join(", ")}`;
-  return String(filter.value ?? "");
+  return formatReportFilterValue(filter);
 }
 
 export default function ReportFilterBuilder({
@@ -139,7 +137,9 @@ export default function ReportFilterBuilder({
     });
   }, [columns, simpleFilterKeys]);
 
-  const selectedNewFilterColumn = columns.find((column) => column.key === newFilterColumn);
+  const selectedNewFilterColumn = columns.find(
+    (column) => column.key === newFilterColumn
+  );
   const useDropdown = shouldUseDropdown(selectedNewFilterColumn);
 
   const activeFilterRows = Object.entries(fieldFilters)
@@ -235,7 +235,7 @@ export default function ReportFilterBuilder({
 
     setNewFilterOperator("contains");
     setNewFilterValue("");
-  }, [newFilterColumn]);
+  }, [newFilterColumn, selectedNewFilterColumn]);
 
   function handlePresetChange(next: ReportDatePresetKey) {
     onDatePresetChange(next);
@@ -262,15 +262,19 @@ export default function ReportFilterBuilder({
       };
     } else if (column.type === "number") {
       if (!value) return;
+
+      const numericValue = Number(value);
+      if (!Number.isFinite(numericValue)) return;
+
       next[column.key] = {
         operator: "equals",
-        value: Number(value),
+        value: numericValue,
       };
     } else {
       if (!value) return;
 
       next[column.key] = {
-        operator: newFilterOperator,
+        operator: newFilterOperator as FilterValue["operator"],
         value,
       };
     }
