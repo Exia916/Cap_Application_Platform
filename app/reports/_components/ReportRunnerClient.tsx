@@ -31,6 +31,7 @@ type DatasetColumn = {
   groupable: boolean;
   aggregatable: boolean;
   defaultVisible: boolean;
+  filterOnly?: boolean;
 };
 
 type Dataset = {
@@ -94,6 +95,121 @@ function inferTemplate(report: SavedReport | null) {
   if (direct) return direct;
 
   return REPORT_TEMPLATES.find((template) => template.datasetKey === report.datasetKey) ?? null;
+}
+
+function getColumn(dataset: Dataset | null, key: string) {
+  return dataset?.columns.find((column) => column.key === key) ?? null;
+}
+
+function isOutputColumn(column: DatasetColumn | undefined | null) {
+  return !!column && !column.filterOnly;
+}
+
+function isSortableOutputColumn(column: DatasetColumn | undefined | null) {
+  return isOutputColumn(column) && !!column?.sortable;
+}
+
+function isGroupableOutputColumn(column: DatasetColumn | undefined | null) {
+  return isOutputColumn(column) && !!column?.groupable;
+}
+
+function isAggregatableOutputColumn(column: DatasetColumn | undefined | null) {
+  return isOutputColumn(column) && !!column?.aggregatable;
+}
+
+function filterOutputColumnKeys(dataset: Dataset | null, keys: string[] | undefined | null) {
+  if (!dataset || !Array.isArray(keys)) return [];
+
+  return keys.filter((key) => isOutputColumn(getColumn(dataset, key)));
+}
+
+function filterGroupableKeys(dataset: Dataset | null, keys: string[] | undefined | null) {
+  if (!dataset || !Array.isArray(keys)) return [];
+
+  return keys.filter((key) => isGroupableOutputColumn(getColumn(dataset, key)));
+}
+
+function filterAggregations(dataset: Dataset | null, aggregations: any[] | undefined | null) {
+  if (!dataset || !Array.isArray(aggregations)) return [];
+
+  return aggregations.filter((aggregation) => {
+    if (!aggregation?.column) return false;
+
+    const column = getColumn(dataset, aggregation.column);
+    return aggregation.function === "count"
+      ? isOutputColumn(column)
+      : isAggregatableOutputColumn(column);
+  });
+}
+
+function slugForAlias(value: string) {
+  const slug = String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .slice(0, 40);
+
+  return slug || "value";
+}
+
+function calculatedColumnAlias(calculatedColumn: ReportCalculatedColumn, index: number) {
+  const idPart = calculatedColumn.id
+    ? slugForAlias(calculatedColumn.id)
+    : slugForAlias(calculatedColumn.label);
+
+  return `calc_${index + 1}_${idPart}`;
+}
+
+function getCalculatedSortColumns(calculatedColumns: ReportCalculatedColumn[]) {
+  return calculatedColumns
+    .map((column, index) => ({
+      key: calculatedColumnAlias(column, index),
+      label: String(column.label || "").trim(),
+    }))
+    .filter((column) => column.label);
+}
+
+function isResultOutputColumn(result: RunResult | null, key: string) {
+  return !!key && !!result?.columns?.some((column) => column.key === key);
+}
+
+function isCalculatedSortColumn(calculatedColumns: ReportCalculatedColumn[], key: string) {
+  return getCalculatedSortColumns(calculatedColumns).some((column) => column.key === key);
+}
+
+function normalizeSortDirection(direction: unknown): "asc" | "desc" {
+  return String(direction || "").toLowerCase() === "asc" ? "asc" : "desc";
+}
+
+function safeSortForReportRequest(input: {
+  dataset: Dataset | null;
+  sort: { column: string; direction: "asc" | "desc" } | null | undefined;
+  result?: RunResult | null;
+  calculatedColumns?: ReportCalculatedColumn[];
+}) {
+  const { dataset, sort, result = null, calculatedColumns = [] } = input;
+
+  if (!sort?.column) return null;
+
+  const normalizedSort = {
+    column: sort.column,
+    direction: normalizeSortDirection(sort.direction),
+  } as const;
+
+  if (isSortableOutputColumn(getColumn(dataset, sort.column))) {
+    return normalizedSort;
+  }
+
+  if (isResultOutputColumn(result, sort.column)) {
+    return normalizedSort;
+  }
+
+  if (isCalculatedSortColumn(calculatedColumns, sort.column)) {
+    return normalizedSort;
+  }
+
+  return null;
 }
 
 function getReportColumnWidth(column: { key: string; type: string }) {
@@ -267,7 +383,6 @@ async function captureChartAsPngDataUrl(root: HTMLDivElement | null) {
   }
 }
 
-
 function normalizeSavedCalculatedColumns(report: SavedReport | null) {
   if (!report) return [];
 
@@ -378,6 +493,21 @@ export default function ReportRunnerClient({ savedReportId, reportId }: ReportRu
     [report]
   );
 
+  const requestSelectedColumns = useMemo(
+    () => filterOutputColumnKeys(dataset, report?.selectedColumns ?? []),
+    [dataset, report?.selectedColumns]
+  );
+
+  const requestGrouping = useMemo(
+    () => filterGroupableKeys(dataset, report?.grouping ?? []),
+    [dataset, report?.grouping]
+  );
+
+  const requestAggregations = useMemo(
+    () => filterAggregations(dataset, report?.aggregations ?? []),
+    [dataset, report?.aggregations]
+  );
+
   function hydrateRuntimeFilters(nextReport: SavedReport, loadedDatasets: Dataset[]) {
     const targetDataset = loadedDatasets.find((d) => d.key === nextReport.datasetKey);
     const preferredDateColumn = inferTemplate(nextReport)?.defaultDateColumn ?? "";
@@ -431,11 +561,18 @@ export default function ReportRunnerClient({ savedReportId, reportId }: ReportRu
 
       const loadedDatasets = Array.isArray(datasetsData?.datasets) ? datasetsData.datasets : [];
       const loadedReport = reportData.report as SavedReport;
+      const loadedDataset =
+        loadedDatasets.find((d: Dataset) => d.key === loadedReport?.datasetKey) ?? null;
+      const loadedSort = safeSortForReportRequest({
+        dataset: loadedDataset,
+        sort: loadedReport?.sort,
+        calculatedColumns: normalizeSavedCalculatedColumns(loadedReport),
+      });
 
       setDatasets(loadedDatasets);
       setReport(loadedReport);
-      setSortBy(loadedReport?.sort?.column || "");
-      setSortDir(loadedReport?.sort?.direction || "desc");
+      setSortBy(loadedSort?.column || "");
+      setSortDir(loadedSort?.direction || "desc");
       hydrateRuntimeFilters(loadedReport, loadedDatasets);
     } catch (err: any) {
       setError(err?.message || "Failed to load report.");
@@ -458,6 +595,13 @@ export default function ReportRunnerClient({ savedReportId, reportId }: ReportRu
       setError(null);
       setSuccessMsg(null);
 
+      const safeSort = safeSortForReportRequest({
+        dataset,
+        sort: nextSort,
+        result,
+        calculatedColumns,
+      });
+
       const res = await fetch("/api/reports/run", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -465,12 +609,12 @@ export default function ReportRunnerClient({ savedReportId, reportId }: ReportRu
         body: JSON.stringify({
           savedReportId: report.id,
           datasetKey: report.datasetKey,
-          selectedColumns: report.selectedColumns,
+          selectedColumns: requestSelectedColumns,
           filters: currentFilters,
           filterLogic,
-          sort: nextSort,
-          grouping: report.grouping,
-          aggregations: report.aggregations,
+          sort: safeSort,
+          grouping: requestGrouping,
+          aggregations: requestAggregations,
           calculatedColumns,
           visualization: report.visualization,
           page: nextPageIndex + 1,
@@ -500,6 +644,13 @@ export default function ReportRunnerClient({ savedReportId, reportId }: ReportRu
       setError(null);
       setSuccessMsg(null);
 
+      const safeSort = safeSortForReportRequest({
+        dataset,
+        sort: report.sort,
+        result,
+        calculatedColumns,
+      });
+
       const nextChartConfig = {
         ...(report.chartConfig ?? {}),
         filterLogic,
@@ -517,12 +668,12 @@ export default function ReportRunnerClient({ savedReportId, reportId }: ReportRu
           visibility: report.visibility,
           sharedRoles: report.sharedRoles,
           sharedDepartments: report.sharedDepartments,
-          selectedColumns: report.selectedColumns,
+          selectedColumns: requestSelectedColumns,
           filters: currentFilters,
           filterLogic,
-          sort: report.sort,
-          grouping: report.grouping,
-          aggregations: report.aggregations,
+          sort: safeSort,
+          grouping: requestGrouping,
+          aggregations: requestAggregations,
           calculatedColumns,
           visualization: report.visualization,
           chartConfig: nextChartConfig,
@@ -537,8 +688,12 @@ export default function ReportRunnerClient({ savedReportId, reportId }: ReportRu
 
       setReport({
         ...report,
+        selectedColumns: requestSelectedColumns,
         filters: currentFilters as any,
         filterLogic,
+        sort: safeSort,
+        grouping: requestGrouping,
+        aggregations: requestAggregations,
         calculatedColumns,
         chartConfig: nextChartConfig,
       });
@@ -595,6 +750,13 @@ export default function ReportRunnerClient({ savedReportId, reportId }: ReportRu
   async function exportCsv() {
     if (!report) return;
 
+    const safeSort = safeSortForReportRequest({
+      dataset,
+      sort: sortBy ? { column: sortBy, direction: sortDir } : report.sort,
+      result,
+      calculatedColumns,
+    });
+
     const res = await fetch("/api/reports/export", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -602,12 +764,12 @@ export default function ReportRunnerClient({ savedReportId, reportId }: ReportRu
       body: JSON.stringify({
         savedReportId: report.id,
         datasetKey: report.datasetKey,
-        selectedColumns: report.selectedColumns,
+        selectedColumns: requestSelectedColumns,
         filters: currentFilters,
         filterLogic,
-        sort: sortBy ? { column: sortBy, direction: sortDir } : report.sort,
-        grouping: report.grouping,
-        aggregations: report.aggregations,
+        sort: safeSort,
+        grouping: requestGrouping,
+        aggregations: requestAggregations,
         calculatedColumns,
         visualization: report.visualization,
         pageSize: 10000,
@@ -642,6 +804,12 @@ export default function ReportRunnerClient({ savedReportId, reportId }: ReportRu
       setSuccessMsg(null);
 
       const chartImageDataUrl = await captureChartAsPngDataUrl(chartRef.current);
+      const safeSort = safeSortForReportRequest({
+        dataset,
+        sort: sortBy ? { column: sortBy, direction: sortDir } : report.sort,
+        result,
+        calculatedColumns,
+      });
 
       const res = await fetch("/api/reports/export/pdf", {
         method: "POST",
@@ -655,12 +823,12 @@ export default function ReportRunnerClient({ savedReportId, reportId }: ReportRu
           request: {
             savedReportId: report.id,
             datasetKey: report.datasetKey,
-            selectedColumns: report.selectedColumns,
+            selectedColumns: requestSelectedColumns,
             filters: currentFilters,
             filterLogic,
-            sort: sortBy ? { column: sortBy, direction: sortDir } : report.sort,
-            grouping: report.grouping,
-            aggregations: report.aggregations,
+            sort: safeSort,
+            grouping: requestGrouping,
+            aggregations: requestAggregations,
             calculatedColumns,
             visualization: report.visualization,
             page: 1,
@@ -694,6 +862,7 @@ export default function ReportRunnerClient({ savedReportId, reportId }: ReportRu
 
   useEffect(() => {
     loadReport();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeReportId]);
 
   useEffect(() => {

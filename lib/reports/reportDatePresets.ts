@@ -8,6 +8,10 @@ export type ReportDatePresetKey =
   | "last7Days"
   | "last14Days"
   | "last30Days"
+  | "last60Days"
+  | "last90Days"
+  | "last180Days"
+  | "last365Days"
   | "next7Days"
   | "thisWeek"
   | "lastWeek"
@@ -28,6 +32,10 @@ export const REPORT_DATE_PRESETS: ReportDatePreset[] = [
   { key: "last7Days", label: "Last 7 Days" },
   { key: "last14Days", label: "Last 14 Days" },
   { key: "last30Days", label: "Last 30 Days" },
+  { key: "last60Days", label: "Last 60 Days" },
+  { key: "last90Days", label: "Last 90 Days" },
+  { key: "last180Days", label: "Last 180 Days" },
+  { key: "last365Days", label: "Last 365 Days" },
   { key: "next7Days", label: "Next 7 Days" },
   { key: "thisWeek", label: "This Week" },
   { key: "lastWeek", label: "Last Week" },
@@ -58,6 +66,13 @@ function toDateInput(d: Date) {
   const mm = String(d.getMonth() + 1).padStart(2, "0");
   const dd = String(d.getDate()).padStart(2, "0");
   return `${yyyy}-${mm}-${dd}`;
+}
+
+function rollingRange(today: Date, days: number) {
+  return {
+    from: toDateInput(addDays(today, -(days - 1))),
+    to: toDateInput(today),
+  };
 }
 
 export function getReportDatePresetRange(
@@ -100,22 +115,25 @@ export function getReportDatePresetRange(
     }
 
     case "last7Days":
-      return {
-        from: toDateInput(addDays(today, -6)),
-        to: toDateInput(today),
-      };
+      return rollingRange(today, 7);
 
     case "last14Days":
-      return {
-        from: toDateInput(addDays(today, -13)),
-        to: toDateInput(today),
-      };
+      return rollingRange(today, 14);
 
     case "last30Days":
-      return {
-        from: toDateInput(addDays(today, -29)),
-        to: toDateInput(today),
-      };
+      return rollingRange(today, 30);
+
+    case "last60Days":
+      return rollingRange(today, 60);
+
+    case "last90Days":
+      return rollingRange(today, 90);
+
+    case "last180Days":
+      return rollingRange(today, 180);
+
+    case "last365Days":
+      return rollingRange(today, 365);
 
     case "next7Days":
       return {

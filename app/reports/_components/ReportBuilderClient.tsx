@@ -39,6 +39,7 @@ type DatasetColumn = {
   groupable: boolean;
   aggregatable: boolean;
   defaultVisible: boolean;
+  filterOnly?: boolean;
 };
 
 type Dataset = {
@@ -113,6 +114,150 @@ function moveArrayItem<T>(items: T[], index: number, direction: -1 | 1) {
   copy[index] = copy[nextIndex];
   copy[nextIndex] = current;
   return copy;
+}
+
+function isOutputColumn(column: DatasetColumn | undefined | null) {
+  return !!column && !column.filterOnly;
+}
+
+function isSortableOutputColumn(column: DatasetColumn | undefined | null) {
+  return isOutputColumn(column) && !!column?.sortable;
+}
+
+function isGroupableOutputColumn(column: DatasetColumn | undefined | null) {
+  return isOutputColumn(column) && !!column?.groupable;
+}
+
+function isAggregatableOutputColumn(column: DatasetColumn | undefined | null) {
+  return isOutputColumn(column) && !!column?.aggregatable;
+}
+
+function getColumn(dataset: Dataset | null, key: string) {
+  return dataset?.columns.find((column) => column.key === key) ?? null;
+}
+
+function filterOutputColumnKeys(dataset: Dataset | null, keys: string[] | undefined | null) {
+  if (!dataset || !Array.isArray(keys)) return [];
+
+  return keys.filter((key) => isOutputColumn(getColumn(dataset, key)));
+}
+
+function filterGroupableKeys(dataset: Dataset | null, keys: string[] | undefined | null) {
+  if (!dataset || !Array.isArray(keys)) return [];
+
+  return keys.filter((key) => isGroupableOutputColumn(getColumn(dataset, key)));
+}
+
+function filterAggregations(dataset: Dataset | null, aggregations: any[] | undefined | null) {
+  if (!dataset || !Array.isArray(aggregations)) return [];
+
+  return aggregations.filter((aggregation) => {
+    if (!aggregation?.column) return false;
+
+    const column = getColumn(dataset, aggregation.column);
+    return aggregation.function === "count"
+      ? isOutputColumn(column)
+      : isAggregatableOutputColumn(column);
+  });
+}
+
+function slugForAlias(value: string) {
+  const slug = String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .slice(0, 40);
+
+  return slug || "value";
+}
+
+function calculatedColumnAlias(calculatedColumn: ReportCalculatedColumn, index: number) {
+  const idPart = calculatedColumn.id
+    ? slugForAlias(calculatedColumn.id)
+    : slugForAlias(calculatedColumn.label);
+
+  return `calc_${index + 1}_${idPart}`;
+}
+
+function getCalculatedSortColumns(calculatedColumns: ReportCalculatedColumn[]) {
+  return calculatedColumns
+    .map((column, index) => ({
+      key: calculatedColumnAlias(column, index),
+      label: String(column.label || "").trim(),
+    }))
+    .filter((column) => column.label);
+}
+
+function isResultOutputColumn(result: RunResult | null, key: string) {
+  return !!key && !!result?.columns?.some((column) => column.key === key);
+}
+
+function isCalculatedSortColumn(calculatedColumns: ReportCalculatedColumn[], key: string) {
+  return getCalculatedSortColumns(calculatedColumns).some((column) => column.key === key);
+}
+
+function normalizeSortDirection(direction: unknown): "asc" | "desc" {
+  return String(direction || "").toLowerCase() === "asc" ? "asc" : "desc";
+}
+
+function safeSortForReportRequest(input: {
+  dataset: Dataset | null;
+  sort: { column: string; direction: "asc" | "desc" } | null | undefined;
+  result?: RunResult | null;
+  calculatedColumns?: ReportCalculatedColumn[];
+}) {
+  const { dataset, sort, result = null, calculatedColumns = [] } = input;
+
+  if (!sort?.column) return null;
+
+  const normalizedSort = {
+    column: sort.column,
+    direction: normalizeSortDirection(sort.direction),
+  } as const;
+
+  if (isSortableOutputColumn(getColumn(dataset, sort.column))) {
+    return normalizedSort;
+  }
+
+  if (isResultOutputColumn(result, sort.column)) {
+    return normalizedSort;
+  }
+
+  if (isCalculatedSortColumn(calculatedColumns, sort.column)) {
+    return normalizedSort;
+  }
+
+  return null;
+}
+
+function getFirstDateColumn(dataset: Dataset | null) {
+  return (
+    dataset?.columns.find(
+      (column) =>
+        column.filterable && (column.type === "date" || column.type === "datetime")
+    )?.key ?? ""
+  );
+}
+
+function getDefaultSort(dataset: Dataset | null) {
+  if (!dataset) return { column: "", direction: "desc" as const };
+
+  const defaultSortColumn = getColumn(dataset, dataset.defaultSort?.column ?? "");
+
+  if (isSortableOutputColumn(defaultSortColumn)) {
+    return {
+      column: dataset.defaultSort.column,
+      direction: dataset.defaultSort.direction,
+    };
+  }
+
+  const fallback = dataset.columns.find(isSortableOutputColumn);
+
+  return {
+    column: fallback?.key ?? "",
+    direction: dataset.defaultSort?.direction ?? "desc",
+  };
 }
 
 function getReportColumnWidth(column: { key: string; type: string }) {
@@ -242,6 +387,36 @@ export default function ReportBuilderClient({
   const [error, setError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
+  const outputColumns = useMemo(
+    () => dataset?.columns.filter((column) => !column.filterOnly) ?? [],
+    [dataset]
+  );
+
+  const sortableOutputColumns = useMemo(
+    () => outputColumns.filter((column) => column.sortable),
+    [outputColumns]
+  );
+
+  const groupableOutputColumns = useMemo(
+    () => outputColumns.filter((column) => column.groupable),
+    [outputColumns]
+  );
+
+  const aggregatableOutputColumns = useMemo(
+    () => outputColumns.filter((column) => column.aggregatable),
+    [outputColumns]
+  );
+
+  const calculatedSortColumns = useMemo(
+    () => getCalculatedSortColumns(effectiveCalculatedColumns()),
+    [advancedOutputMode, calculatedColumns, mode]
+  );
+
+  const requestSelectedColumns = useMemo(
+    () => filterOutputColumnKeys(dataset, selectedColumns),
+    [dataset, selectedColumns]
+  );
+
   const requestFilters = useMemo(
     () =>
       buildReportFilters({
@@ -262,24 +437,38 @@ export default function ReportBuilderClient({
     }
 
     const range = buildTemplateDateRange(nextTemplate);
+    const nextSort = getDefaultSort(targetDataset);
+    const nextSelectedColumns = filterOutputColumnKeys(
+      targetDataset,
+      nextTemplate.defaultColumns
+    );
+    const nextGrouping = filterGroupableKeys(targetDataset, nextTemplate.defaultGrouping);
+    const nextAggregations = filterAggregations(
+      targetDataset,
+      nextTemplate.defaultAggregations
+    );
 
     setTemplateKey(nextTemplate.key);
     setDatasetKey(nextTemplate.datasetKey);
-    setSelectedColumns(nextTemplate.defaultColumns);
+    setSelectedColumns(nextSelectedColumns);
     setDateColumn(nextTemplate.defaultDateColumn);
     setDatePreset(nextTemplate.defaultDatePreset);
     setDateFrom(range.from);
     setDateTo(range.to);
     setFilterLogic(nextTemplate.defaultFilterLogic ?? "AND");
     setFieldFilters({ ...((nextTemplate.defaultFilters ?? {}) as Record<string, FilterValue>) });
-    setGrouping(nextTemplate.defaultGrouping);
-    setAggregations(nextTemplate.defaultAggregations);
+    setGrouping(nextGrouping);
+    setAggregations(nextAggregations);
     setCalculatedColumns([]);
-    setAggregateColumn(nextTemplate.defaultAggregations[0]?.column ?? "");
-    setAggregateFunction(nextTemplate.defaultAggregations[0]?.function ?? "sum");
+    setAggregateColumn(nextAggregations[0]?.column ?? "");
+    setAggregateFunction(nextAggregations[0]?.function ?? "sum");
     setVisualization(nextTemplate.defaultVisualization);
-    setSortBy(nextTemplate.defaultSort.column);
-    setSortDir(nextTemplate.defaultSort.direction);
+    setSortBy(
+      isSortableOutputColumn(getColumn(targetDataset, nextTemplate.defaultSort.column))
+        ? nextTemplate.defaultSort.column
+        : nextSort.column
+    );
+    setSortDir(nextTemplate.defaultSort.direction ?? nextSort.direction);
     setReportName(nextTemplate.label);
     setDescription(nextTemplate.description);
     setAdvancedOutputMode("summary");
@@ -288,11 +477,15 @@ export default function ReportBuilderClient({
   }
 
   function applyDatasetDefaults(nextDataset: Dataset) {
-    setDatasetKey(nextDataset.key);
-    setSelectedColumns(nextDataset.defaultColumns ?? []);
-    setDateColumn(
-      nextDataset.columns.find((c) => c.type === "date" || c.type === "datetime")?.key ?? ""
+    const nextSort = getDefaultSort(nextDataset);
+    const nextSelectedColumns = filterOutputColumnKeys(
+      nextDataset,
+      nextDataset.defaultColumns ?? []
     );
+
+    setDatasetKey(nextDataset.key);
+    setSelectedColumns(nextSelectedColumns);
+    setDateColumn(getFirstDateColumn(nextDataset));
     setDatePreset("last7Days");
 
     const range = getReportDatePresetRange("last7Days");
@@ -307,8 +500,8 @@ export default function ReportBuilderClient({
     setAggregateColumn("");
     setAggregateFunction("sum");
     setVisualization("datatable");
-    setSortBy(nextDataset.defaultSort?.column ?? "");
-    setSortDir(nextDataset.defaultSort?.direction ?? "desc");
+    setSortBy(nextSort.column);
+    setSortDir(nextSort.direction);
     setAdvancedOutputMode("detail");
     setResult(null);
     setPageIndex(0);
@@ -340,10 +533,16 @@ export default function ReportBuilderClient({
         ? (chartConfig.calculatedColumns as ReportCalculatedColumn[])
         : [];
 
+    const nextSelectedColumns = report.selectedColumns?.length
+      ? filterOutputColumnKeys(targetDataset, report.selectedColumns)
+      : filterOutputColumnKeys(targetDataset, targetDataset.defaultColumns);
+
+    const nextGrouping = filterGroupableKeys(targetDataset, report.grouping ?? []);
+    const nextAggregations = filterAggregations(targetDataset, report.aggregations ?? []);
+    const nextSort = getDefaultSort(targetDataset);
+
     setDatasetKey(report.datasetKey);
-    setSelectedColumns(
-      report.selectedColumns?.length ? report.selectedColumns : targetDataset.defaultColumns
-    );
+    setSelectedColumns(nextSelectedColumns);
     setDateColumn(split.dateColumn);
     setDatePreset(split.datePreset);
     setDateFrom(split.dateFrom);
@@ -351,15 +550,19 @@ export default function ReportBuilderClient({
     setFieldFilters(split.fieldFilters as Record<string, FilterValue>);
     setFilterLogic(report.filterLogic || (chartConfig.filterLogic === "OR" ? "OR" : "AND"));
 
-    setGrouping(report.grouping ?? []);
-    setAggregations(report.aggregations ?? []);
+    setGrouping(nextGrouping);
+    setAggregations(nextAggregations);
     setCalculatedColumns(savedCalculatedColumns);
-    setAggregateColumn(report.aggregations?.[0]?.column ?? "");
-    setAggregateFunction(report.aggregations?.[0]?.function ?? "sum");
+    setAggregateColumn(nextAggregations?.[0]?.column ?? "");
+    setAggregateFunction(nextAggregations?.[0]?.function ?? "sum");
 
     setVisualization(report.visualization || "datatable");
-    setSortBy(report.sort?.column || targetDataset.defaultSort?.column || "");
-    setSortDir(report.sort?.direction || targetDataset.defaultSort?.direction || "desc");
+    setSortBy(
+      report.sort?.column && isSortableOutputColumn(getColumn(targetDataset, report.sort.column))
+        ? report.sort.column
+        : nextSort.column
+    );
+    setSortDir(report.sort?.direction || nextSort.direction);
 
     setReportName(report.reportName || "");
     setDescription(report.description || "");
@@ -438,9 +641,12 @@ export default function ReportBuilderClient({
   }, [savedReportId]);
 
   function activeAggregations() {
-    if (aggregations.length) return aggregations;
+    if (aggregations.length) return filterAggregations(dataset, aggregations);
 
     if (aggregateColumn) {
+      const column = getColumn(dataset, aggregateColumn);
+      if (!isAggregatableOutputColumn(column)) return [];
+
       return [
         {
           column: aggregateColumn,
@@ -457,7 +663,7 @@ export default function ReportBuilderClient({
       return [];
     }
 
-    return grouping;
+    return filterGroupableKeys(dataset, grouping);
   }
 
   function effectiveAggregations() {
@@ -490,16 +696,23 @@ export default function ReportBuilderClient({
       setError(null);
       setSuccessMsg(null);
 
+      const safeSort = safeSortForReportRequest({
+        dataset,
+        sort: nextSort,
+        result,
+        calculatedColumns: effectiveCalculatedColumns(),
+      });
+
       const res = await fetch("/api/reports/run", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
         body: JSON.stringify({
           datasetKey: dataset.key,
-          selectedColumns,
+          selectedColumns: requestSelectedColumns,
           filters: requestFilters,
           filterLogic,
-          sort: nextSort,
+          sort: safeSort,
           grouping: effectiveGrouping(),
           aggregations: effectiveAggregations(),
           calculatedColumns: effectiveCalculatedColumns(),
@@ -536,6 +749,13 @@ export default function ReportBuilderClient({
       setError(null);
       setSuccessMsg(null);
 
+      const safeSort = safeSortForReportRequest({
+        dataset,
+        sort: sortBy ? { column: sortBy, direction: sortDir } : null,
+        result,
+        calculatedColumns: effectiveCalculatedColumns(),
+      });
+
       const payload = {
         reportName: reportName.trim(),
         description: description.trim() || null,
@@ -546,10 +766,10 @@ export default function ReportBuilderClient({
           .split(",")
           .map((x) => x.trim())
           .filter(Boolean),
-        selectedColumns,
+        selectedColumns: requestSelectedColumns,
         filters: requestFilters,
         filterLogic,
-        sort: sortBy ? { column: sortBy, direction: sortDir } : null,
+        sort: safeSort,
         grouping: effectiveGrouping(),
         aggregations: effectiveAggregations(),
         calculatedColumns: effectiveCalculatedColumns(),
@@ -596,16 +816,23 @@ export default function ReportBuilderClient({
   async function exportCsv() {
     if (!dataset) return;
 
+    const safeSort = safeSortForReportRequest({
+      dataset,
+      sort: sortBy ? { column: sortBy, direction: sortDir } : null,
+      result,
+      calculatedColumns: effectiveCalculatedColumns(),
+    });
+
     const res = await fetch("/api/reports/export", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       credentials: "include",
       body: JSON.stringify({
         datasetKey: dataset.key,
-        selectedColumns,
+        selectedColumns: requestSelectedColumns,
         filters: requestFilters,
         filterLogic,
-        sort: sortBy ? { column: sortBy, direction: sortDir } : null,
+        sort: safeSort,
         grouping: effectiveGrouping(),
         aggregations: effectiveAggregations(),
         calculatedColumns: effectiveCalculatedColumns(),
@@ -633,7 +860,6 @@ export default function ReportBuilderClient({
     URL.revokeObjectURL(url);
   }
 
-
   async function exportPdf() {
     if (!dataset) return;
 
@@ -641,6 +867,13 @@ export default function ReportBuilderClient({
       setExportingPdf(true);
       setError(null);
       setSuccessMsg(null);
+
+      const safeSort = safeSortForReportRequest({
+        dataset,
+        sort: sortBy ? { column: sortBy, direction: sortDir } : null,
+        result,
+        calculatedColumns: effectiveCalculatedColumns(),
+      });
 
       const res = await fetch("/api/reports/export/pdf", {
         method: "POST",
@@ -653,10 +886,10 @@ export default function ReportBuilderClient({
           request: {
             savedReportId: savedReportId ?? null,
             datasetKey: dataset.key,
-            selectedColumns,
+            selectedColumns: requestSelectedColumns,
             filters: requestFilters,
             filterLogic,
-            sort: sortBy ? { column: sortBy, direction: sortDir } : null,
+            sort: safeSort,
             grouping: effectiveGrouping(),
             aggregations: effectiveAggregations(),
             calculatedColumns: effectiveCalculatedColumns(),
@@ -728,12 +961,18 @@ export default function ReportBuilderClient({
   }, [result?.columns]);
 
   function toggleSelectedColumn(key: string) {
+    const column = getColumn(dataset, key);
+    if (!isOutputColumn(column)) return;
+
     setSelectedColumns((prev) =>
       prev.includes(key) ? prev.filter((x) => x !== key) : [...prev, key]
     );
   }
 
   function toggleGrouping(key: string) {
+    const column = getColumn(dataset, key);
+    if (!isGroupableOutputColumn(column)) return;
+
     setGrouping((prev) =>
       prev.includes(key) ? prev.filter((x) => x !== key) : [...prev, key]
     );
@@ -768,11 +1007,11 @@ export default function ReportBuilderClient({
     run(0, pageSize, { column: nextSortBy, direction: nextSortDir });
   }
 
-  const selectedColumnDetails = selectedColumns
+  const selectedColumnDetails = requestSelectedColumns
     .map((key) => dataset?.columns.find((c) => c.key === key))
     .filter(Boolean) as DatasetColumn[];
 
-  const groupingDetails = grouping
+  const groupingDetails = effectiveGrouping()
     .map((key) => dataset?.columns.find((c) => c.key === key))
     .filter(Boolean) as DatasetColumn[];
 
@@ -1015,13 +1254,21 @@ export default function ReportBuilderClient({
                 onChange={(e) => setSortBy(e.target.value)}
               >
                 <option value="">None</option>
-                {dataset?.columns
-                  .filter((c) => c.sortable)
-                  .map((c) => (
-                    <option key={c.key} value={c.key}>
-                      {c.label}
-                    </option>
-                  ))}
+                {sortableOutputColumns.map((c) => (
+                  <option key={c.key} value={c.key}>
+                    {c.label}
+                  </option>
+                ))}
+
+                {calculatedSortColumns.length ? (
+                  <optgroup label="Calculated Columns">
+                    {calculatedSortColumns.map((c) => (
+                      <option key={c.key} value={c.key}>
+                        {c.label}
+                      </option>
+                    ))}
+                  </optgroup>
+                ) : null}
               </select>
             </div>
 
@@ -1099,11 +1346,11 @@ export default function ReportBuilderClient({
             <h2>Columns</h2>
 
             <div className="form-grid">
-              {dataset?.columns.map((column) => (
+              {outputColumns.map((column) => (
                 <label key={column.key} className="master-checkbox-row">
                   <input
                     type="checkbox"
-                    checked={selectedColumns.includes(column.key)}
+                    checked={requestSelectedColumns.includes(column.key)}
                     onChange={() => toggleSelectedColumn(column.key)}
                   />
                   {column.label}
@@ -1176,13 +1423,11 @@ export default function ReportBuilderClient({
                   }}
                 >
                   <option value="">None</option>
-                  {dataset?.columns
-                    .filter((c) => c.aggregatable)
-                    .map((c) => (
-                      <option key={c.key} value={c.key}>
-                        {c.label}
-                      </option>
-                    ))}
+                  {aggregatableOutputColumns.map((c) => (
+                    <option key={c.key} value={c.key}>
+                      {c.label}
+                    </option>
+                  ))}
                 </select>
               </div>
 
@@ -1213,19 +1458,17 @@ export default function ReportBuilderClient({
             <div>
               <label className="field-label">Group By</label>
               <div className="form-grid">
-                {dataset?.columns
-                  .filter((c) => c.groupable)
-                  .map((column) => (
-                    <label key={column.key} className="master-checkbox-row">
-                      <input
-                        type="checkbox"
-                        checked={grouping.includes(column.key)}
-                        disabled={advancedOutputMode === "detail"}
-                        onChange={() => toggleGrouping(column.key)}
-                      />
-                      {column.label}
-                    </label>
-                  ))}
+                {groupableOutputColumns.map((column) => (
+                  <label key={column.key} className="master-checkbox-row">
+                    <input
+                      type="checkbox"
+                      checked={effectiveGrouping().includes(column.key)}
+                      disabled={advancedOutputMode === "detail"}
+                      onChange={() => toggleGrouping(column.key)}
+                    />
+                    {column.label}
+                  </label>
+                ))}
               </div>
             </div>
 
@@ -1270,7 +1513,7 @@ export default function ReportBuilderClient({
             </div>
 
             <ReportCalculatedColumnsBuilder
-              columns={dataset?.columns ?? []}
+              columns={outputColumns}
               calculatedColumns={calculatedColumns}
               onCalculatedColumnsChange={setCalculatedColumns}
               disabled={advancedOutputMode === "detail"}

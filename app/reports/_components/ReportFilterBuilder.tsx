@@ -17,6 +17,7 @@ type DatasetColumn = {
   label: string;
   type: string;
   filterable: boolean;
+  filterOnly?: boolean;
 };
 
 type FilterValue = ReportFilterValue;
@@ -44,6 +45,14 @@ type Props = {
   fieldFilters: Record<string, FilterValue>;
   onFieldFiltersChange: (next: Record<string, FilterValue>) => void;
 };
+
+type NewFilterOperator =
+  | "equals"
+  | "contains"
+  | "startsWith"
+  | "numberGte"
+  | "numberLte"
+  | "numberBetween";
 
 const DROPDOWN_COLUMN_HINTS = [
   "department",
@@ -92,6 +101,31 @@ function filterValueLabel(filter: FilterValue) {
   return formatReportFilterValue(filter);
 }
 
+function parseFiniteNumber(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+
+  const numericValue = Number(trimmed);
+  return Number.isFinite(numericValue) ? numericValue : null;
+}
+
+function isNumberOperator(operator: string) {
+  return (
+    operator === "equals" ||
+    operator === "numberGte" ||
+    operator === "numberLte" ||
+    operator === "numberBetween"
+  );
+}
+
+function defaultOperatorForColumn(column: DatasetColumn | undefined): NewFilterOperator {
+  if (!column) return "equals";
+  if (column.type === "boolean") return "equals";
+  if (column.type === "number") return "equals";
+  if (shouldUseDropdown(column)) return "equals";
+  return "contains";
+}
+
 export default function ReportFilterBuilder({
   datasetKey,
   columns,
@@ -110,8 +144,10 @@ export default function ReportFilterBuilder({
   onFieldFiltersChange,
 }: Props) {
   const [newFilterColumn, setNewFilterColumn] = useState("");
-  const [newFilterOperator, setNewFilterOperator] = useState("equals");
+  const [newFilterOperator, setNewFilterOperator] =
+    useState<NewFilterOperator>("equals");
   const [newFilterValue, setNewFilterValue] = useState("");
+  const [newFilterValueTo, setNewFilterValueTo] = useState("");
 
   const [optionValues, setOptionValues] = useState<string[]>([]);
   const [optionsLoading, setOptionsLoading] = useState(false);
@@ -140,7 +176,10 @@ export default function ReportFilterBuilder({
   const selectedNewFilterColumn = columns.find(
     (column) => column.key === newFilterColumn
   );
+
   const useDropdown = shouldUseDropdown(selectedNewFilterColumn);
+  const selectedColumnIsNumber = selectedNewFilterColumn?.type === "number";
+  const selectedColumnIsBoolean = selectedNewFilterColumn?.type === "boolean";
 
   const activeFilterRows = Object.entries(fieldFilters)
     .map(([key, filter]) => ({
@@ -209,31 +248,19 @@ export default function ReportFilterBuilder({
   useEffect(() => {
     const column = selectedNewFilterColumn;
 
+    setNewFilterOperator(defaultOperatorForColumn(column));
+    setNewFilterValueTo("");
+
     if (!column) {
-      setNewFilterOperator("equals");
       setNewFilterValue("");
       return;
     }
 
     if (column.type === "boolean") {
-      setNewFilterOperator("equals");
       setNewFilterValue("Yes");
       return;
     }
 
-    if (shouldUseDropdown(column)) {
-      setNewFilterOperator("equals");
-      setNewFilterValue("");
-      return;
-    }
-
-    if (column.type === "number") {
-      setNewFilterOperator("equals");
-      setNewFilterValue("");
-      return;
-    }
-
-    setNewFilterOperator("contains");
     setNewFilterValue("");
   }, [newFilterColumn, selectedNewFilterColumn]);
 
@@ -254,6 +281,7 @@ export default function ReportFilterBuilder({
     if (!column) return;
 
     const value = newFilterValue.trim();
+    const valueTo = newFilterValueTo.trim();
     const next = { ...fieldFilters };
 
     if (column.type === "boolean") {
@@ -261,26 +289,61 @@ export default function ReportFilterBuilder({
         operator: value === "No" || value === "false" ? "isFalse" : "isTrue",
       };
     } else if (column.type === "number") {
-      if (!value) return;
+      if (!isNumberOperator(newFilterOperator)) return;
 
-      const numericValue = Number(value);
-      if (!Number.isFinite(numericValue)) return;
+      if (newFilterOperator === "equals") {
+        const numericValue = parseFiniteNumber(value);
+        if (numericValue === null) return;
 
-      next[column.key] = {
-        operator: "equals",
-        value: numericValue,
-      };
+        next[column.key] = {
+          operator: "equals",
+          value: numericValue,
+        };
+      } else if (newFilterOperator === "numberGte") {
+        const numericValue = parseFiniteNumber(value);
+        if (numericValue === null) return;
+
+        next[column.key] = {
+          operator: "numberRange",
+          from: numericValue,
+        };
+      } else if (newFilterOperator === "numberLte") {
+        const numericValue = parseFiniteNumber(value);
+        if (numericValue === null) return;
+
+        next[column.key] = {
+          operator: "numberRange",
+          to: numericValue,
+        };
+      } else if (newFilterOperator === "numberBetween") {
+        const fromValue = parseFiniteNumber(value);
+        const toValue = parseFiniteNumber(valueTo);
+
+        if (fromValue === null && toValue === null) return;
+
+        next[column.key] = {
+          operator: "numberRange",
+          from: fromValue,
+          to: toValue,
+        };
+      }
     } else {
       if (!value) return;
 
+      const textOperator =
+        newFilterOperator === "startsWith" || newFilterOperator === "contains"
+          ? newFilterOperator
+          : "equals";
+
       next[column.key] = {
-        operator: newFilterOperator as FilterValue["operator"],
+        operator: textOperator,
         value,
       };
     }
 
     onFieldFiltersChange(next);
     setNewFilterValue("");
+    setNewFilterValueTo("");
   }
 
   function removeFilter(key: string) {
@@ -331,9 +394,15 @@ export default function ReportFilterBuilder({
 
         .report-filter-add-row {
           display: grid;
-          grid-template-columns: minmax(180px, 1fr) minmax(150px, 180px) minmax(180px, 1fr) auto;
+          grid-template-columns: minmax(180px, 1fr) minmax(150px, 190px) minmax(180px, 1fr) auto;
           gap: 8px;
           align-items: end;
+        }
+
+        .report-filter-between-row {
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          gap: 8px;
         }
 
         @media (max-width: 1100px) {
@@ -344,6 +413,10 @@ export default function ReportFilterBuilder({
 
         @media (max-width: 700px) {
           .report-filter-add-row {
+            grid-template-columns: 1fr;
+          }
+
+          .report-filter-between-row {
             grid-template-columns: 1fr;
           }
         }
@@ -445,19 +518,30 @@ export default function ReportFilterBuilder({
           <select
             className="select"
             value={newFilterOperator}
-            disabled={selectedNewFilterColumn?.type === "boolean"}
-            onChange={(e) => setNewFilterOperator(e.target.value)}
+            disabled={selectedColumnIsBoolean}
+            onChange={(e) => setNewFilterOperator(e.target.value as NewFilterOperator)}
           >
-            <option value="equals">Equals</option>
-            <option value="contains">Contains</option>
-            <option value="startsWith">Starts With</option>
+            {selectedColumnIsNumber ? (
+              <>
+                <option value="equals">Equals</option>
+                <option value="numberGte">Greater Than or Equal</option>
+                <option value="numberLte">Less Than or Equal</option>
+                <option value="numberBetween">Between</option>
+              </>
+            ) : (
+              <>
+                <option value="equals">Equals</option>
+                <option value="contains">Contains</option>
+                <option value="startsWith">Starts With</option>
+              </>
+            )}
           </select>
         </div>
 
         <div>
           <label className="field-label">Value</label>
 
-          {selectedNewFilterColumn?.type === "boolean" ? (
+          {selectedColumnIsBoolean ? (
             <select
               className="select"
               value={newFilterValue || "Yes"}
@@ -466,6 +550,40 @@ export default function ReportFilterBuilder({
               <option value="Yes">Yes</option>
               <option value="No">No</option>
             </select>
+          ) : selectedColumnIsNumber && newFilterOperator === "numberBetween" ? (
+            <div className="report-filter-between-row">
+              <input
+                className="input"
+                type="number"
+                step="any"
+                value={newFilterValue}
+                onChange={(e) => setNewFilterValue(e.target.value)}
+                placeholder="From"
+              />
+              <input
+                className="input"
+                type="number"
+                step="any"
+                value={newFilterValueTo}
+                onChange={(e) => setNewFilterValueTo(e.target.value)}
+                placeholder="To"
+              />
+            </div>
+          ) : selectedColumnIsNumber ? (
+            <input
+              className="input"
+              type="number"
+              step="any"
+              value={newFilterValue}
+              onChange={(e) => setNewFilterValue(e.target.value)}
+              placeholder={
+                newFilterOperator === "numberGte"
+                  ? "Minimum value"
+                  : newFilterOperator === "numberLte"
+                    ? "Maximum value"
+                    : "Enter number"
+              }
+            />
           ) : useDropdown && newFilterOperator === "equals" ? (
             <select
               className="select"
@@ -487,11 +605,7 @@ export default function ReportFilterBuilder({
               className="input"
               value={newFilterValue}
               onChange={(e) => setNewFilterValue(e.target.value)}
-              placeholder={
-                selectedNewFilterColumn?.type === "number"
-                  ? "Enter number"
-                  : "Enter text..."
-              }
+              placeholder="Enter text..."
             />
           )}
 

@@ -9,6 +9,7 @@ import type {
   ReportVisualization,
 } from "./reportTypes";
 import type { ReportDatePresetKey } from "./reportDatePresets";
+import { RECUT_REPORT_TEMPLATES } from "./recutReportTemplates";
 
 export type ReportSummaryCardConfig = {
   key: string;
@@ -1445,6 +1446,8 @@ export const REPORT_TEMPLATES: ReportTemplate[] = [
       },
     ],
   },
+
+  ...RECUT_REPORT_TEMPLATES,
 ];
 
 export function getReportTemplate(templateKey: string | null | undefined) {

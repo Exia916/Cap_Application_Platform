@@ -1,8 +1,15 @@
+// app/api/reports/run/route.ts
+
 import { NextRequest, NextResponse } from "next/server";
 import { getAuthFromRequest } from "@/lib/auth";
-import { requireReportAccess } from "@/lib/reports/reportPermissions";
+import {
+  canUseDataset,
+  requireReportAccess,
+} from "@/lib/reports/reportPermissions";
 import { getReportDataset } from "@/lib/reports/reportRegistry";
 import { runReport } from "@/lib/reports/reportRepo";
+
+export const runtime = "nodejs";
 
 export async function POST(req: NextRequest) {
   const access = requireReportAccess(getAuthFromRequest(req));
@@ -12,21 +19,28 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const body = await req.json();
+    const body = await req.json().catch(() => null);
+
+    if (!body || typeof body !== "object") {
+      return NextResponse.json({ error: "Invalid report run request." }, { status: 400 });
+    }
 
     const dataset = getReportDataset(body?.datasetKey);
+
     if (!dataset) {
       return NextResponse.json({ error: "Invalid dataset." }, { status: 400 });
     }
 
-    const role = String(access.user.role || "").toUpperCase();
-    if (!dataset.allowedRoles.includes(role as any)) {
+    if (!canUseDataset({ user: access.user, allowedRoles: dataset.allowedRoles })) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
     const result = await runReport(body, access.user);
+
     return NextResponse.json(result);
   } catch (err: any) {
+    console.error("Report run error:", err);
+
     return NextResponse.json(
       { error: err?.message || "Failed to run report." },
       { status: 500 }

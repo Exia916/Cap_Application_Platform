@@ -65,7 +65,9 @@ export function formatReportCell(value: unknown, type?: ReportColumnType | strin
   if (typeof value === "number") return formatReportNumber(value);
 
   const asNumber = Number(value);
-  if (type === "number" && Number.isFinite(asNumber)) return formatReportNumber(asNumber);
+  if (type === "number" && Number.isFinite(asNumber)) {
+    return formatReportNumber(asNumber);
+  }
 
   return String(value);
 }
@@ -87,10 +89,28 @@ export function humanizeReportLabel(value: string) {
     sum_metric_total_stitches: "Total Stitches",
     sum_total_stitches: "Total Stitches",
     sum_total_pieces: "Total Pieces",
+
+    sum_produced_pieces: "Produced Pieces",
+    sum_gross_recut_count: "Gross Recut Count",
+    sum_gross_recut_pieces: "Gross Recut Pieces",
+    sum_excluded_recut_count: "Excluded Recut Count",
+    sum_excluded_recut_pieces: "Excluded Recut Pieces",
+    sum_accountable_recut_count: "Accountable Recut Count",
+    sum_accountable_recut_pieces: "Accountable Recut Pieces",
+
+    avg_gross_recut_piece_rate: "Average Gross Recut Rate %",
+    avg_accountable_recut_piece_rate: "Average Accountable Recut Rate %",
+    avg_gross_recuts_per_1000_pieces: "Average Gross Recuts per 1,000 Pieces",
+    avg_accountable_recuts_per_1000_pieces:
+      "Average Accountable Recuts per 1,000 Pieces",
+
     avg_days_open: "Average Days Open",
     avg_hours_open: "Average Hours Open",
+    avg_hours_to_complete: "Average Hours to Complete",
+
     count_request_number: "Request Count",
     count_inbound_shipment_number: "Shipment Count",
+    count_recut_id: "Recut Count",
   };
 
   if (known[raw]) return known[raw];
@@ -113,7 +133,9 @@ export function humanizeReportLabel(value: string) {
     .replace(/\bMbl\b/g, "MBL")
     .replace(/\bHbl\b/g, "HBL")
     .replace(/\bUrl\b/g, "URL")
-    .replace(/\bId\b/g, "ID");
+    .replace(/\bId\b/g, "ID")
+    .replace(/\bQc\b/g, "QC")
+    .replace(/\bSo\b/g, "SO");
 }
 
 export function formatReportFilterValue(filter: ReportFilterValue) {
@@ -125,8 +147,29 @@ export function formatReportFilterValue(filter: ReportFilterValue) {
   if (filter.operator === "isFalse") return "No";
   if (filter.operator === "in") return `in ${(filter.values ?? []).join(", ")}`;
   if (filter.operator === "notIn") return `not in ${(filter.values ?? []).join(", ")}`;
-  if (filter.operator === "dateRange") return `${filter.from || "Any"} to ${filter.to || "Any"}`;
-  if (filter.operator === "numberRange") return `${filter.from ?? "Any"} to ${filter.to ?? "Any"}`;
+
+  if (filter.operator === "dateRange") {
+    if (filter.from && filter.to) return `${filter.from} to ${filter.to}`;
+    if (filter.from) return `on or after ${filter.from}`;
+    if (filter.to) return `on or before ${filter.to}`;
+    return "Any date";
+  }
+
+  if (filter.operator === "numberRange") {
+    const hasFrom =
+      filter.from !== null &&
+      filter.from !== undefined &&
+      String(filter.from).trim() !== "";
+    const hasTo =
+      filter.to !== null &&
+      filter.to !== undefined &&
+      String(filter.to).trim() !== "";
+
+    if (hasFrom && hasTo) return `${filter.from} to ${filter.to}`;
+    if (hasFrom) return `>= ${filter.from}`;
+    if (hasTo) return `<= ${filter.to}`;
+    return "Any number";
+  }
 
   return String(filter.value ?? "");
 }

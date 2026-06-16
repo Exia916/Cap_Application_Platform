@@ -118,6 +118,17 @@ export type ReportColumn = {
   groupable?: boolean;
   aggregatable?: boolean;
   defaultVisible?: boolean;
+
+  /**
+   * Allows a column to be used for filters/date presets while hiding it from
+   * output-column, grouping, aggregation, sorting, chart, CSV, and PDF selection.
+   *
+   * Example:
+   * - operatorRecutRate.production_shift_date is used to filter the production
+   *   cohort before recuts are joined, but it is not a real output column on the
+   *   final operator/order result grain.
+   */
+  filterOnly?: boolean;
 };
 
 export type ReportDatasetCategory =
