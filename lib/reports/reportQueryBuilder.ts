@@ -1,6 +1,7 @@
 // lib/reports/reportQueryBuilder.ts
 
 import { humanizeReportLabel } from "./reportFormatters";
+import { buildOperatorRecutRateQuery } from "./operatorRecutRateQueryBuilder";
 import { getReportDataset } from "./reportRegistry";
 import type {
   ReportAggregation,
@@ -42,6 +43,18 @@ function getColumnOrThrow(columns: Map<string, ReportColumn>, key: string) {
   const column = columns.get(key);
   if (!column) throw new Error(`Invalid report column: ${key}`);
   return column;
+}
+
+function isOutputColumn(column: ReportColumn) {
+  return !column.filterOnly;
+}
+
+function isGroupableOutputColumn(column: ReportColumn) {
+  return isOutputColumn(column) && !!column.groupable;
+}
+
+function isAggregatableOutputColumn(column: ReportColumn) {
+  return isOutputColumn(column) && !!column.aggregatable;
 }
 
 function normalizePage(value: unknown) {
@@ -116,7 +129,11 @@ function buildAggregateExpression(input: {
   const column = getColumnOrThrow(columnMap, part.column);
   const fn = part.function;
 
-  if (fn !== "count" && !column.aggregatable) {
+  if (!isOutputColumn(column)) {
+    throw new Error(`${column.label} can only be used as a filter.`);
+  }
+
+  if (fn !== "count" && !isAggregatableOutputColumn(column)) {
     throw new Error(`${column.label} cannot be used in a calculated column.`);
   }
 
@@ -332,6 +349,13 @@ export function buildReportQuery(request: ReportRunRequest): BuiltReportQuery {
     throw new Error("Invalid report dataset.");
   }
 
+  if (dataset.key === "operatorRecutRate") {
+    return buildOperatorRecutRateQuery({
+      request,
+      dataset,
+    });
+  }
+
   const page = normalizePage(request.page);
   const pageSize = normalizePageSize(request.pageSize);
   const offset = (page - 1) * pageSize;
@@ -374,7 +398,8 @@ export function buildReportQuery(request: ReportRunRequest): BuiltReportQuery {
   if (hasGroupingOrAggregations) {
     for (const key of groupingKeys) {
       const column = getColumnOrThrow(columnMap, key);
-      if (!column.groupable) {
+
+      if (!isGroupableOutputColumn(column)) {
         throw new Error(`${column.label} cannot be used for grouping.`);
       }
 
@@ -390,7 +415,14 @@ export function buildReportQuery(request: ReportRunRequest): BuiltReportQuery {
     for (const aggregation of aggregations) {
       const column = getColumnOrThrow(columnMap, aggregation.column);
 
-      if (aggregation.function !== "count" && !column.aggregatable) {
+      if (!isOutputColumn(column)) {
+        throw new Error(`${column.label} can only be used as a filter.`);
+      }
+
+      if (
+        aggregation.function !== "count" &&
+        !isAggregatableOutputColumn(column)
+      ) {
         throw new Error(`${column.label} cannot be aggregated.`);
       }
 
@@ -441,6 +473,11 @@ export function buildReportQuery(request: ReportRunRequest): BuiltReportQuery {
   } else {
     for (const key of selectedColumnKeys) {
       const column = getColumnOrThrow(columnMap, key);
+
+      if (!isOutputColumn(column)) {
+        throw new Error(`${column.label} can only be used as a filter.`);
+      }
+
       selectParts.push(`${column.sql} AS ${quoteIdent(column.key)}`);
       outputColumns.push({
         key: column.key,

@@ -13,6 +13,7 @@ type DatasetColumn = {
   label: string;
   type: string;
   aggregatable?: boolean;
+  filterOnly?: boolean;
 };
 
 type Props = {
@@ -63,11 +64,17 @@ function newId() {
   return `calc_${Date.now()}_${Math.random().toString(16).slice(2)}`;
 }
 
+function selectableBaseColumns(columns: DatasetColumn[]) {
+  return columns.filter((column) => !column.filterOnly);
+}
+
 function defaultAggregatePart(columns: DatasetColumn[]): ReportCalculatedColumnAggregatePart {
+  const availableColumns = selectableBaseColumns(columns);
+
   const firstNumeric =
-    columns.find((column) => column.aggregatable && column.type === "number") ??
-    columns.find((column) => column.type === "number") ??
-    columns[0];
+    availableColumns.find((column) => column.aggregatable && column.type === "number") ??
+    availableColumns.find((column) => column.type === "number") ??
+    availableColumns[0];
 
   return {
     column: firstNumeric?.key ?? "",
@@ -92,11 +99,15 @@ function selectableColumnsForFunction(
   columns: DatasetColumn[],
   fn: ReportAggregateFunction
 ) {
+  const availableColumns = selectableBaseColumns(columns);
+
   if (fn === "count") {
-    return columns;
+    return availableColumns;
   }
 
-  return columns.filter((column) => column.aggregatable && column.type === "number");
+  return availableColumns.filter(
+    (column) => column.aggregatable && column.type === "number"
+  );
 }
 
 function describeAggregatePart(
@@ -105,7 +116,7 @@ function describeAggregatePart(
 ) {
   if (!part) return "Not configured";
 
-  const column = columns.find((item) => item.key === part.column);
+  const column = selectableBaseColumns(columns).find((item) => item.key === part.column);
   const fn = AGGREGATE_FUNCTIONS.find((item) => item.value === part.function);
 
   return `${fn?.label ?? part.function} ${column?.label ?? part.column}`;
@@ -149,13 +160,24 @@ function updatePartColumnForFunction(
   };
 }
 
+function normalizeExistingPart(
+  part: ReportCalculatedColumnAggregatePart | undefined,
+  columns: DatasetColumn[],
+  fallbackFunction: ReportAggregateFunction
+): ReportCalculatedColumnAggregatePart {
+  const fn = part?.function ?? fallbackFunction;
+  return updatePartColumnForFunction(part, fn, columns);
+}
+
 export default function ReportCalculatedColumnsBuilder({
   columns,
   calculatedColumns,
   onCalculatedColumnsChange,
   disabled = false,
 }: Props) {
-  const numericColumns = columns.filter(
+  const availableColumns = selectableBaseColumns(columns);
+
+  const numericColumns = availableColumns.filter(
     (column) => column.aggregatable && column.type === "number"
   );
 
@@ -180,7 +202,10 @@ export default function ReportCalculatedColumnsBuilder({
   }
 
   function addCalculatedColumn() {
-    onCalculatedColumnsChange([...calculatedColumns, defaultCalculatedColumn(columns)]);
+    onCalculatedColumnsChange([
+      ...calculatedColumns,
+      defaultCalculatedColumn(availableColumns),
+    ]);
   }
 
   function updateAggregatePart(input: {
@@ -276,7 +301,7 @@ export default function ReportCalculatedColumnsBuilder({
           type="button"
           className="btn btn-secondary"
           onClick={addCalculatedColumn}
-          disabled={disabled || !columns.length || !numericColumns.length}
+          disabled={disabled || !availableColumns.length || !numericColumns.length}
         >
           Add Calculated Column
         </button>
@@ -291,32 +316,47 @@ export default function ReportCalculatedColumnsBuilder({
       {calculatedColumns.length === 0 ? (
         <div className="text-soft">
           No calculated columns added. Use this for values such as Average Stitches,
-          Stitches per Piece, or Reject Rate.
+          Stitches per Piece, Reject Rate, or Accountable Recut Rate.
         </div>
       ) : null}
 
       {calculatedColumns.map((calculatedColumn, index) => {
         const formulaType = calculatedColumn.formulaType ?? "aggregate";
-        const aggregate = calculatedColumn.aggregate ?? defaultAggregatePart(columns);
-        const numerator = calculatedColumn.numerator ?? {
-          ...defaultAggregatePart(columns),
-          function: "sum" as ReportAggregateFunction,
-        };
-        const denominator = calculatedColumn.denominator ?? {
-          ...defaultAggregatePart(columns),
-          function: "sum" as ReportAggregateFunction,
-        };
+
+        const aggregate = normalizeExistingPart(
+          calculatedColumn.aggregate ?? defaultAggregatePart(availableColumns),
+          availableColumns,
+          "avg"
+        );
+
+        const numerator = normalizeExistingPart(
+          calculatedColumn.numerator ?? {
+            ...defaultAggregatePart(availableColumns),
+            function: "sum" as ReportAggregateFunction,
+          },
+          availableColumns,
+          "sum"
+        );
+
+        const denominator = normalizeExistingPart(
+          calculatedColumn.denominator ?? {
+            ...defaultAggregatePart(availableColumns),
+            function: "sum" as ReportAggregateFunction,
+          },
+          availableColumns,
+          "sum"
+        );
 
         const aggregateColumnOptions = selectableColumnsForFunction(
-          columns,
+          availableColumns,
           aggregate.function
         );
         const numeratorColumnOptions = selectableColumnsForFunction(
-          columns,
+          availableColumns,
           numerator.function
         );
         const denominatorColumnOptions = selectableColumnsForFunction(
-          columns,
+          availableColumns,
           denominator.function
         );
 
@@ -325,7 +365,9 @@ export default function ReportCalculatedColumnsBuilder({
             <div className="report-calc-row-header">
               <div>
                 <strong>{calculatedColumn.label || `Calculated Column ${index + 1}`}</strong>
-                <div className="field-help">{describeFormula(calculatedColumn, columns)}</div>
+                <div className="field-help">
+                  {describeFormula(calculatedColumn, availableColumns)}
+                </div>
               </div>
 
               <button
@@ -360,7 +402,8 @@ export default function ReportCalculatedColumnsBuilder({
                   className="select"
                   value={formulaType}
                   onChange={(event) => {
-                    const nextType = event.target.value as ReportCalculatedColumnFormulaType;
+                    const nextType = event.target
+                      .value as ReportCalculatedColumnFormulaType;
 
                     if (nextType === "ratio") {
                       updateCalculatedColumn(index, {
@@ -396,7 +439,8 @@ export default function ReportCalculatedColumnsBuilder({
                   className="select"
                   value={calculatedColumn.format ?? "number"}
                   onChange={(event) => {
-                    const nextFormat = event.target.value as ReportCalculatedColumnFormat;
+                    const nextFormat = event.target
+                      .value as ReportCalculatedColumnFormat;
 
                     updateCalculatedColumn(index, {
                       format: nextFormat,
@@ -444,7 +488,11 @@ export default function ReportCalculatedColumnsBuilder({
                     onChange={(event) => {
                       const fn = event.target.value as ReportAggregateFunction;
                       updateCalculatedColumn(index, {
-                        aggregate: updatePartColumnForFunction(aggregate, fn, columns),
+                        aggregate: updatePartColumnForFunction(
+                          aggregate,
+                          fn,
+                          availableColumns
+                        ),
                       });
                     }}
                     disabled={disabled}
@@ -490,7 +538,11 @@ export default function ReportCalculatedColumnsBuilder({
                       onChange={(event) => {
                         const fn = event.target.value as ReportAggregateFunction;
                         updateCalculatedColumn(index, {
-                          numerator: updatePartColumnForFunction(numerator, fn, columns),
+                          numerator: updatePartColumnForFunction(
+                            numerator,
+                            fn,
+                            availableColumns
+                          ),
                         });
                       }}
                       disabled={disabled}
@@ -533,7 +585,11 @@ export default function ReportCalculatedColumnsBuilder({
                       onChange={(event) => {
                         const fn = event.target.value as ReportAggregateFunction;
                         updateCalculatedColumn(index, {
-                          denominator: updatePartColumnForFunction(denominator, fn, columns),
+                          denominator: updatePartColumnForFunction(
+                            denominator,
+                            fn,
+                            availableColumns
+                          ),
                         });
                       }}
                       disabled={disabled}
@@ -589,7 +645,7 @@ export default function ReportCalculatedColumnsBuilder({
 
             <div className="report-calc-preview">
               Preview: {calculatedColumn.label || "Calculated Column"} ={" "}
-              {describeFormula(calculatedColumn, columns)}
+              {describeFormula(calculatedColumn, availableColumns)}
             </div>
           </div>
         );

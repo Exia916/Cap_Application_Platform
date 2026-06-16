@@ -5,7 +5,7 @@ import type { AuthUserWithLegacy } from "@/lib/auth";
 import { getReportDataset } from "./reportRegistry";
 import { getReportTemplate } from "./reportTemplates";
 import { runReport } from "./reportRepo";
-import type { ReportRunRequest, ReportRunResult } from "./reportTypes";
+import type { ReportOutputColumn, ReportRunRequest, ReportRunResult } from "./reportTypes";
 import {
   formatReportCell,
   formatReportDateTime,
@@ -119,6 +119,63 @@ function addPage(pdfDoc: PDFDocument, fonts: PdfFontSet, pageNumber: number) {
   return page;
 }
 
+function isPercentLikeColumn(column: ReportOutputColumn) {
+  const key = String(column.key || "").toLowerCase();
+  const label = String(column.label || "").toLowerCase();
+
+  return (
+    column.format === "percent" ||
+    key.includes("rate") ||
+    label.includes("rate") ||
+    label.includes("%")
+  );
+}
+
+function isPerThousandColumn(column: ReportOutputColumn) {
+  const key = String(column.key || "").toLowerCase();
+  const label = String(column.label || "").toLowerCase();
+
+  return key.includes("per_1000") || label.includes("per 1,000");
+}
+
+function numericValuesForColumn(result: ReportRunResult, columnKey: string) {
+  return result.rows
+    .map((row) => Number(row[columnKey] ?? 0))
+    .filter((value) => Number.isFinite(value));
+}
+
+function average(values: number[]) {
+  if (!values.length) return 0;
+  return values.reduce((sum, value) => sum + value, 0) / values.length;
+}
+
+function sum(values: number[]) {
+  return values.reduce((total, value) => total + value, 0);
+}
+
+function summarizeColumn(result: ReportRunResult, column: ReportOutputColumn) {
+  const values = numericValuesForColumn(result, column.key);
+
+  if (isPercentLikeColumn(column)) {
+    return {
+      label: `Avg ${humanizeReportLabel(column.label)}`.slice(0, 28),
+      value: `${formatReportNumber(average(values), 2)}%`,
+    };
+  }
+
+  if (isPerThousandColumn(column)) {
+    return {
+      label: `Avg ${humanizeReportLabel(column.label)}`.slice(0, 28),
+      value: formatReportNumber(average(values), 2),
+    };
+  }
+
+  return {
+    label: humanizeReportLabel(column.label).slice(0, 28),
+    value: formatReportNumber(sum(values)),
+  };
+}
+
 function summarizeRows(result: ReportRunResult) {
   const numericColumns = result.columns
     .filter((column) => column.type === "number")
@@ -126,17 +183,7 @@ function summarizeRows(result: ReportRunResult) {
 
   const cards = [
     { label: "Rows", value: formatReportNumber(result.total, 0) },
-    ...numericColumns.map((column) => {
-      const total = result.rows.reduce(
-        (sum, row) => sum + Number(row[column.key] ?? 0),
-        0
-      );
-
-      return {
-        label: humanizeReportLabel(column.label),
-        value: formatReportNumber(total),
-      };
-    }),
+    ...numericColumns.map((column) => summarizeColumn(result, column)),
   ];
 
   return cards.slice(0, 4);
@@ -224,7 +271,8 @@ function pickChartLabelColumn(result: ReportRunResult) {
   if (!candidates.length) return null;
 
   return [...candidates].sort((a, b) => {
-    const distinctDiff = getDistinctCount(result.rows, b.key) - getDistinctCount(result.rows, a.key);
+    const distinctDiff =
+      getDistinctCount(result.rows, b.key) - getDistinctCount(result.rows, a.key);
     if (distinctDiff !== 0) return distinctDiff;
 
     const aTextScore = a.type === "text" ? 1 : 0;
@@ -234,7 +282,17 @@ function pickChartLabelColumn(result: ReportRunResult) {
 }
 
 function pickChartValueColumn(result: ReportRunResult) {
-  return result.columns.find((column) => column.type === "number") ?? null;
+  const preferred = result.columns.find((column) => {
+    const key = String(column.key || "").toLowerCase();
+    return (
+      column.type === "number" &&
+      (key.includes("accountable_recut_piece_rate") ||
+        key.includes("gross_recut_piece_rate") ||
+        key.includes("reject_rate"))
+    );
+  });
+
+  return preferred ?? result.columns.find((column) => column.type === "number") ?? null;
 }
 
 function buildNativeChartPoints(result: ReportRunResult, maxPoints = 24) {
@@ -255,7 +313,9 @@ function buildNativeChartPoints(result: ReportRunResult, maxPoints = 24) {
       const value = Number(row[valueColumn.key] ?? 0);
 
       return {
-        label: String(formatReportCell(rawLabel, labelColumn?.type ?? "text") || `Row ${index + 1}`),
+        label: String(
+          formatReportCell(rawLabel, labelColumn?.type ?? "text") || `Row ${index + 1}`
+        ),
         value: Number.isFinite(value) ? value : 0,
       };
     })

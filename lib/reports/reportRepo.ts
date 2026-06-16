@@ -49,6 +49,10 @@ function toNullableJsonb(value: unknown) {
   return value == null ? null : JSON.stringify(value);
 }
 
+function hasOwn(obj: object, key: string) {
+  return Object.prototype.hasOwnProperty.call(obj, key);
+}
+
 function normalizeFilterLogic(value: unknown): ReportFilterLogic | undefined {
   const normalized = String(value || "").trim().toUpperCase();
   return normalized === "OR" || normalized === "AND"
@@ -85,6 +89,11 @@ function normalizeCalculatedColumns(value: unknown): ReportCalculatedColumn[] {
  * saved_reports does not currently have a dedicated filter_logic or
  * calculated_columns column. Store both in chart_config so runtime/edit pages
  * can round-trip the settings without changing the saved_reports table shape.
+ *
+ * Important: when the API route passes chartConfig but omits calculatedColumns,
+ * preserve chartConfig.calculatedColumns instead of deleting it. This protects
+ * older route/client combinations and prevents calculated columns from being
+ * lost during save/update.
  */
 function normalizeChartConfigForSave(input: SavedReportInput) {
   const base =
@@ -94,17 +103,23 @@ function normalizeChartConfigForSave(input: SavedReportInput) {
       ? { ...(input.chartConfig as Record<string, unknown>) }
       : {};
 
-  const filterLogic = normalizeFilterLogic(input.filterLogic);
+  const filterLogic = normalizeFilterLogic(input.filterLogic ?? base.filterLogic);
 
   if (filterLogic) {
     base.filterLogic = filterLogic;
   }
 
-  const calculatedColumns = normalizeCalculatedColumns(input.calculatedColumns);
+  const inputHasCalculatedColumns = hasOwn(input, "calculatedColumns");
+  const sourceCalculatedColumns = inputHasCalculatedColumns
+    ? input.calculatedColumns
+    : base.calculatedColumns;
+
+  const calculatedColumns = normalizeCalculatedColumns(sourceCalculatedColumns);
 
   if (calculatedColumns.length) {
     base.calculatedColumns = calculatedColumns;
-  } else {
+  } else if (inputHasCalculatedColumns) {
+    // Explicit empty calculatedColumns means the user removed them.
     delete base.calculatedColumns;
   }
 

@@ -1,3 +1,5 @@
+// app/api/reports/datasets/route.ts
+
 import { NextRequest, NextResponse } from "next/server";
 import { getAuthFromRequest } from "@/lib/auth";
 import { requireReportAccess } from "@/lib/reports/reportPermissions";
@@ -26,6 +28,7 @@ export async function GET(req: NextRequest) {
       groupable: !!column.groupable,
       aggregatable: !!column.aggregatable,
       defaultVisible: !!column.defaultVisible,
+      filterOnly: !!column.filterOnly,
     })),
   }));
 
