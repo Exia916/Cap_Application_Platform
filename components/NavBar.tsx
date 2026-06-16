@@ -10,11 +10,28 @@ function isActive(pathname: string, href: string) {
   return pathname.startsWith(href);
 }
 
+function normalizeAccessValue(value: string | null | undefined) {
+  return String(value || "")
+    .trim()
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .toUpperCase();
+}
+
+function isOverseasCustomerServiceValue(value: string | null | undefined) {
+  const normalized = normalizeAccessValue(value);
+  return (
+    normalized === "OVERSEAS CUSTOMER SERVICE" ||
+    normalized === "OVERSEAS CS"
+  );
+}
+
 type Me = {
   username: string | null;
   displayName: string | null;
   employeeNumber: number | null;
   role: string | null;
+  department?: string | null;
 };
 
 type MenuItem = {
@@ -197,8 +214,12 @@ export default function NavBar() {
     [me?.displayName, me?.username, me?.employeeNumber]
   );
 
-  const role = useMemo(() => (me?.role ?? "").trim().toUpperCase(), [me?.role]);
-  const username = useMemo(() => (me?.username ?? "").trim().toLowerCase(), [me?.username]);
+  const role = useMemo(() => normalizeAccessValue(me?.role), [me?.role]);
+const department = useMemo(
+  () => normalizeAccessValue(me?.department),
+  [me?.department]
+);
+const username = useMemo(() => (me?.username ?? "").trim().toLowerCase(), [me?.username]);
 
   const GLOBAL_SEARCH_ROLES = [
     "ADMIN",
@@ -261,13 +282,19 @@ export default function NavBar() {
   const canSeeCmmsMasterData = meLoaded && (isAdmin || role === "TECH");
   const canSeeReports = meLoaded && isManager;
 
-  const canSeeLogistics =
-    meLoaded &&
-    (isAdmin ||
-      role === "MANAGER" ||
-      role === "PURCHASING" ||
-      role === "OVERSEAS CUSTOMER SERVICE" ||
-      role === "OVERSEAS CS");
+  const isOverseasCustomerService =
+  isOverseasCustomerServiceValue(role) ||
+  isOverseasCustomerServiceValue(department);
+
+const canSeeInboundShipments =
+  meLoaded &&
+  (isAdmin ||
+    role === "MANAGER" ||
+    role === "PURCHASING" ||
+    isOverseasCustomerService);
+
+const canSeeQuickTurnQuoteCalculator =
+  meLoaded && (isAdmin || isOverseasCustomerService);
 
   function runGlobalSearch() {
     const q = globalQ.trim();
@@ -294,12 +321,17 @@ export default function NavBar() {
   ];
 
   const logisticsItems: MenuItem[] = [
-    {
-      href: "/inbound-shipments",
-      label: "Inbound Shipments",
-      show: canSeeLogistics,
-    },
-  ].filter((x) => x.show !== false);
+  {
+    href: "/inbound-shipments",
+    label: "Inbound Shipments",
+    show: canSeeInboundShipments,
+  },
+  {
+    href: "/quick-turn-quote-calculator",
+    label: "Quick Turn Quote Calculator",
+    show: canSeeQuickTurnQuoteCalculator,
+  },
+].filter((x) => x.show !== false);
 
   const recutItems: MenuItem[] = [
     { href: "/recuts", label: "Recuts", show: canSeeRecuts },
@@ -397,7 +429,7 @@ export default function NavBar() {
 }
 
     if (!showLogisticsAsPrimary && logisticsItems.length > 0) {
-      sections.push({ title: "Logistics", items: logisticsItems });
+      sections.push({ title: "Overseas", items: logisticsItems });
     }
 
     if (!showRecutAsPrimary && recutItems.length > 0) {
@@ -523,7 +555,7 @@ export default function NavBar() {
 
               {showLogisticsAsPrimary && logisticsItems.length > 0 ? (
                 <Dropdown
-                  label="Logistics"
+                  label="Overseas"
                   active={logisticsActive}
                   open={openMenu === "logistics"}
                   onToggle={() => toggle("logistics")}
@@ -801,7 +833,7 @@ export default function NavBar() {
               ...(canSeeProduction && productionItems.length > 0
   ? [{ title: "Production", items: productionItems }]
   : []),
-              ...(logisticsItems.length > 0 ? [{ title: "Logistics", items: logisticsItems }] : []),
+              ...(logisticsItems.length > 0 ? [{ title: "Overseas", items: logisticsItems }] : []),
               ...(recutItems.length > 0 ? [{ title: "Recut", items: recutItems }] : []),
               ...(maintenanceItems.length > 0
                 ? [{ title: "Maintenance", items: maintenanceItems }]
