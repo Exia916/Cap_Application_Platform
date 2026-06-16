@@ -48,6 +48,7 @@ type ApiResponse = {
     totalSessions: number;
     totalSubmissions: number;
     totalQuantity: number;
+    totalDurationMinutes: number;
   };
 };
 
@@ -131,6 +132,15 @@ function fmtInt(v: unknown): string {
   return Number.isFinite(n) ? nf0.format(n) : "0";
 }
 
+function fmtDurationMinutes(v: unknown): string {
+  const n = Number(v);
+  const totalMinutes = Number.isFinite(n) ? Math.max(0, Math.floor(n)) : 0;
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+
+  return `${hours}h ${minutes}m`;
+}
+
 function durationText(timeIn?: string | null, timeOut?: string | null) {
   if (!timeIn) return "";
   const start = new Date(timeIn);
@@ -188,6 +198,7 @@ export default function WorkSessionsAllTable({
     totalSessions: 0,
     totalSubmissions: 0,
     totalQuantity: 0,
+    totalDurationMinutes: 0,
   });
 
   const [loading, setLoading] = useState(true);
@@ -263,6 +274,7 @@ export default function WorkSessionsAllTable({
         totalSessions: Number(data?.totals?.totalSessions ?? 0),
         totalSubmissions: Number(data?.totals?.totalSubmissions ?? 0),
         totalQuantity: Number(data?.totals?.totalQuantity ?? 0),
+        totalDurationMinutes: Number(data?.totals?.totalDurationMinutes ?? 0),
       });
     } catch (err: any) {
       setError(err?.message || "Failed to load work sessions.");
@@ -273,6 +285,7 @@ export default function WorkSessionsAllTable({
         totalSessions: 0,
         totalSubmissions: 0,
         totalQuantity: 0,
+        totalDurationMinutes: 0,
       });
     } finally {
       setLoading(false);
@@ -662,6 +675,9 @@ export default function WorkSessionsAllTable({
             </div>
             <div style={{ fontWeight: 800 }}>
               Total Quantity: {fmtInt(totals.totalQuantity)}
+            </div>
+            <div style={{ fontWeight: 800 }}>
+              Total Duration: {fmtDurationMinutes(totals.totalDurationMinutes)}
             </div>
           </div>
         </div>
