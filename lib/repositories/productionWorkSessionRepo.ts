@@ -983,6 +983,7 @@ export async function listWorkSessionsAllView(
     totalSessions: number;
     totalSubmissions: number;
     totalQuantity: number;
+    totalDurationMinutes: number;
   };
 }> {
   const { whereSql, params } = buildAllViewWhere(args);
@@ -1070,12 +1071,24 @@ export async function listWorkSessionsAllView(
     SELECT
       COUNT(*)::int AS "totalSessions",
       COALESCE(SUM(x."submissionCount"), 0)::int AS "totalSubmissions",
-      COALESCE(SUM(x."totalQuantity"), 0)::int AS "totalQuantity"
+      COALESCE(SUM(x."totalQuantity"), 0)::int AS "totalQuantity",
+      COALESCE(SUM(x."durationMinutes"), 0)::int AS "totalDurationMinutes"
     FROM (
       SELECT
         ws.id,
         COUNT(DISTINCT ks.id)::int AS "submissionCount",
-        COALESCE(SUM(kpl.quantity), 0)::int AS "totalQuantity"
+        COALESCE(SUM(kpl.quantity), 0)::int AS "totalQuantity",
+        CASE
+          WHEN COALESCE(ws.is_open, false) = true
+            AND NOW() > ws.time_in
+          THEN FLOOR(EXTRACT(EPOCH FROM (NOW() - ws.time_in)) / 60)::int
+
+          WHEN ws.time_out IS NOT NULL
+            AND ws.time_out > ws.time_in
+          THEN FLOOR(EXTRACT(EPOCH FROM (ws.time_out - ws.time_in)) / 60)::int
+
+          ELSE 0
+        END AS "durationMinutes"
       FROM public.production_work_sessions ws
       LEFT JOIN public.knit_production_submissions ks
         ON ks.session_id = ws.id
@@ -1083,7 +1096,11 @@ export async function listWorkSessionsAllView(
       LEFT JOIN public.knit_production_lines kpl
         ON kpl.submission_id = ks.id
       ${whereSql}
-      GROUP BY ws.id
+      GROUP BY
+        ws.id,
+        ws.is_open,
+        ws.time_in,
+        ws.time_out
     ) x
   `;
 
@@ -1094,6 +1111,7 @@ export async function listWorkSessionsAllView(
       totalSessions: number;
       totalSubmissions: number;
       totalQuantity: number;
+      totalDurationMinutes: number;
     }>(totalsSql, params),
   ]);
 
@@ -1164,6 +1182,7 @@ export async function listWorkSessionsAllView(
       totalSessions: Number(totalsRes.rows[0]?.totalSessions ?? 0),
       totalSubmissions: Number(totalsRes.rows[0]?.totalSubmissions ?? 0),
       totalQuantity: Number(totalsRes.rows[0]?.totalQuantity ?? 0),
+      totalDurationMinutes: Number(totalsRes.rows[0]?.totalDurationMinutes ?? 0),
     },
   };
 }

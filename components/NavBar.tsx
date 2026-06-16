@@ -358,6 +358,11 @@ const canSeeQuickTurnQuoteCalculator =
   { kind: "section" as const, label: "Manager Tools", show: meLoaded && isManager },
   { href: "/manager", label: "Manager Home", show: meLoaded && isManager },
   { href: "/reports", label: "Reports", show: canSeeReports },
+  {
+    href: "/manager/reports/recut-accountability",
+    label: "Recut Accountability Rules",
+    show: canSeeReports,
+  },
   { href: "/manager/tasks", label: "Task Oversight", show: meLoaded && isManager },
 ].filter((x) => x.show !== false);
 
