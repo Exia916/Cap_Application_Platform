@@ -128,6 +128,14 @@ export type InboundShipment = {
   eta: string | null;
   cartonCount: number | null;
   tariffPercentage: number | null;
+
+  estimatedCostPerPiece: number | null;
+  estimatedCostPerDozen: number | null;
+  totalCost: number;
+  totalQuantity: number;
+  actualCostPerPiece: number | null;
+  actualCostPerDozen: number | null;
+
   notes: string | null;
   createdAt: string;
   createdBy: string | null;
@@ -237,6 +245,8 @@ export type InboundShipmentWriteInput = {
   eta?: string | null;
   cartonCount?: number | string | null;
   tariffPercentage?: number | string | null;
+  estimatedCostPerPiece?: number | string | null;
+  estimatedCostPerDozen?: number | string | null;
   notes?: string | null;
   lines?: InboundShipmentLineInput[];
   invoices?: InboundShipmentInvoiceInput[];
@@ -340,6 +350,8 @@ type NormalizedInput = {
   eta: string | null;
   cartonCount: number | null;
   tariffPercentage: number | null;
+  estimatedCostPerPiece: number | null;
+  estimatedCostPerDozen: number | null;
   notes: string | null;
   lines: NormalizedLine[];
   invoices: NormalizedInvoice[];
@@ -727,6 +739,16 @@ async function normalizeInput(
     eta: cleanDate(input.eta),
     cartonCount: cleanNonNegativeInt(input.cartonCount, "Carton Count"),
     tariffPercentage: cleanNonNegativeDecimal(input.tariffPercentage, "Tariff Percentage", 2),
+    estimatedCostPerPiece: cleanNonNegativeDecimal(
+      input.estimatedCostPerPiece,
+      "Estimated Cost Per Piece",
+      4
+    ),
+    estimatedCostPerDozen: cleanNonNegativeDecimal(
+      input.estimatedCostPerDozen,
+      "Estimated Cost Per Dozen",
+      4
+    ),
     notes: cleanText(input.notes),
     lines,
     invoices,
@@ -742,6 +764,40 @@ async function normalizeInput(
 /* -------------------------------------------------------------------------- */
 /* SELECT HELPERS                                                              */
 /* -------------------------------------------------------------------------- */
+
+function shipmentCostSelectSql() {
+  return `
+      s.estimated_cost_per_piece::float AS "estimatedCostPerPiece",
+      s.estimated_cost_per_dozen::float AS "estimatedCostPerDozen",
+      cost_totals.total_cost::float AS "totalCost",
+      quantity_totals.total_quantity::int AS "totalQuantity",
+      CASE
+        WHEN quantity_totals.total_quantity > 0
+          THEN ROUND((cost_totals.total_cost / quantity_totals.total_quantity)::numeric, 4)::float
+        ELSE NULL
+      END AS "actualCostPerPiece",
+      CASE
+        WHEN quantity_totals.total_quantity > 0
+          THEN ROUND(((cost_totals.total_cost / quantity_totals.total_quantity) * 12)::numeric, 4)::float
+        ELSE NULL
+      END AS "actualCostPerDozen"
+  `;
+}
+
+function shipmentCostJoinsSql() {
+  return `
+    LEFT JOIN LATERAL (
+      SELECT COALESCE(SUM(COALESCE(ix.amount, 0)), 0)::numeric AS total_cost
+      FROM public.inbound_shipment_invoices ix
+      WHERE ix.inbound_shipment_id = s.id
+    ) cost_totals ON true
+    LEFT JOIN LATERAL (
+      SELECT COALESCE(SUM(COALESCE(lx.quantity, 0)), 0)::numeric AS total_quantity
+      FROM public.inbound_shipment_lines lx
+      WHERE lx.inbound_shipment_id = s.id
+    ) quantity_totals ON true
+  `;
+}
 
 function shipmentSelectSql() {
   return `
@@ -776,6 +832,7 @@ function shipmentSelectSql() {
       s.eta,
       s.carton_count AS "cartonCount",
       s.tariff_percentage::float AS "tariffPercentage",
+      ${shipmentCostSelectSql()},
       s.notes,
       s.created_at AS "createdAt",
       s.created_by AS "createdBy",
@@ -792,6 +849,7 @@ function shipmentSelectSql() {
       ON fw.id = s.forwarder_id
     LEFT JOIN public.inbound_shipment_types typ
       ON typ.id = s.shipment_type_id
+    ${shipmentCostJoinsSql()}
   `;
 }
 
@@ -1046,6 +1104,22 @@ function resolveOrderBy(sortBy?: string | null, sortDir?: SortDir | null) {
     eta: `s.eta ${dir} NULLS LAST`,
     cartonCount: `s.carton_count ${dir} NULLS LAST`,
     tariffPercentage: `s.tariff_percentage ${dir} NULLS LAST`,
+    estimatedCostPerPiece: `s.estimated_cost_per_piece ${dir} NULLS LAST`,
+    estimatedCostPerDozen: `s.estimated_cost_per_dozen ${dir} NULLS LAST`,
+    totalCost: `cost_totals.total_cost ${dir} NULLS LAST`,
+    totalQuantity: `quantity_totals.total_quantity ${dir} NULLS LAST`,
+    actualCostPerPiece: `
+      CASE
+        WHEN quantity_totals.total_quantity > 0
+          THEN cost_totals.total_cost / quantity_totals.total_quantity
+        ELSE NULL
+      END ${dir} NULLS LAST`,
+    actualCostPerDozen: `
+      CASE
+        WHEN quantity_totals.total_quantity > 0
+          THEN (cost_totals.total_cost / quantity_totals.total_quantity) * 12
+        ELSE NULL
+      END ${dir} NULLS LAST`,
     lineCount: `"lineCount" ${dir}`,
     invoiceCount: `"invoiceCount" ${dir}`,
     createdAt: `s.created_at ${dir}`,
@@ -1252,6 +1326,7 @@ export async function listInboundShipments(
       s.eta,
       s.carton_count AS "cartonCount",
       s.tariff_percentage::float AS "tariffPercentage",
+      ${shipmentCostSelectSql()},
       s.notes,
       s.created_at AS "createdAt",
       s.created_by AS "createdBy",
@@ -1271,12 +1346,13 @@ export async function listInboundShipments(
       ON fw.id = s.forwarder_id
     LEFT JOIN public.inbound_shipment_types typ
       ON typ.id = s.shipment_type_id
+    ${shipmentCostJoinsSql()}
     LEFT JOIN public.inbound_shipment_lines l
       ON l.inbound_shipment_id = s.id
     LEFT JOIN public.inbound_shipment_invoices i
       ON i.inbound_shipment_id = s.id
     ${whereSql}
-    GROUP BY s.id, st.id, fw.id, typ.id
+    GROUP BY s.id, st.id, fw.id, typ.id, cost_totals.total_cost, quantity_totals.total_quantity
     ORDER BY ${orderBy}
     LIMIT $${dataParams.length - 1}
     OFFSET $${dataParams.length}
@@ -1378,11 +1454,13 @@ export async function createInboundShipment(
         eta,
         carton_count,
         tariff_percentage,
+        estimated_cost_per_piece,
+        estimated_cost_per_dozen,
         notes,
         created_by,
         updated_by
       )
-      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13::date,$14::date,$15,$16,$17,$18,$18)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13::date,$14::date,$15,$16,$17,$18,$19,$20,$20)
       RETURNING
         id,
         inbound_shipment_number AS "inboundShipmentNumber"
@@ -1404,6 +1482,8 @@ export async function createInboundShipment(
         normalized.eta,
         normalized.cartonCount,
         normalized.tariffPercentage,
+        normalized.estimatedCostPerPiece,
+        normalized.estimatedCostPerDozen,
         normalized.notes,
         normalized.changedBy,
       ]
@@ -1431,6 +1511,8 @@ export async function createInboundShipment(
         shipmentTypeCode: normalized.shipmentTypeCode,
         shipmentTypeLabel: normalized.shipmentTypeLabel,
         tariffPercentage: normalized.tariffPercentage,
+        estimatedCostPerPiece: normalized.estimatedCostPerPiece,
+        estimatedCostPerDozen: normalized.estimatedCostPerDozen,
         lineCount: normalized.lines.length,
         invoiceCount: normalized.invoices.length,
       },
@@ -1516,9 +1598,11 @@ export async function updateInboundShipment(
         eta = $15::date,
         carton_count = $16,
         tariff_percentage = $17,
-        notes = $18,
+        estimated_cost_per_piece = $18,
+        estimated_cost_per_dozen = $19,
+        notes = $20,
         updated_at = now(),
-        updated_by = $19
+        updated_by = $21
       WHERE id = $1
         AND COALESCE(is_voided, false) = false
       `,
@@ -1540,6 +1624,8 @@ export async function updateInboundShipment(
         normalized.eta,
         normalized.cartonCount,
         normalized.tariffPercentage,
+        normalized.estimatedCostPerPiece,
+        normalized.estimatedCostPerDozen,
         normalized.notes,
         normalized.changedBy,
       ]
@@ -1601,6 +1687,8 @@ export async function updateInboundShipment(
         shipmentTypeCode: normalized.shipmentTypeCode,
         shipmentTypeLabel: normalized.shipmentTypeLabel,
         tariffPercentage: normalized.tariffPercentage,
+        estimatedCostPerPiece: normalized.estimatedCostPerPiece,
+        estimatedCostPerDozen: normalized.estimatedCostPerDozen,
         lineCount: normalized.lines.length,
         invoiceCount: normalized.invoices.length,
       },

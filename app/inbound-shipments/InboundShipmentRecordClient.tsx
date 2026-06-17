@@ -50,6 +50,12 @@ type ShipmentDetail = {
   eta: string | null;
   cartonCount: number | null;
   tariffPercentage?: number | string | null;
+  estimatedCostPerPiece?: number | string | null;
+  estimatedCostPerDozen?: number | string | null;
+  totalCost?: number | string | null;
+  totalQuantity?: number | string | null;
+  actualCostPerPiece?: number | string | null;
+  actualCostPerDozen?: number | string | null;
   notes: string | null;
 
   createdAt: string;
@@ -117,13 +123,30 @@ function fmtDateTime(v?: string | null): string {
       });
 }
 
-function fmtMoney(v?: number | null): string {
+function fmtMoney(v?: number | string | null): string {
   if (v == null || !Number.isFinite(Number(v))) return "";
 
   return Number(v).toLocaleString(undefined, {
     style: "currency",
     currency: "USD",
   });
+}
+
+function fmtCost(v?: number | string | null): string {
+  if (v == null || v === "" || !Number.isFinite(Number(v))) return "";
+
+  return Number(v).toLocaleString(undefined, {
+    style: "currency",
+    currency: "USD",
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 4,
+  });
+}
+
+function fmtNumber(v?: number | string | null): string {
+  if (v == null || v === "" || !Number.isFinite(Number(v))) return "";
+
+  return Number(v).toLocaleString();
 }
 
 function fmtPercent(v?: number | string | null): string {
@@ -428,7 +451,25 @@ export default function InboundShipmentRecordClient({ id }: { id: string }) {
             <MetaItem label="Tariff %" value={fmtPercent(row.tariffPercentage)} />
             <MetaItem label="ETD" value={fmtDateOnly(row.etd)} />
             <MetaItem label="ETA" value={fmtDateOnly(row.eta)} />
-            <MetaItem label="Carton Count" value={row.cartonCount} />
+            <MetaItem label="Carton Count" value={fmtNumber(row.cartonCount)} />
+            <MetaItem label="Total Quantity" value={fmtNumber(row.totalQuantity)} />
+            <MetaItem label="Total Cost" value={fmtMoney(row.totalCost)} />
+            <MetaItem
+              label="Estimated Cost Per Piece"
+              value={fmtCost(row.estimatedCostPerPiece)}
+            />
+            <MetaItem
+              label="Estimated Cost Per Dozen"
+              value={fmtCost(row.estimatedCostPerDozen)}
+            />
+            <MetaItem
+              label="Actual Cost Per Piece"
+              value={fmtCost(row.actualCostPerPiece)}
+            />
+            <MetaItem
+              label="Actual Cost Per Dozen"
+              value={fmtCost(row.actualCostPerDozen)}
+            />
             <MetaItem label="Created" value={fmtDateTime(row.createdAt)} />
             <MetaItem label="Created By" value={row.createdBy} />
             <MetaItem label="Updated" value={fmtDateTime(row.updatedAt)} />
@@ -440,7 +481,21 @@ export default function InboundShipmentRecordClient({ id }: { id: string }) {
         <section className="record-section-card">
           <div className="record-section-header">
             <h2 className="record-section-title">Invoice Details</h2>
-            <span className="record-count-badge">{row.invoices.length}</span>
+
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+                marginLeft: "auto",
+                flexWrap: "wrap",
+              }}
+            >
+              <span className="record-pill record-pill-neutral">
+                Total Cost: {fmtMoney(row.totalCost) || "—"}
+              </span>
+              <span className="record-count-badge">{row.invoices.length}</span>
+            </div>
           </div>
 
           {row.invoices.length === 0 ? (
@@ -478,7 +533,21 @@ export default function InboundShipmentRecordClient({ id }: { id: string }) {
         <section className="record-section-card">
           <div className="record-section-header">
             <h2 className="record-section-title">Line Details</h2>
-            <span className="record-count-badge">{row.lines.length}</span>
+
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+                marginLeft: "auto",
+                flexWrap: "wrap",
+              }}
+            >
+              <span className="record-pill record-pill-neutral">
+                Total Quantity: {fmtNumber(row.totalQuantity) || "—"}
+              </span>
+              <span className="record-count-badge">{row.lines.length}</span>
+            </div>
           </div>
 
           {row.lines.length === 0 ? (

@@ -74,6 +74,8 @@ type LoadedShipment = {
   eta: string | null;
   cartonCount: number | null;
   tariffPercentage?: number | string | null;
+  estimatedCostPerPiece?: number | string | null;
+  estimatedCostPerDozen?: number | string | null;
   notes: string | null;
   isVoided: boolean;
   voidReason: string | null;
@@ -108,6 +110,8 @@ type FormErrors = {
   containerDestination?: string;
   cartonCount?: string;
   tariffPercentage?: string;
+  estimatedCostPerPiece?: string;
+  estimatedCostPerDozen?: string;
   lines?: string;
   invoices?: string;
 };
@@ -157,6 +161,36 @@ function isNonNegativeIntegerString(v: string) {
 function isNonNegativeNumberString(v: string) {
   const s = String(v ?? "").trim();
   return s === "" || /^\d+(\.\d{1,2})?$/.test(s);
+}
+
+function isNonNegativeDecimalString(v: string, maxDecimals = 4) {
+  const s = String(v ?? "").trim();
+  if (s === "") return true;
+
+  const decimalRegex = new RegExp(`^\\d+(\\.\\d{1,${maxDecimals}})?$`);
+  return decimalRegex.test(s);
+}
+
+function numberFromInput(v: string) {
+  const n = Number(String(v ?? "").trim());
+  return Number.isFinite(n) && n >= 0 ? n : 0;
+}
+
+function formatCalculatedCurrency(value: number | null) {
+  if (value === null || !Number.isFinite(value)) return "";
+
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 4,
+  }).format(value);
+}
+
+function formatCalculatedNumber(value: number) {
+  return new Intl.NumberFormat("en-US", {
+    maximumFractionDigits: 0,
+  }).format(value);
 }
 
 function FieldBlock({
@@ -413,6 +447,8 @@ export default function InboundShipmentForm({ initialShipmentId }: Props) {
   const [eta, setEta] = useState("");
   const [cartonCount, setCartonCount] = useState("");
   const [tariffPercentage, setTariffPercentage] = useState("");
+  const [estimatedCostPerPiece, setEstimatedCostPerPiece] = useState("");
+  const [estimatedCostPerDozen, setEstimatedCostPerDozen] = useState("");
   const [notes, setNotes] = useState("");
 
   const [lines, setLines] = useState<LineForm[]>([emptyLine()]);
@@ -423,6 +459,27 @@ export default function InboundShipmentForm({ initialShipmentId }: Props) {
     const draft = statusOptions.find((s) => s.code === "DRAFT");
     return draft ? String(draft.id) : "";
   }, [statusOptions]);
+
+  const costSummary = useMemo(() => {
+    const totalQuantity = lines.reduce(
+      (sum, line) => sum + numberFromInput(line.quantity),
+      0
+    );
+    const totalCost = invoices.reduce(
+      (sum, invoice) => sum + numberFromInput(invoice.amount),
+      0
+    );
+    const actualCostPerPiece = totalQuantity > 0 ? totalCost / totalQuantity : null;
+    const actualCostPerDozen =
+      actualCostPerPiece != null ? actualCostPerPiece * 12 : null;
+
+    return {
+      totalQuantity,
+      totalCost,
+      actualCostPerPiece,
+      actualCostPerDozen,
+    };
+  }, [lines, invoices]);
 
   useEffect(() => {
     async function loadLookups() {
@@ -560,6 +617,8 @@ export default function InboundShipmentForm({ initialShipmentId }: Props) {
         setEta(dateOnly(row.eta));
         setCartonCount(row.cartonCount != null ? String(row.cartonCount) : "");
         setTariffPercentage(formatDecimalInput(row.tariffPercentage));
+        setEstimatedCostPerPiece(formatDecimalInput(row.estimatedCostPerPiece));
+        setEstimatedCostPerDozen(formatDecimalInput(row.estimatedCostPerDozen));
         setNotes(row.notes ?? "");
 
         setLines(
@@ -645,6 +704,16 @@ export default function InboundShipmentForm({ initialShipmentId }: Props) {
     if (!isNonNegativeNumberString(tariffPercentage)) {
       next.tariffPercentage =
         "Tariff % must be a non-negative number with up to 2 decimals.";
+    }
+
+    if (!isNonNegativeDecimalString(estimatedCostPerPiece, 4)) {
+      next.estimatedCostPerPiece =
+        "Estimated Cost Per Piece must be a non-negative number with up to 4 decimals.";
+    }
+
+    if (!isNonNegativeDecimalString(estimatedCostPerDozen, 4)) {
+      next.estimatedCostPerDozen =
+        "Estimated Cost Per Dozen must be a non-negative number with up to 4 decimals.";
     }
 
     const selectedStatus = statusOptions.find((s) => String(s.id) === String(statusId));
@@ -761,6 +830,12 @@ export default function InboundShipmentForm({ initialShipmentId }: Props) {
         cartonCount: cartonCount.trim() ? Number(cartonCount) : null,
         tariffPercentage: tariffPercentage.trim()
           ? Number(tariffPercentage.trim())
+          : null,
+        estimatedCostPerPiece: estimatedCostPerPiece.trim()
+          ? Number(estimatedCostPerPiece.trim())
+          : null,
+        estimatedCostPerDozen: estimatedCostPerDozen.trim()
+          ? Number(estimatedCostPerDozen.trim())
           : null,
         notes: notes.trim() || null,
 
@@ -1085,6 +1160,82 @@ export default function InboundShipmentForm({ initialShipmentId }: Props) {
                 value={cartonCount}
                 disabled={saving || isVoided}
                 onChange={(e) => setCartonCount(e.target.value)}
+              />
+            </FieldBlock>
+
+            <FieldBlock
+              label="Estimated Cost Per Piece"
+              error={errors.estimatedCostPerPiece}
+              helperText="User-entered estimate."
+            >
+              <input
+                className={`input${
+                  errors.estimatedCostPerPiece ? " input-error" : ""
+                }`}
+                inputMode="decimal"
+                placeholder="Example: 0.1250"
+                value={estimatedCostPerPiece}
+                disabled={saving || isVoided}
+                onChange={(e) => setEstimatedCostPerPiece(e.target.value)}
+              />
+            </FieldBlock>
+
+            <FieldBlock
+              label="Estimated Cost Per Dozen"
+              error={errors.estimatedCostPerDozen}
+              helperText="User-entered estimate."
+            >
+              <input
+                className={`input${
+                  errors.estimatedCostPerDozen ? " input-error" : ""
+                }`}
+                inputMode="decimal"
+                placeholder="Example: 1.5000"
+                value={estimatedCostPerDozen}
+                disabled={saving || isVoided}
+                onChange={(e) => setEstimatedCostPerDozen(e.target.value)}
+              />
+            </FieldBlock>
+
+            <FieldBlock label="Total Quantity" helperText="Calculated from Line Details.">
+              <input
+                className="input"
+                value={formatCalculatedNumber(costSummary.totalQuantity)}
+                disabled
+                readOnly
+              />
+            </FieldBlock>
+
+            <FieldBlock label="Total Cost" helperText="Calculated from Invoice Details.">
+              <input
+                className="input"
+                value={formatCalculatedCurrency(costSummary.totalCost)}
+                disabled
+                readOnly
+              />
+            </FieldBlock>
+
+            <FieldBlock
+              label="Actual Cost Per Piece"
+              helperText="Total Cost divided by Total Quantity."
+            >
+              <input
+                className="input"
+                value={formatCalculatedCurrency(costSummary.actualCostPerPiece)}
+                disabled
+                readOnly
+              />
+            </FieldBlock>
+
+            <FieldBlock
+              label="Actual Cost Per Dozen"
+              helperText="Actual Cost Per Piece multiplied by 12."
+            >
+              <input
+                className="input"
+                value={formatCalculatedCurrency(costSummary.actualCostPerDozen)}
+                disabled
+                readOnly
               />
             </FieldBlock>
 
