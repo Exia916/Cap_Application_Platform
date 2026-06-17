@@ -34,6 +34,12 @@ type ShipmentDetail = {
   eta: string | null;
   cartonCount: number | null;
   tariffPercentage?: number | string | null;
+  estimatedCostPerPiece?: number | string | null;
+  estimatedCostPerDozen?: number | string | null;
+  totalCost?: number | string | null;
+  totalQuantity?: number | string | null;
+  actualCostPerPiece?: number | string | null;
+  actualCostPerDozen?: number | string | null;
   notes: string | null;
 
   createdAt: string;
@@ -99,13 +105,19 @@ function fmtDateTime(v?: string | null): string {
   });
 }
 
-function fmtMoney(v?: number | null): string {
-  if (v == null || !Number.isFinite(Number(v))) return "";
+function fmtMoney(v?: number | string | null): string {
+  if (v == null || v === "" || !Number.isFinite(Number(v))) return "";
 
   return Number(v).toLocaleString(undefined, {
     style: "currency",
     currency: "USD",
   });
+}
+
+function fmtNumber(v?: number | string | null): string {
+  if (v == null || v === "" || !Number.isFinite(Number(v))) return "";
+
+  return Number(v).toLocaleString();
 }
 
 function fmtPercent(v?: number | string | null): string {
@@ -435,6 +447,7 @@ export default function InboundShipmentPrintClient({ id }: { id: string }) {
 
         .print-empty {
           border: 1px solid #d8d1c3;
+          border-radius: 10px;
           background: #fbfaf7;
           padding: 10px;
           color: #555555;
@@ -618,8 +631,21 @@ export default function InboundShipmentPrintClient({ id }: { id: string }) {
             <PrintField label="ETD" value={fmtDateOnly(row.etd)} />
             <PrintField label="ETA" value={fmtDateOnly(row.eta)} />
             <PrintField label="Carton Count" value={row.cartonCount} />
-            <PrintField label="Updated By" value={row.updatedBy} />
+            <PrintField label="Total Quantity" value={fmtNumber(row.totalQuantity)} />
 
+            <PrintField label="Total Cost" value={fmtMoney(row.totalCost)} />
+            <PrintField
+              label="Estimated Cost Per Piece"
+              value={fmtMoney(row.estimatedCostPerPiece)}
+            />
+            <PrintField
+              label="Estimated Cost Per Dozen"
+              value={fmtMoney(row.estimatedCostPerDozen)}
+            />
+            <PrintField label="Actual Cost Per Piece" value={fmtMoney(row.actualCostPerPiece)} />
+
+            <PrintField label="Actual Cost Per Dozen" value={fmtMoney(row.actualCostPerDozen)} />
+            <PrintField label="Updated By" value={row.updatedBy} />
             <PrintField label="Updated At" value={fmtDateTime(row.updatedAt)} />
             <PrintField label="Notes" value={row.notes} full pre />
           </div>
