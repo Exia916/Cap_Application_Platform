@@ -33,8 +33,6 @@ function round6(value: number): number {
 }
 
 function thousandStitchBlocks(stitchCount: number): number {
-  // Quick Turn stitch pricing charges whole completed 1,000-stitch blocks.
-  // Example: 3,000 through 3,999 stitches = 3 blocks.
   return Math.floor(stitchCount / 1000);
 }
 
@@ -209,6 +207,7 @@ export function calculateAccessoryPricePreview(
 
 export function buildQuickTurnItemPricePreview({
   baseItem,
+  customCapCost,
   accessoryRows,
   closureAccessory,
   closureInputValues,
@@ -217,6 +216,7 @@ export function buildQuickTurnItemPricePreview({
   allAccessories,
 }: {
   baseItem?: QuickTurnBaseItem | null;
+  customCapCost?: string | number | null;
   accessoryRows: SelectedAccessoryLike[];
   closureAccessory?: QuickTurnAccessory | null;
   closureInputValues: Record<string, unknown>;
@@ -225,7 +225,10 @@ export function buildQuickTurnItemPricePreview({
   allAccessories: QuickTurnAccessory[];
 }): QuickTurnItemPricePreview {
   const missingInputs: string[] = [];
-  const baseUnitPrice = Number(baseItem?.basePrice ?? 0);
+  const parsedCustomCapCost = customCapCost === null || customCapCost === undefined || customCapCost === "" ? null : Number(customCapCost);
+  const baseUnitPrice = Number.isFinite(parsedCustomCapCost as number)
+    ? Number(parsedCustomCapCost)
+    : Number(baseItem?.basePrice ?? 0);
   let accessoryUnitTotal = 0;
 
   for (const selected of accessoryRows) {
@@ -243,11 +246,13 @@ export function buildQuickTurnItemPricePreview({
   }
 
   accessoryUnitTotal = round6(accessoryUnitTotal);
+  const decoratedUnitCost = round6(baseUnitPrice + accessoryUnitTotal);
+  if (decoratedUnitCost < 0) missingInputs.push("Decorated item cost cannot be below zero");
 
   return {
     baseUnitPrice: round6(baseUnitPrice),
     accessoryUnitTotal,
-    decoratedUnitCost: round6(baseUnitPrice + accessoryUnitTotal),
+    decoratedUnitCost,
     camoUnitPrice: round6(Number(camoOption?.unitPrice ?? 0)),
     missingInputs,
   };

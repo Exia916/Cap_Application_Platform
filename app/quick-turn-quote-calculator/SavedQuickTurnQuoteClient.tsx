@@ -25,6 +25,12 @@ function normalizeToken(value?: string | null) {
     .toUpperCase();
 }
 
+function quoteStatusPill(row: SavedQuickTurnQuoteDetail) {
+  if (row.isVoided) return <span className="record-pill record-pill-danger">Voided</span>;
+  if (row.quoteStatus === "DRAFT") return <span className="record-pill record-pill-warning">Draft</span>;
+  return <span className="record-pill record-pill-success">Published</span>;
+}
+
 export default function SavedQuickTurnQuoteClient({ id }: { id: string }) {
   const router = useRouter();
 
@@ -72,6 +78,7 @@ export default function SavedQuickTurnQuoteClient({ id }: { id: string }) {
 
   useEffect(() => {
     load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
   async function onVoid() {
@@ -136,6 +143,35 @@ export default function SavedQuickTurnQuoteClient({ id }: { id: string }) {
     }
   }
 
+  async function onDuplicateRevise() {
+    if (!row || row.isVoided) return;
+
+    if (!window.confirm("Create a new editable draft from this saved Quick Turn quote?")) return;
+
+    try {
+      setActionLoading(true);
+      setError(null);
+
+      const res = await fetch(`/api/quick-turn-quote-calculator/quotes/${encodeURIComponent(row.id)}/duplicate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({}),
+      });
+      const data = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        throw new Error(data?.error || "Failed to duplicate/revise saved Quick Turn quote.");
+      }
+
+      router.push(`/quick-turn-quote-calculator?edit=${encodeURIComponent(data.id)}`);
+    } catch (err: any) {
+      setError(err?.message || "Failed to duplicate/revise saved Quick Turn quote.");
+    } finally {
+      setActionLoading(false);
+    }
+  }
+
   if (loading) {
     return (
       <main className="record-shell">
@@ -170,6 +206,9 @@ export default function SavedQuickTurnQuoteClient({ id }: { id: string }) {
     );
   }
 
+  const canEditDraft = row.quoteStatus === "DRAFT" && !row.isVoided;
+  const canDuplicate = !row.isVoided;
+
   return (
     <main className="record-shell">
       <div className="record-header">
@@ -181,7 +220,13 @@ export default function SavedQuickTurnQuoteClient({ id }: { id: string }) {
           </p>
           <div className="record-badge-row">
             <span className="record-pill record-pill-info">{row.programName} / {row.factoryName}</span>
-            {row.isVoided ? <span className="record-pill record-pill-danger">Voided</span> : null}
+            {quoteStatusPill(row)}
+            {row.workflowSalesOrderNumber ? (
+              <span className="record-pill record-pill-neutral">SO/Ref {row.workflowSalesOrderNumber}</span>
+            ) : null}
+            {row.sourceQuoteNumber ? (
+              <span className="record-pill record-pill-neutral">From {row.sourceQuoteNumber}</span>
+            ) : null}
           </div>
         </div>
 
@@ -192,13 +237,39 @@ export default function SavedQuickTurnQuoteClient({ id }: { id: string }) {
           <Link href="/quick-turn-quote-calculator" className="btn btn-secondary">
             New Quote
           </Link>
+          {canEditDraft ? (
+            <Link href={`/quick-turn-quote-calculator?edit=${encodeURIComponent(row.id)}`} className="btn btn-primary">
+              Edit Draft
+            </Link>
+          ) : null}
+          {canDuplicate ? (
+            <button type="button" className="btn btn-secondary" disabled={actionLoading} onClick={onDuplicateRevise}>
+              Duplicate / Revise
+            </button>
+          ) : null}
           <Link
             href={`/quick-turn-quote-calculator/saved/${encodeURIComponent(row.id)}/print`}
             target="_blank"
             rel="noopener noreferrer"
             className="btn btn-secondary"
           >
-            Print / Preview
+            Internal Print / Preview
+          </Link>
+          {!row.isVoided ? (
+            <Link
+              href={`/quick-turn-quote-calculator/saved/${encodeURIComponent(row.id)}/customer`}
+              className="btn btn-primary"
+            >
+              Customer PDF Setup
+            </Link>
+          ) : null}
+          <Link
+            href={`/quick-turn-quote-calculator/saved/${encodeURIComponent(row.id)}/customer-print`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="btn btn-secondary"
+          >
+            {row.quoteStatus === "DRAFT" ? "Preview Customer Quote" : "Customer PDF / Print"}
           </Link>
           {!row.isVoided ? (
             <button type="button" className="btn btn-danger" disabled={actionLoading} onClick={onVoid}>
@@ -219,6 +290,12 @@ export default function SavedQuickTurnQuoteClient({ id }: { id: string }) {
         <div className="alert alert-danger" style={{ marginBottom: 16 }}>
           This saved Quick Turn quote is voided.
           {row.voidReason ? ` Reason: ${row.voidReason}` : ""}
+        </div>
+      ) : null}
+
+      {row.quoteStatus === "PUBLISHED" && !row.isVoided ? (
+        <div className="alert alert-info" style={{ marginBottom: 16 }}>
+          This quote is published and the internal quote is locked. Use Duplicate / Revise to change pricing or quote inputs. Customer-facing print setup can still be adjusted from Customer Quote Setup.
         </div>
       ) : null}
 

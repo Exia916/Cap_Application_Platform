@@ -167,7 +167,9 @@ const RESOURCE_CONFIG: Record<QuickTurnSetupResource, ResourceConfig> = {
         allowedValues: ["DECORATION", "CLOSURE"],
       },
       name: { column: "name", type: "text", label: "Name", required: true },
-      unitPrice: { column: "unit_price", type: "number", label: "Unit Price", required: true, min: 0 },
+      // Negative values are allowed only by validateSetupBusinessRules for
+      // DECORATION + FLAT_PER_UNIT adjustment records.
+      unitPrice: { column: "unit_price", type: "number", label: "Unit Price", required: true },
       pricingMethod: { column: "pricing_method", type: "text", label: "Pricing Method", required: true },
       notes: { column: "notes", type: "nullableText", label: "Notes" },
       inputConfig: { column: "input_config", type: "json", label: "Input Config" },
@@ -362,7 +364,6 @@ function cleanValue(fieldKey: string, field: FieldDef, raw: unknown, forCreate: 
   }
 
   if (field.type === "boolean") return cleanBoolean(raw);
-
   if (field.type === "json") return cleanJson(raw);
 
   if (field.type === "text" || field.type === "nullableText") {
@@ -415,10 +416,35 @@ function sanitizeInput(resource: QuickTurnSetupResource, input: Record<string, u
   return out;
 }
 
+function validateAccessoryUnitPrice(values: Record<string, unknown>) {
+  if (values.unit_price === undefined || values.unit_price === null) return;
+
+  const unitPrice = Number(values.unit_price);
+  if (!Number.isFinite(unitPrice)) throw new Error("Unit Price must be a valid number.");
+  if (unitPrice >= 0) return;
+
+  const category = cleanText(values.category);
+  const pricingMethod = cleanText(values.pricing_method);
+
+  if (category === "DECORATION" && pricingMethod === "FLAT_PER_UNIT") return;
+
+  throw new Error(
+    "Negative unit pricing is only allowed for Decoration records using Flat Per Unit pricing. Base items, closures, camo, fees, freight, rates, and other setup values must remain non-negative."
+  );
+}
+
+async function getCurrentSetupValues(resource: QuickTurnSetupResource, id: string | number) {
+  const config = configFor(resource);
+  const { rows } = await db.query<Record<string, unknown>>(
+    `SELECT * FROM ${config.table} WHERE id = $1::${config.idCast} LIMIT 1`,
+    [id]
+  );
+  return rows[0] ?? null;
+}
+
 function buildSearchWhere(config: ResourceConfig, q: string | null, params: unknown[]) {
   const token = cleanText(q);
   if (!token || !config.searchableColumns.length) return null;
-
   const placeholders = config.searchableColumns.map((column) => `${column} ILIKE $${params.length + 1}`);
   params.push(`%${token}%`);
   return `(${placeholders.join(" OR ")})`;
@@ -439,26 +465,15 @@ export async function listQuickTurnSetupResource(
   const params: unknown[] = [];
   const where: string[] = [];
 
-  if (options.includeInactive !== true) {
-    where.push("is_active = true");
-  }
+  if (options.includeInactive !== true) where.push("is_active = true");
 
-  if (resource === "base-items" || resource === "camo-options") {
-    addFilter(where, params, "factory_id", options.factoryId);
-  }
-
+  if (resource === "base-items" || resource === "camo-options") addFilter(where, params, "factory_id", options.factoryId);
   if (resource === "accessories" || resource === "calculators") {
     addFilter(where, params, "program_id", options.programId);
     addFilter(where, params, "factory_id", options.factoryId);
   }
-
-  if (resource === "accessories") {
-    addFilter(where, params, "category", options.category, "text");
-  }
-
-  if (resource === "calculator-breaks") {
-    addFilter(where, params, "calculator_id", options.calculatorId);
-  }
+  if (resource === "accessories") addFilter(where, params, "category", options.category, "text");
+  if (resource === "calculator-breaks") addFilter(where, params, "calculator_id", options.calculatorId);
 
   const searchWhere = buildSearchWhere(config, options.q ?? null, params);
   if (searchWhere) where.push(searchWhere);
@@ -468,7 +483,6 @@ export async function listQuickTurnSetupResource(
     `SELECT ${config.selectSql} FROM ${config.table} ${whereSql} ORDER BY ${config.orderBy}`,
     params
   );
-
   return rows;
 }
 
@@ -488,15 +502,13 @@ export async function createQuickTurnSetupResource(
 ) {
   const config = configFor(resource);
   const values = sanitizeInput(resource, input, true);
+  if (resource === "accessories") validateAccessoryUnitPrice(values);
 
   values.created_by = audit.changedBy ?? null;
   values.updated_by = audit.changedBy ?? null;
 
   const columns = Object.keys(values);
-  const params = Object.values(values).map((value) => {
-    if (value && typeof value === "object" && !Array.isArray(value)) return JSON.stringify(value);
-    return value;
-  });
+  const params = Object.values(values).map((value) => (value && typeof value === "object" && !Array.isArray(value) ? JSON.stringify(value) : value));
   const placeholders = columns.map((_, index) => `$${index + 1}`);
 
   const { rows } = await db.query(
@@ -520,6 +532,12 @@ export async function updateQuickTurnSetupResource(
   const config = configFor(resource);
   const values = sanitizeInput(resource, input, false);
 
+  if (resource === "accessories") {
+    const current = await getCurrentSetupValues(resource, id);
+    if (!current) throw new Error("Quick Turn setup record not found.");
+    validateAccessoryUnitPrice({ ...current, ...values });
+  }
+
   values.updated_at = "__NOW__";
   values.updated_by = audit.changedBy ?? null;
 
@@ -536,9 +554,7 @@ export async function updateQuickTurnSetupResource(
     assignments.push(`${column} = $${params.length}`);
   }
 
-  if (!assignments.length) {
-    return getQuickTurnSetupResourceById(resource, id);
-  }
+  if (!assignments.length) return getQuickTurnSetupResourceById(resource, id);
 
   params.push(id);
 

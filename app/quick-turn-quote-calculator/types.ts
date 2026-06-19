@@ -1,5 +1,7 @@
 // app/quick-turn-quote-calculator/types.ts
 
+export type QuickTurnQuoteStatus = "DRAFT" | "PUBLISHED";
+
 export type QuickTurnProgram = {
   id: number;
   code: string;
@@ -63,6 +65,15 @@ export type QuickTurnFeeType = {
   isActive: boolean;
 };
 
+export type QuickTurnOverseasCustomerServiceUser = {
+  id: string;
+  username: string | null;
+  displayName: string;
+  email: string | null;
+  employeeNumber: number | null;
+  department: string | null;
+};
+
 export type QuickTurnCalculatorBreak = {
   id: number;
   calculatorId: number;
@@ -122,7 +133,12 @@ export type QuickTurnQuoteInputFee = {
 
 export type QuickTurnQuoteInputItem = {
   clientItemId: string;
-  baseItemId: string;
+  baseItemId?: string | null;
+  isCustomCap?: boolean | null;
+  customCapCost?: number | string | null;
+  customCapDescription?: string | null;
+  baseItemDescription?: string | null;
+  baseItemDescriptionOverride?: string | null;
   accessories: QuickTurnQuoteInputAccessory[];
   closure?: QuickTurnQuoteInputAccessory | null;
   camoOptionId?: string | null;
@@ -136,6 +152,19 @@ export type QuickTurnCalculatePayload = {
   programCode?: string | null;
   factoryId?: number | string | null;
   factoryCode?: string | null;
+  workflowSalesOrderNumber?: string | null;
+  overseasCustomerServiceUserId?: string | null;
+  overseasCustomerServiceNameSnapshot?: string | null;
+  overseasCustomerServiceEmailSnapshot?: string | null;
+  overseasCustomerServiceEmployeeNumberSnapshot?: number | string | null;
+  rebatePercent?: number | string | null;
+  quoteRebateRate?: number | string | null;
+  preparedForCustomerId?: string | null;
+  preparedForCustomerCodeSnapshot?: string | null;
+  preparedForCustomerNameSnapshot?: string | null;
+  quotePreparedForDisplay?: string | null;
+  programLogoText?: string | null;
+  fob?: string | null;
   items: QuickTurnQuoteInputItem[];
 };
 
@@ -143,12 +172,16 @@ export type QuickTurnCalculatedItem = {
   clientItemId: string;
   sortOrder: number;
   baseItem: {
-    id: string;
+    id: string | null;
     code: string;
     itemCode: string;
     fabricDescription: string | null;
     basePrice: number;
+    isCustomCap?: boolean;
+    customCapDescription?: string | null;
   };
+  isCustomCap: boolean;
+  customCapDescription: string | null;
   accessories: Array<{
     id: string;
     code: string;
@@ -200,6 +233,8 @@ export type QuickTurnCalculatedItem = {
       maxQuantity: number | null;
       managementReviewRequired: boolean;
       marginRate: number;
+      baseMarginRate?: number;
+      quoteRebateRate?: number;
       surchargeMultiplier: number;
       airFreightAmount: number | null;
       ddpBaseAmount: number | null;
@@ -240,6 +275,24 @@ export type SavedQuickTurnQuoteSummary = {
   id: string;
   quoteNumber: string;
   quoteName: string;
+  quoteStatus: QuickTurnQuoteStatus;
+  workflowSalesOrderNumber: string | null;
+  overseasCustomerServiceUserId: string | null;
+  overseasCustomerServiceNameSnapshot: string | null;
+  overseasCustomerServiceEmailSnapshot: string | null;
+  overseasCustomerServiceEmployeeNumberSnapshot: number | null;
+  quoteRebateRate: number;
+  preparedForCustomerId: string | null;
+  preparedForCustomerCodeSnapshot: string | null;
+  preparedForCustomerNameSnapshot: string | null;
+  quotePreparedForDisplay: string | null;
+  programLogoText: string | null;
+  fob: string | null;
+  sourceQuoteId: string | null;
+  sourceQuoteNumber: string | null;
+  revisionNumber: number;
+  publishedAt: string | null;
+  publishedBy: string | null;
   programName: string;
   factoryName: string;
   generatedAt: string;
@@ -265,6 +318,8 @@ export type SavedQuickTurnQuoteDetail = SavedQuickTurnQuoteSummary & {
   items: Array<{
     id: string;
     sortOrder: number;
+    isCustomCap: boolean;
+    customCapDescription: string | null;
     baseItemCode: string;
     baseItemDescription: string | null;
     baseItemPrice: number;
@@ -303,6 +358,8 @@ export type SavedQuickTurnQuoteDetail = SavedQuickTurnQuoteSummary & {
       maxQuantity: number | null;
       managementReviewRequired: boolean;
       marginRate: number;
+      baseMarginRate?: number;
+      quoteRebateRate?: number;
       surchargeMultiplier: number;
       dutiesTaxRate: number;
       tariffRate: number;
@@ -320,3 +377,102 @@ export type SavedQuickTurnQuoteDetail = SavedQuickTurnQuoteSummary & {
 };
 
 export const QUICK_TURN_FINAL_BREAK_LABEL = "5005–10008+";
+export const QUICK_TURN_CUSTOM_CAP_BASE_ITEM_ID = "__CUSTOM_CAP__";
+
+export type QuickTurnCustomerOption = {
+  id: string;
+  code: string;
+  name: string;
+  label: string;
+  isActive: boolean;
+};
+
+export type QuickTurnCustomerExportSelectedBreak = {
+  resultId: string;
+  calculatorCode: string;
+  calculatorName: string;
+  calculatorRouteType: string;
+  breakLabel: string;
+  quantityLabel: string;
+  minQuantity: number;
+  maxQuantity: number | null;
+  unitPrice: number;
+  managementReviewRequired: boolean;
+};
+
+export type QuickTurnCustomerExportAttachment = {
+  id: number;
+  originalFileName: string;
+  mimeType: string | null;
+  fileSizeBytes: number | null;
+  createdAt: string;
+  uploadedByName: string | null;
+  canPreviewInline: boolean;
+};
+
+export type QuickTurnCustomerExportOneTimeFee = {
+  id: string;
+  feeCode: string;
+  feeName: string;
+  amount: number;
+  notes: string | null;
+  sortOrder: number;
+};
+
+export type QuickTurnCustomerExportItem = {
+  id: string | null;
+  quoteItemId: string;
+  sortOrder: number;
+  baseItemCode: string;
+  baseItemDescription: string | null;
+  isCustomCap: boolean;
+  customCapDescription: string | null;
+  optionLabel: string;
+  customerDescription: string | null;
+  customerNotes: string | null;
+  factoryDisplay: string | null;
+  selectedMethodCode: string | null;
+  selectedBreaks: QuickTurnCustomerExportSelectedBreak[];
+  oneTimeFees: QuickTurnCustomerExportOneTimeFee[];
+  imageAttachmentId: number | null;
+  imageAttachment: QuickTurnCustomerExportAttachment | null;
+  imageAttachmentCategory: string;
+  availableImageAttachments: QuickTurnCustomerExportAttachment[];
+  availableBreaks: QuickTurnCustomerExportSelectedBreak[];
+};
+
+export type QuickTurnCustomerExportDetail = {
+  exists: boolean;
+  id: string | null;
+  quoteId: string;
+  quoteNumber: string;
+  quoteName: string;
+  quoteStatus: QuickTurnQuoteStatus;
+  isVoided: boolean;
+  voidReason: string | null;
+  generatedAt: string;
+  validUntil: string;
+  selectedCalculatorId: number | null;
+  selectedCalculatorCode: string | null;
+  selectedCalculatorName: string | null;
+  availableCalculators: Array<{ id: number | null; code: string; name: string }>;
+  preparedForCustomerId: string | null;
+  preparedForCustomerCodeSnapshot: string | null;
+  preparedForCustomerNameSnapshot: string | null;
+  quotePreparedForDisplay: string | null;
+  workflowSalesOrderNumber: string | null;
+  overseasCustomerServiceNameSnapshot?: string | null;
+  quoteRebateRate?: number | null;
+  programLogoText: string | null;
+  capProgramName: string;
+  customerServiceContact: string | null;
+  sampleProductionDetails: string | null;
+  productionTimeDetails: string | null;
+  fob: string;
+  additionalInformation: string | null;
+  createdAt: string | null;
+  createdBy: string | null;
+  updatedAt: string | null;
+  updatedBy: string | null;
+  items: QuickTurnCustomerExportItem[];
+};

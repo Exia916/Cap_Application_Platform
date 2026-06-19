@@ -4,8 +4,11 @@ import {
   canSaveQuickTurnQuote,
   canViewSavedQuickTurnQuote,
 } from "@/lib/quickTurnQuoteCalculator/permissions";
-import { getSavedQuickTurnQuoteById } from "@/lib/repositories/quickTurnQuoteCalculatorRepo";
-import { updateCalculatedQuickTurnDraft } from "@/lib/services/quickTurnQuoteCalculatorService";
+import {
+  getQuickTurnCustomerExport,
+  saveQuickTurnCustomerExport,
+  logQuickTurnCustomerExportPreview,
+} from "@/lib/repositories/quickTurnQuoteCustomerExportRepo";
 
 export const runtime = "nodejs";
 
@@ -42,15 +45,27 @@ export async function GET(
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  const id = await getId(ctx);
-  const includeVoided = req.nextUrl.searchParams.get("includeVoided") === "true";
-  const row = await getSavedQuickTurnQuoteById(id, { includeVoided });
+  try {
+    const id = await getId(ctx);
+    const includeVoided = req.nextUrl.searchParams.get("includeVoided") === "true";
+    const logPreview = req.nextUrl.searchParams.get("logPreview") === "true";
+    const row = await getQuickTurnCustomerExport(id, { includeVoided });
 
-  if (!row) {
-    return NextResponse.json({ error: "Saved Quick Turn quote not found." }, { status: 404 });
+    if (logPreview) {
+      await logQuickTurnCustomerExportPreview(id, {
+        changedBy: userName(auth),
+        changedByUserId: auth.id ?? null,
+        changedByEmployeeNumber: auth.employeeNumber ?? null,
+      }).catch(() => undefined);
+    }
+
+    return NextResponse.json({ row });
+  } catch (err: any) {
+    return NextResponse.json(
+      { error: err?.message || "Failed to load customer-facing Quick Turn quote setup." },
+      { status: 400 }
+    );
   }
-
-  return NextResponse.json({ row });
 }
 
 export async function PUT(
@@ -70,25 +85,17 @@ export async function PUT(
   try {
     const id = await getId(ctx);
     const body = await req.json();
-    const saved = await updateCalculatedQuickTurnDraft(id, {
-      ...body,
+    const row = await saveQuickTurnCustomerExport(id, body, {
       changedBy: userName(auth),
       changedByUserId: auth.id ?? null,
       changedByEmployeeNumber: auth.employeeNumber ?? null,
     });
 
-    return NextResponse.json(saved);
+    return NextResponse.json({ row });
   } catch (err: any) {
     return NextResponse.json(
-      { error: err?.message || "Failed to update Quick Turn draft." },
+      { error: err?.message || "Failed to save customer-facing Quick Turn quote setup." },
       { status: 400 }
     );
   }
-}
-
-export async function DELETE() {
-  return NextResponse.json(
-    { error: "Hard delete is not supported. Use the void route." },
-    { status: 405 }
-  );
 }
