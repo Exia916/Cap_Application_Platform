@@ -11,11 +11,13 @@ import { fmtDateOnly, fmtDateTime } from "../format";
 
 type Filters = {
   q: string;
+  quoteStatus: string;
   includeVoided: string;
 };
 
 const DEFAULT_FILTERS: Filters = {
   q: "",
+  quoteStatus: "",
   includeVoided: "",
 };
 
@@ -24,12 +26,16 @@ function statusBadge(row: SavedQuickTurnQuoteSummary) {
     return <span className="badge badge-danger">Voided</span>;
   }
 
-  const today = new Date().toISOString().slice(0, 10);
-  if (row.validUntil && row.validUntil < today) {
-    return <span className="badge badge-warning">Expired</span>;
+  if (row.quoteStatus === "DRAFT") {
+    return <span className="badge badge-warning">Draft</span>;
   }
 
-  return <span className="badge badge-success">Active</span>;
+  const today = new Date().toISOString().slice(0, 10);
+  if (row.validUntil && row.validUntil < today) {
+    return <span className="badge badge-warning">Published / Expired</span>;
+  }
+
+  return <span className="badge badge-success">Published</span>;
 }
 
 export default function SavedQuickTurnQuotesPage() {
@@ -65,6 +71,7 @@ export default function SavedQuickTurnQuotesPage() {
     sp.set("sortDir", sortDir);
 
     if (debouncedFilters.q.trim()) sp.set("q", debouncedFilters.q.trim());
+    if (debouncedFilters.quoteStatus) sp.set("quoteStatus", debouncedFilters.quoteStatus);
     if (debouncedFilters.includeVoided === "true") sp.set("includeVoided", "true");
 
     return sp.toString();
@@ -127,21 +134,21 @@ export default function SavedQuickTurnQuotesPage() {
     () => [
       {
         key: "quoteNumber",
-        header: "Quote #",
+        header: "CAP Quote #",
         sortable: true,
         render: (row) => row.quoteNumber,
         getSearchText: (row) => row.quoteNumber,
       },
       {
         key: "quoteName",
-        header: "Quote Name",
+        header: "Customer Quote # / Quote Name",
         sortable: true,
         filterRender: (
           <input
             className="input"
             value={filters.q}
             onChange={(e) => onFilterChange("q", e.target.value)}
-            placeholder="Quote #, name, program, factory, creator"
+            placeholder="Quote #, name, SO/ref, program, factory, creator"
           />
         ),
         render: (row) => row.quoteName,
@@ -150,18 +157,43 @@ export default function SavedQuickTurnQuotesPage() {
       {
         key: "status",
         header: "Status",
+        sortable: true,
         filterRender: (
-          <select
-            className="select"
-            value={filters.includeVoided}
-            onChange={(e) => onFilterChange("includeVoided", e.target.value)}
-          >
-            <option value="">Active Only</option>
-            <option value="true">Include Voided</option>
-          </select>
+          <div style={{ display: "grid", gap: 6 }}>
+            <select
+              className="select"
+              value={filters.quoteStatus}
+              onChange={(e) => onFilterChange("quoteStatus", e.target.value)}
+            >
+              <option value="">All Statuses</option>
+              <option value="DRAFT">Draft</option>
+              <option value="PUBLISHED">Published</option>
+            </select>
+            <select
+              className="select"
+              value={filters.includeVoided}
+              onChange={(e) => onFilterChange("includeVoided", e.target.value)}
+            >
+              <option value="">Active Only</option>
+              <option value="true">Include Voided</option>
+            </select>
+          </div>
         ),
         render: (row) => statusBadge(row),
-        getSearchText: (row) => (row.isVoided ? "Voided" : "Active"),
+        getSearchText: (row) => (row.isVoided ? "Voided" : row.quoteStatus),
+      },
+      {
+        key: "workflowSalesOrderNumber",
+        header: "SO / Ref #",
+        sortable: true,
+        render: (row) => row.workflowSalesOrderNumber || "—",
+        getSearchText: (row) => row.workflowSalesOrderNumber || "",
+      },
+      {
+        key: "revisionNumber",
+        header: "Revision",
+        render: (row) => row.revisionNumber ? `Rev ${row.revisionNumber}` : "Original",
+        getSearchText: (row) => row.revisionNumber ? `Rev ${row.revisionNumber}` : "Original",
       },
       {
         key: "programName",
@@ -212,6 +244,11 @@ export default function SavedQuickTurnQuotesPage() {
             <Link href={`/quick-turn-quote-calculator/saved/${encodeURIComponent(row.id)}`} className="btn btn-secondary btn-sm">
               View
             </Link>
+            {row.quoteStatus === "DRAFT" && !row.isVoided ? (
+              <Link href={`/quick-turn-quote-calculator?edit=${encodeURIComponent(row.id)}`} className="btn btn-primary btn-sm">
+                Edit
+              </Link>
+            ) : null}
             <Link
               href={`/quick-turn-quote-calculator/saved/${encodeURIComponent(row.id)}/print`}
               target="_blank"
@@ -224,7 +261,7 @@ export default function SavedQuickTurnQuotesPage() {
         ),
       },
     ],
-    [filters.includeVoided]
+    [filters.includeVoided, filters.q, filters.quoteStatus]
   );
 
   return (
@@ -232,7 +269,7 @@ export default function SavedQuickTurnQuotesPage() {
       <div className="page-header">
         <div className="page-header-title-wrap">
           <h1 className="page-title">Saved Quick Turn Quotes</h1>
-          <p className="page-subtitle">Review saved quote snapshots and print quote output.</p>
+          <p className="page-subtitle">Review saved drafts, published quote snapshots, and print quote output.</p>
         </div>
 
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
@@ -267,9 +304,12 @@ export default function SavedQuickTurnQuotesPage() {
         enableCsvExport
         csvFilename="quick_turn_saved_quotes.csv"
         rowToCsv={(row) => ({
-          "Quote #": row.quoteNumber,
-          "Quote Name": row.quoteName,
-          Status: row.isVoided ? "Voided" : "Active",
+          "CAP Quote #": row.quoteNumber,
+          "Customer Quote # / Quote Name": row.quoteName,
+          Status: row.isVoided ? "Voided" : row.quoteStatus,
+          "SO / Ref #": row.workflowSalesOrderNumber || "",
+          Revision: row.revisionNumber ? `Rev ${row.revisionNumber}` : "Original",
+          "Source Quote": row.sourceQuoteNumber || "",
           Program: row.programName,
           Factory: row.factoryName,
           Generated: fmtDateTime(row.generatedAt),

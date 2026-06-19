@@ -17,6 +17,7 @@ import {
   listQuickTurnCalculatorsWithBreaks,
   listQuickTurnLookups,
   saveQuickTurnQuote,
+  updateDraftQuickTurnQuote,
   type QuickTurnAccessory,
   type QuickTurnAuditInput,
   type QuickTurnBaseItem,
@@ -26,6 +27,9 @@ import {
   type QuickTurnFeeType,
   type QuickTurnPersistedQuoteItem,
 } from "@/lib/repositories/quickTurnQuoteCalculatorRepo";
+import { getActiveQuickTurnOverseasCustomerServiceUserById } from "@/lib/repositories/quickTurnQuoteCalculatorUserRepo";
+
+export const QUICK_TURN_CUSTOM_CAP_BASE_ITEM_ID = "__CUSTOM_CAP__";
 
 export type QuickTurnSelectedAccessoryInput = {
   accessoryId?: string | null;
@@ -43,6 +47,11 @@ export type QuickTurnSelectedFeeInput = {
 export type QuickTurnCalculateItemInput = {
   clientItemId?: string | null;
   baseItemId?: string | null;
+  isCustomCap?: boolean | null;
+  customCapCost?: number | string | null;
+  customCapDescription?: string | null;
+  baseItemDescription?: string | null;
+  baseItemDescriptionOverride?: string | null;
   accessories?: QuickTurnSelectedAccessoryInput[] | null;
   closure?: QuickTurnSelectedAccessoryInput | null;
   closureAccessoryId?: string | null;
@@ -58,6 +67,19 @@ export type QuickTurnCalculateInput = {
   programCode?: string | null;
   factoryId?: number | string | null;
   factoryCode?: string | null;
+  workflowSalesOrderNumber?: string | null;
+  overseasCustomerServiceUserId?: string | null;
+  overseasCustomerServiceNameSnapshot?: string | null;
+  overseasCustomerServiceEmailSnapshot?: string | null;
+  overseasCustomerServiceEmployeeNumberSnapshot?: number | string | null;
+  rebatePercent?: number | string | null;
+  quoteRebateRate?: number | string | null;
+  preparedForCustomerId?: string | number | null;
+  preparedForCustomerCodeSnapshot?: string | null;
+  preparedForCustomerNameSnapshot?: string | null;
+  quotePreparedForDisplay?: string | null;
+  programLogoText?: string | null;
+  fob?: string | null;
   items?: QuickTurnCalculateItemInput[] | null;
 };
 
@@ -103,6 +125,16 @@ type ResolvedFee = {
   sortOrder: number;
 };
 
+type ResolvedBaseItem = {
+  id: string | null;
+  code: string;
+  itemCode: string;
+  fabricDescription: string | null;
+  basePrice: number;
+  isCustomCap: boolean;
+  customCapDescription: string | null;
+};
+
 function cleanText(value: unknown): string | null {
   const s = String(value ?? "").trim();
   return s ? s : null;
@@ -123,6 +155,25 @@ function cleanNonNegativeNumber(value: unknown, label: string): number {
   return n;
 }
 
+function cleanOptionalQuoteRebateRate(input: QuickTurnCalculateInput): number {
+  const rawRate = input.quoteRebateRate;
+  if (rawRate !== null && rawRate !== undefined && rawRate !== "") {
+    const rate = cleanNonNegativeNumber(rawRate, "Rebate rate");
+    if (rate >= 1) throw new Error("Rebate rate must be less than 100%.");
+    return rate;
+  }
+
+  const rawPercent = input.rebatePercent;
+  if (rawPercent === null || rawPercent === undefined || rawPercent === "") return 0;
+  const percent = cleanNonNegativeNumber(rawPercent, "Rebate percentage");
+  if (percent >= 100) throw new Error("Rebate percentage must be less than 100%.");
+  return percent / 100;
+}
+
+function formatPercent(rate: number): string {
+  return `${(rate * 100).toFixed(2).replace(/\.00$/, "")}%`;
+}
+
 function cleanPositiveInt(value: unknown, label: string): number {
   const n = Number(value);
   if (!Number.isInteger(n) || n <= 0) {
@@ -137,14 +188,10 @@ function sortOrder(value: unknown, fallback: number): number {
 }
 
 function roundCurrency(value: number): number {
-  // Keep six decimals to match the database snapshot precision while avoiding
-  // JavaScript floating point display noise in API responses.
   return Math.round((value + Number.EPSILON) * 1_000_000) / 1_000_000;
 }
 
 function thousandStitchBlocks(stitchCount: number): number {
-  // Quick Turn stitch pricing charges whole completed 1,000-stitch blocks.
-  // Example: 3,000 through 3,999 stitches = 3 blocks.
   return Math.floor(stitchCount / 1000);
 }
 
@@ -254,11 +301,24 @@ function embroideryStitchCost(
   return embroideryAccessory.unitPrice * thousandStitchBlocks(stitchCount);
 }
 
+function allowsNegativeAccessory(accessory: QuickTurnAccessory): boolean {
+  return accessory.category === "DECORATION" && accessory.pricingMethod === "FLAT_PER_UNIT";
+}
+
+function validateSelectedAccessoryUnitPrice(accessory: QuickTurnAccessory) {
+  if (accessory.unitPrice < 0 && !allowsNegativeAccessory(accessory)) {
+    throw new Error(
+      `${accessory.name} has negative pricing but is not a flat per-unit decoration adjustment.`
+    );
+  }
+}
+
 function calculateAccessoryUnitPrice(
   accessory: QuickTurnAccessory,
   inputValues: Record<string, unknown>,
   allAccessories: QuickTurnAccessory[]
 ): number {
+  validateSelectedAccessoryUnitPrice(accessory);
   const unit = accessory.unitPrice;
 
   switch (accessory.pricingMethod) {
@@ -439,18 +499,23 @@ function calculateBreakUnitPrice(
   calculator: QuickTurnCalculator,
   quantityBreak: QuickTurnCalculatorBreak,
   decoratedUnitCost: number,
-  camoUnitPrice: number
+  camoUnitPrice: number,
+  quoteRebateRate = 0
 ) {
+  const effectiveMarginRate = quantityBreak.marginRate + quoteRebateRate;
   const surchargedDecoratedCost = decoratedUnitCost * quantityBreak.surchargeMultiplier;
   const formulaNotes = [
     "Camo is added after surcharge and does not affect the surcharged decorated item cost.",
+    ...(quoteRebateRate > 0
+      ? [`Quote rebate adds ${formatPercent(quoteRebateRate)} to the configured break margin (${formatPercent(quantityBreak.marginRate)} → ${formatPercent(effectiveMarginRate)}).`]
+      : []),
   ];
 
   if (calculator.routeType === "STANDARD") {
     const dutiesTaxAmount = surchargedDecoratedCost * calculator.dutiesTaxRate;
     const tariffAmount = surchargedDecoratedCost * calculator.tariffRate;
     const preMarginCost = surchargedDecoratedCost + dutiesTaxAmount + tariffAmount + camoUnitPrice;
-    const divisor = 1 - quantityBreak.marginRate - calculator.rebateRate;
+    const divisor = 1 - effectiveMarginRate - calculator.rebateRate;
 
     if (divisor <= 0) {
       throw new Error(`Invalid margin/rebate setup for ${calculator.name} ${quantityBreak.label}.`);
@@ -473,7 +538,7 @@ function calculateBreakUnitPrice(
   }
 
   const preMarginCost = surchargedDecoratedCost + camoUnitPrice;
-  const divisor = 1 - quantityBreak.marginRate - calculator.rebateRate;
+  const divisor = 1 - effectiveMarginRate - calculator.rebateRate;
 
   if (divisor <= 0) {
     throw new Error(`Invalid margin/rebate setup for ${calculator.name} ${quantityBreak.label}.`);
@@ -514,6 +579,10 @@ async function resolveCamoOption(
     throw new Error("Camo option does not belong to the selected factory.");
   }
 
+  if (camo.unitPrice < 0) {
+    throw new Error("Camo pricing must be non-negative.");
+  }
+
   return camo;
 }
 
@@ -521,6 +590,54 @@ function validateBaseItemFactory(baseItem: QuickTurnBaseItem, factoryId: number)
   if (baseItem.factoryId !== factoryId) {
     throw new Error("Base item does not belong to the selected factory.");
   }
+  if (baseItem.basePrice < 0) {
+    throw new Error("Base item pricing must be non-negative.");
+  }
+}
+
+function isCustomCapItem(item: QuickTurnCalculateItemInput): boolean {
+  const baseItemId = cleanText(item.baseItemId);
+  return item.isCustomCap === true || baseItemId === QUICK_TURN_CUSTOM_CAP_BASE_ITEM_ID || baseItemId === "CUSTOM_CAP";
+}
+
+async function resolveBaseItemForItem(
+  item: QuickTurnCalculateItemInput,
+  itemIndex: number,
+  factoryId: number
+): Promise<ResolvedBaseItem> {
+  if (isCustomCapItem(item)) {
+    const customCapCost = cleanNonNegativeNumber(item.customCapCost, `Quote item ${itemIndex + 1} Custom Cap Cost / Piece`);
+    const customCapDescription = cleanRequiredText(
+      item.customCapDescription,
+      `Quote item ${itemIndex + 1} Custom Cap Description`
+    );
+
+    return {
+      id: null,
+      code: "CUSTOM_CAP",
+      itemCode: "Custom Cap",
+      fabricDescription: customCapDescription,
+      basePrice: customCapCost,
+      isCustomCap: true,
+      customCapDescription,
+    };
+  }
+
+  const baseItemId = cleanRequiredText(item.baseItemId, `Quote item ${itemIndex + 1} base item`);
+  const baseItem = await getActiveBaseItemById(baseItemId);
+  validateBaseItemFactory(baseItem, factoryId);
+
+  const descriptionOverride = cleanText(item.baseItemDescription ?? item.baseItemDescriptionOverride);
+
+  return {
+    id: baseItem.id,
+    code: baseItem.code,
+    itemCode: baseItem.itemCode,
+    fabricDescription: descriptionOverride ?? baseItem.fabricDescription,
+    basePrice: baseItem.basePrice,
+    isCustomCap: false,
+    customCapDescription: null,
+  };
 }
 
 export async function calculateQuickTurnQuote(
@@ -530,6 +647,12 @@ export async function calculateQuickTurnQuote(
   const factoryToken = input.factoryId ?? input.factoryCode ?? QUICK_TURN_DEFAULT_FACTORY_CODE;
   const program = await getActiveProgramByIdOrCode(programToken);
   const factory = await getActiveFactoryByIdOrCode(factoryToken);
+  const workflowSalesOrderNumber = cleanText(input.workflowSalesOrderNumber);
+  const overseasCustomerServiceUser = await getActiveQuickTurnOverseasCustomerServiceUserById(input.overseasCustomerServiceUserId);
+  if (!overseasCustomerServiceUser) {
+    throw new Error("OS Customer Service is required and must be an active Overseas CS user.");
+  }
+  const quoteRebateRate = cleanOptionalQuoteRebateRate(input);
 
   const rawItems = input.items ?? [];
   if (!Array.isArray(rawItems) || rawItems.length === 0) {
@@ -553,10 +676,7 @@ export async function calculateQuickTurnQuote(
 
   for (let itemIndex = 0; itemIndex < rawItems.length; itemIndex += 1) {
     const item = rawItems[itemIndex];
-    const baseItemId = cleanRequiredText(item.baseItemId, `Quote item ${itemIndex + 1} base item`);
-    const baseItem = await getActiveBaseItemById(baseItemId);
-    validateBaseItemFactory(baseItem, factory.id);
-
+    const baseItem = await resolveBaseItemForItem(item, itemIndex, factory.id);
     const accessories = await resolveAccessoriesForItem(item, itemIndex, program.id, factory.id);
     const camoOption = await resolveCamoOption(item.camoOptionId, factory.id);
     const fees = await resolveFeesForItem(item);
@@ -566,6 +686,12 @@ export async function calculateQuickTurnQuote(
     const decoratedUnitCost = baseUnitPrice + accessoryUnitTotal;
     const camoUnitPrice = camoOption?.unitPrice ?? 0;
     const oneTimeFeeTotal = fees.reduce((sum, fee) => sum + fee.amount, 0);
+
+    if (decoratedUnitCost < 0) {
+      throw new Error(
+        `Quote item ${itemIndex + 1} decorated unit cost cannot be below zero. Adjust the base item/custom cap cost or negative decoration/accessory adjustments.`
+      );
+    }
 
     const calculatorResults = calculators.map((calculator) => ({
       calculator: {
@@ -584,7 +710,8 @@ export async function calculateQuickTurnQuote(
           calculator,
           quantityBreak,
           decoratedUnitCost,
-          camoUnitPrice
+          camoUnitPrice,
+          quoteRebateRate
         );
 
         return {
@@ -593,7 +720,9 @@ export async function calculateQuickTurnQuote(
           minQuantity: quantityBreak.minQuantity,
           maxQuantity: quantityBreak.maxQuantity,
           managementReviewRequired: quantityBreak.managementReviewRequired,
-          marginRate: quantityBreak.marginRate,
+          marginRate: quantityBreak.marginRate + quoteRebateRate,
+          baseMarginRate: quantityBreak.marginRate,
+          quoteRebateRate,
           surchargeMultiplier: quantityBreak.surchargeMultiplier,
           airFreightAmount: quantityBreak.airFreightAmount,
           ddpBaseAmount: quantityBreak.ddpBaseAmount,
@@ -622,7 +751,11 @@ export async function calculateQuickTurnQuote(
         itemCode: baseItem.itemCode,
         fabricDescription: baseItem.fabricDescription,
         basePrice: roundCurrency(baseUnitPrice),
+        isCustomCap: baseItem.isCustomCap,
+        customCapDescription: baseItem.customCapDescription,
       },
+      isCustomCap: baseItem.isCustomCap,
+      customCapDescription: baseItem.customCapDescription,
       accessories: accessories.map((x) => ({
         id: x.accessory.id,
         code: x.accessory.code,
@@ -661,6 +794,27 @@ export async function calculateQuickTurnQuote(
     });
   }
 
+  const normalizedInput: QuickTurnCalculateInput = {
+    ...input,
+    workflowSalesOrderNumber,
+    overseasCustomerServiceUserId: overseasCustomerServiceUser.id,
+    overseasCustomerServiceNameSnapshot: overseasCustomerServiceUser.displayName,
+    overseasCustomerServiceEmailSnapshot: overseasCustomerServiceUser.email,
+    overseasCustomerServiceEmployeeNumberSnapshot: overseasCustomerServiceUser.employeeNumber,
+    rebatePercent: quoteRebateRate * 100,
+    quoteRebateRate,
+    preparedForCustomerId: input.preparedForCustomerId ?? null,
+    preparedForCustomerCodeSnapshot: cleanText(input.preparedForCustomerCodeSnapshot),
+    preparedForCustomerNameSnapshot: cleanText(input.preparedForCustomerNameSnapshot),
+    quotePreparedForDisplay: cleanText(input.quotePreparedForDisplay),
+    programLogoText: cleanText(input.programLogoText),
+    fob: cleanText(input.fob) ?? "1 U.S. Final Destination",
+    items: rawItems.map((item, index) => ({
+      ...item,
+      baseItemDescription: items[index]?.isCustomCap ? null : cleanText(items[index]?.baseItem?.fabricDescription),
+    })),
+  };
+
   return {
     program: {
       id: program.id,
@@ -676,20 +830,67 @@ export async function calculateQuickTurnQuote(
     validUntil,
     disclaimer: QUICK_TURN_QUOTE_DISCLAIMER,
     finalBreakNote: QUICK_TURN_FINAL_BREAK_NOTE,
-    input,
+    input: normalizedInput,
     items,
   };
 }
 
 export async function saveCalculatedQuickTurnQuote(
   input: QuickTurnSaveInput
-): Promise<{ id: string; quoteNumber: string; calculation: QuickTurnCalculationResult }> {
+): Promise<{ id: string; quoteNumber: string; quoteStatus: "DRAFT" | "PUBLISHED"; calculation: QuickTurnCalculationResult }> {
   const quoteName = cleanRequiredText(input.quoteName, "Quote name");
   const calculation = await calculateQuickTurnQuote(input);
 
   const saved = await saveQuickTurnQuote({
     quoteName,
     notes: input.notes,
+    workflowSalesOrderNumber: calculation.input.workflowSalesOrderNumber,
+    overseasCustomerServiceUserId: calculation.input.overseasCustomerServiceUserId,
+    overseasCustomerServiceNameSnapshot: calculation.input.overseasCustomerServiceNameSnapshot,
+    overseasCustomerServiceEmailSnapshot: calculation.input.overseasCustomerServiceEmailSnapshot,
+    overseasCustomerServiceEmployeeNumberSnapshot: calculation.input.overseasCustomerServiceEmployeeNumberSnapshot,
+    quoteRebateRate: calculation.input.quoteRebateRate,
+    preparedForCustomerId: input.preparedForCustomerId,
+    preparedForCustomerCodeSnapshot: input.preparedForCustomerCodeSnapshot,
+    preparedForCustomerNameSnapshot: input.preparedForCustomerNameSnapshot,
+    quotePreparedForDisplay: input.quotePreparedForDisplay,
+    programLogoText: input.programLogoText,
+    fob: input.fob,
+    quoteStatus: "DRAFT",
+    changedBy: input.changedBy,
+    changedByUserId: input.changedByUserId,
+    changedByEmployeeNumber: input.changedByEmployeeNumber,
+    calculation,
+  });
+
+  return {
+    ...saved,
+    calculation,
+  };
+}
+
+export async function updateCalculatedQuickTurnDraft(
+  id: string,
+  input: QuickTurnSaveInput
+): Promise<{ id: string; quoteNumber: string; quoteStatus: "DRAFT" | "PUBLISHED"; calculation: QuickTurnCalculationResult }> {
+  const quoteName = cleanRequiredText(input.quoteName, "Quote name");
+  const calculation = await calculateQuickTurnQuote(input);
+
+  const saved = await updateDraftQuickTurnQuote(id, {
+    quoteName,
+    notes: input.notes,
+    workflowSalesOrderNumber: calculation.input.workflowSalesOrderNumber,
+    overseasCustomerServiceUserId: calculation.input.overseasCustomerServiceUserId,
+    overseasCustomerServiceNameSnapshot: calculation.input.overseasCustomerServiceNameSnapshot,
+    overseasCustomerServiceEmailSnapshot: calculation.input.overseasCustomerServiceEmailSnapshot,
+    overseasCustomerServiceEmployeeNumberSnapshot: calculation.input.overseasCustomerServiceEmployeeNumberSnapshot,
+    quoteRebateRate: calculation.input.quoteRebateRate,
+    preparedForCustomerId: input.preparedForCustomerId,
+    preparedForCustomerCodeSnapshot: input.preparedForCustomerCodeSnapshot,
+    preparedForCustomerNameSnapshot: input.preparedForCustomerNameSnapshot,
+    quotePreparedForDisplay: input.quotePreparedForDisplay,
+    programLogoText: input.programLogoText,
+    fob: input.fob,
     changedBy: input.changedBy,
     changedByUserId: input.changedByUserId,
     changedByEmployeeNumber: input.changedByEmployeeNumber,

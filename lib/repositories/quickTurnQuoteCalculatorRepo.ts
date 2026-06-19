@@ -14,6 +14,7 @@ import {
 import { QUICK_TURN_QUOTE_ENTITY_TYPE } from "@/lib/quickTurnQuoteCalculator/constants";
 
 export type SortDir = "asc" | "desc";
+export type QuickTurnQuoteStatus = "DRAFT" | "PUBLISHED";
 
 type Queryable = {
   query: <T = any>(
@@ -91,6 +92,15 @@ export type QuickTurnFeeType = {
   isActive: boolean;
 };
 
+export type QuickTurnOverseasCustomerServiceUser = {
+  id: string;
+  username: string | null;
+  displayName: string;
+  email: string | null;
+  employeeNumber: number | null;
+  department: string | null;
+};
+
 export type QuickTurnCalculatorBreak = {
   id: number;
   calculatorId: number;
@@ -138,6 +148,19 @@ export type QuickTurnLookupPayload = {
 export type QuickTurnSaveQuoteInput = QuickTurnAuditInput & {
   quoteName: string;
   notes?: string | null;
+  workflowSalesOrderNumber?: string | null;
+  overseasCustomerServiceUserId?: string | null;
+  overseasCustomerServiceNameSnapshot?: string | null;
+  overseasCustomerServiceEmailSnapshot?: string | null;
+  overseasCustomerServiceEmployeeNumberSnapshot?: number | string | null;
+  quoteRebateRate?: number | string | null;
+  preparedForCustomerId?: string | number | null;
+  preparedForCustomerCodeSnapshot?: string | null;
+  preparedForCustomerNameSnapshot?: string | null;
+  quotePreparedForDisplay?: string | null;
+  programLogoText?: string | null;
+  fob?: string | null;
+  quoteStatus?: QuickTurnQuoteStatus | null;
   calculation: QuickTurnPersistedCalculation;
 };
 
@@ -155,7 +178,7 @@ export type QuickTurnPersistedCalculation = {
   generatedAt: string;
   validUntil: string;
   disclaimer: string;
-  input: unknown;
+  input: any;
   items: QuickTurnPersistedQuoteItem[];
 };
 
@@ -163,12 +186,16 @@ export type QuickTurnPersistedQuoteItem = {
   clientItemId: string;
   sortOrder: number;
   baseItem: {
-    id: string;
+    id: string | null;
     code: string;
     itemCode: string;
     fabricDescription: string | null;
     basePrice: number;
+    isCustomCap?: boolean;
+    customCapDescription?: string | null;
   };
+  isCustomCap?: boolean;
+  customCapDescription?: string | null;
   accessories: Array<{
     id: string;
     code: string;
@@ -220,6 +247,8 @@ export type QuickTurnPersistedQuoteItem = {
       maxQuantity: number | null;
       managementReviewRequired: boolean;
       marginRate: number;
+      baseMarginRate?: number;
+      quoteRebateRate?: number;
       surchargeMultiplier: number;
       airFreightAmount: number | null;
       ddpBaseAmount: number | null;
@@ -241,6 +270,24 @@ export type QuickTurnSavedQuoteSummaryRow = {
   id: string;
   quoteNumber: string;
   quoteName: string;
+  quoteStatus: QuickTurnQuoteStatus;
+  workflowSalesOrderNumber: string | null;
+  overseasCustomerServiceUserId: string | null;
+  overseasCustomerServiceNameSnapshot: string | null;
+  overseasCustomerServiceEmailSnapshot: string | null;
+  overseasCustomerServiceEmployeeNumberSnapshot: number | null;
+  quoteRebateRate: number;
+  preparedForCustomerId: string | null;
+  preparedForCustomerCodeSnapshot: string | null;
+  preparedForCustomerNameSnapshot: string | null;
+  quotePreparedForDisplay: string | null;
+  programLogoText: string | null;
+  fob: string | null;
+  sourceQuoteId: string | null;
+  sourceQuoteNumber: string | null;
+  revisionNumber: number;
+  publishedAt: string | null;
+  publishedBy: string | null;
   programName: string;
   factoryName: string;
   generatedAt: string;
@@ -258,6 +305,7 @@ export type QuickTurnSavedQuoteSummaryRow = {
 
 export type QuickTurnQuoteListFilters = StandardRepoOptions & {
   q?: string | null;
+  quoteStatus?: QuickTurnQuoteStatus | "" | null;
   sortBy?: string | null;
   sortDir?: SortDir | null;
   limit?: number;
@@ -281,6 +329,8 @@ export type QuickTurnSavedQuoteDetail = QuickTurnSavedQuoteSummaryRow & {
   items: Array<{
     id: string;
     sortOrder: number;
+    isCustomCap: boolean;
+    customCapDescription: string | null;
     baseItemCode: string;
     baseItemDescription: string | null;
     baseItemPrice: number;
@@ -319,6 +369,8 @@ export type QuickTurnSavedQuoteDetail = QuickTurnSavedQuoteSummaryRow & {
       maxQuantity: number | null;
       managementReviewRequired: boolean;
       marginRate: number;
+      baseMarginRate?: number;
+      quoteRebateRate?: number;
       surchargeMultiplier: number;
       dutiesTaxRate: number;
       tariffRate: number;
@@ -432,6 +484,12 @@ function cleanOptionalEmployeeNumber(value: unknown): number | null {
   return Number.isInteger(n) ? n : null;
 }
 
+function cleanOptionalBigintId(value: unknown): string | null {
+  const s = cleanText(value);
+  if (!s) return null;
+  return /^\d+$/.test(s) ? s : null;
+}
+
 function toJson(value: unknown): string {
   return JSON.stringify(value ?? null);
 }
@@ -448,6 +506,16 @@ function limitOffset(inputLimit?: number, inputOffset?: number) {
   return { limit, offset };
 }
 
+function quoteStatus(value: unknown, fallback: QuickTurnQuoteStatus = "DRAFT"): QuickTurnQuoteStatus {
+  return String(value || "").toUpperCase() === "PUBLISHED" ? "PUBLISHED" : fallback;
+}
+
+function addDaysAsDateString(date: Date, days: number): string {
+  const copy = new Date(date.getTime());
+  copy.setUTCDate(copy.getUTCDate() + days);
+  return copy.toISOString().slice(0, 10);
+}
+
 async function getOne<T>(
   queryable: Queryable,
   sql: string,
@@ -458,6 +526,25 @@ async function getOne<T>(
   const row = rows[0];
   if (!row) throw new Error(notFoundMessage);
   return row;
+}
+
+function validatePersistedCalculation(calculation: QuickTurnPersistedCalculation) {
+  if (!calculation?.items?.length) {
+    throw new Error("At least one quote item is required before saving.");
+  }
+
+  for (let i = 0; i < calculation.items.length; i += 1) {
+    const item = calculation.items[i];
+    if (Number(item.baseUnitPrice) < 0) {
+      throw new Error(`Quote item ${i + 1} base item cost must be non-negative.`);
+    }
+    if (Number(item.camoUnitPrice) < 0) {
+      throw new Error(`Quote item ${i + 1} camo cost must be non-negative.`);
+    }
+    if (Number(item.decoratedUnitCost) < 0) {
+      throw new Error(`Quote item ${i + 1} decorated unit cost cannot be below zero.`);
+    }
+  }
 }
 
 export async function listQuickTurnLookups(filters?: {
@@ -524,7 +611,7 @@ export async function listQuickTurnLookups(filters?: {
     baseItems: baseItems.rows,
     accessories: accessories.rows,
     camoOptions: camoOptions.rows,
-    calculators: calculators,
+    calculators,
     feeTypes: feeTypes.rows,
   };
 }
@@ -633,6 +720,64 @@ export async function getActiveFeeTypesByIds(ids: number[]): Promise<QuickTurnFe
   return rows;
 }
 
+function overseasCsDepartmentWhere(alias = "department") {
+  return `REPLACE(REPLACE(UPPER(COALESCE(${alias}, '')), '_', ' '), '-', ' ') IN ('OVERSEAS CUSTOMER SERVICE', 'OVERSEAS CS')`;
+}
+
+const OVERSEAS_CS_USER_SELECT = `
+  id::text AS id,
+  username,
+  COALESCE(NULLIF(display_name, ''), NULLIF(name, ''), username) AS "displayName",
+  email,
+  employee_number AS "employeeNumber",
+  department
+`;
+
+export async function listQuickTurnOverseasCustomerServiceUsers(q?: string | null): Promise<QuickTurnOverseasCustomerServiceUser[]> {
+  const search = cleanText(q);
+  const params: any[] = [];
+  const where = ["COALESCE(is_active, false) = true", overseasCsDepartmentWhere()];
+
+  if (search) {
+    params.push(`%${search}%`);
+    where.push(`(display_name ILIKE $${params.length} OR name ILIKE $${params.length} OR username ILIKE $${params.length} OR email ILIKE $${params.length} OR employee_number::text ILIKE $${params.length})`);
+  }
+
+  const { rows } = await db.query<QuickTurnOverseasCustomerServiceUser>(
+    `
+    SELECT ${OVERSEAS_CS_USER_SELECT}
+    FROM public.users
+    WHERE ${where.join(" AND ")}
+    ORDER BY COALESCE(NULLIF(display_name, ''), NULLIF(name, ''), username) ASC
+    LIMIT 100
+    `,
+    params
+  );
+
+  return rows;
+}
+
+export async function getActiveQuickTurnOverseasCustomerServiceUserById(
+  id: string | null | undefined
+): Promise<QuickTurnOverseasCustomerServiceUser | null> {
+  const userId = cleanOptionalUuid(id);
+  if (!userId) return null;
+
+  const { rows } = await db.query<QuickTurnOverseasCustomerServiceUser>(
+    `
+    SELECT ${OVERSEAS_CS_USER_SELECT}
+    FROM public.users
+    WHERE id = $1::uuid
+      AND COALESCE(is_active, false) = true
+      AND ${overseasCsDepartmentWhere()}
+    LIMIT 1
+    `,
+    [userId]
+  );
+
+  return rows[0] ?? null;
+}
+
 export async function listQuickTurnCalculatorsWithBreaks(filters?: {
   programId?: number | null;
   factoryId?: number | null;
@@ -726,29 +871,236 @@ export async function listQuickTurnCalculatorsWithBreaks(filters?: {
   return Array.from(byCalculator.values());
 }
 
+async function insertQuoteSnapshotRows(
+  client: Queryable,
+  quoteId: string,
+  calculation: QuickTurnPersistedCalculation
+): Promise<void> {
+  for (const item of calculation.items) {
+    const isCustomCap = item.isCustomCap === true || item.baseItem.isCustomCap === true;
+    const customCapDescription = cleanText(item.customCapDescription ?? item.baseItem.customCapDescription);
+
+    const itemResult = await client.query<{ id: string }>(
+      `
+      INSERT INTO public.quick_turn_quote_items (
+        quote_id,
+        sort_order,
+        base_item_id,
+        is_custom_cap,
+        custom_cap_description_snapshot,
+        base_item_code_snapshot,
+        base_item_description_snapshot,
+        base_item_price_snapshot,
+        decorated_unit_cost_snapshot,
+        camo_option_id,
+        camo_code_snapshot,
+        camo_series_snapshot,
+        camo_supplier_snapshot,
+        camo_unit_price_snapshot,
+        notes
+      )
+      VALUES (
+        $1, $2, $3::uuid, $4, $5, $6, $7, $8, $9,
+        $10::uuid, $11, $12, $13, $14, $15
+      )
+      RETURNING id
+      `,
+      [
+        quoteId,
+        item.sortOrder,
+        isCustomCap ? null : cleanOptionalUuid(item.baseItem.id),
+        isCustomCap,
+        customCapDescription,
+        item.baseItem.itemCode || item.baseItem.code,
+        isCustomCap ? customCapDescription : item.baseItem.fabricDescription,
+        item.baseUnitPrice,
+        item.decoratedUnitCost,
+        item.camoOption?.id ?? null,
+        item.camoOption?.code ?? null,
+        item.camoOption?.series ?? null,
+        item.camoOption?.supplier ?? null,
+        item.camoUnitPrice,
+        item.notes,
+      ]
+    );
+
+    const quoteItemId = itemResult.rows[0].id;
+
+    for (const accessory of item.accessories) {
+      await client.query(
+        `
+        INSERT INTO public.quick_turn_quote_item_accessories (
+          quote_item_id,
+          accessory_id,
+          category_snapshot,
+          accessory_code_snapshot,
+          accessory_name_snapshot,
+          pricing_method_snapshot,
+          unit_price_snapshot,
+          input_values_snapshot,
+          calculated_unit_price_snapshot,
+          sort_order
+        )
+        VALUES ($1, $2::uuid, $3, $4, $5, $6, $7, $8::jsonb, $9, $10)
+        `,
+        [
+          quoteItemId,
+          accessory.id,
+          accessory.category,
+          accessory.code,
+          accessory.name,
+          accessory.pricingMethod,
+          accessory.unitPrice,
+          toJson(accessory.inputValues),
+          accessory.calculatedUnitPrice,
+          accessory.sortOrder,
+        ]
+      );
+    }
+
+    for (const fee of item.fees) {
+      await client.query(
+        `
+        INSERT INTO public.quick_turn_quote_item_fees (
+          quote_item_id,
+          fee_type_id,
+          fee_code_snapshot,
+          fee_name_snapshot,
+          amount_snapshot,
+          notes,
+          sort_order
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7)
+        `,
+        [
+          quoteItemId,
+          fee.feeTypeId,
+          fee.feeCode,
+          fee.feeName,
+          fee.amount,
+          fee.notes,
+          fee.sortOrder,
+        ]
+      );
+    }
+
+    for (const calculatorResult of item.calculatorResults) {
+      const calculator = calculatorResult.calculator;
+
+      for (const resultBreak of calculatorResult.breaks) {
+        await client.query(
+          `
+          INSERT INTO public.quick_turn_quote_results (
+            quote_item_id,
+            calculator_id,
+            calculator_code_snapshot,
+            calculator_name_snapshot,
+            calculator_route_type_snapshot,
+            quantity_break_id,
+            break_label_snapshot,
+            min_quantity_snapshot,
+            max_quantity_snapshot,
+            management_review_required_snapshot,
+            margin_rate_snapshot,
+            surcharge_multiplier_snapshot,
+            duties_tax_rate_snapshot,
+            tariff_rate_snapshot,
+            rebate_rate_snapshot,
+            air_freight_amount_snapshot,
+            ddp_base_amount_snapshot,
+            ddp_markup_rate_snapshot,
+            mo_shipping_amount_snapshot,
+            surcharged_decorated_cost_snapshot,
+            camo_unit_price_snapshot,
+            pre_margin_cost_snapshot,
+            unit_price_snapshot
+          )
+          VALUES (
+            $1, $2, $3, $4, $5, $6,
+            $7, $8, $9, $10,
+            $11, $12, $13, $14, $15,
+            $16, $17, $18, $19,
+            $20, $21, $22, $23
+          )
+          `,
+          [
+            quoteItemId,
+            calculator.id,
+            calculator.code,
+            calculator.name,
+            calculator.routeType,
+            resultBreak.quantityBreakId,
+            resultBreak.breakLabel,
+            resultBreak.minQuantity,
+            resultBreak.maxQuantity,
+            resultBreak.managementReviewRequired,
+            resultBreak.marginRate,
+            resultBreak.surchargeMultiplier,
+            calculator.dutiesTaxRate,
+            calculator.tariffRate,
+            calculator.rebateRate,
+            resultBreak.airFreightAmount,
+            resultBreak.ddpBaseAmount,
+            resultBreak.ddpMarkupRate,
+            resultBreak.moShippingAmount,
+            resultBreak.surchargedDecoratedCost,
+            resultBreak.camoUnitPrice,
+            resultBreak.preMarginCost,
+            resultBreak.unitPrice,
+          ]
+        );
+      }
+    }
+  }
+}
+
 export async function saveQuickTurnQuote(
   input: QuickTurnSaveQuoteInput
-): Promise<{ id: string; quoteNumber: string }> {
+): Promise<{ id: string; quoteNumber: string; quoteStatus: QuickTurnQuoteStatus }> {
   const quoteName = cleanRequiredText(input.quoteName, "Quote name");
   const notes = cleanText(input.notes);
+  const workflowSalesOrderNumber = cleanText(input.workflowSalesOrderNumber);
+  const overseasCustomerServiceUserId = cleanOptionalUuid(input.overseasCustomerServiceUserId);
+  const overseasCustomerServiceNameSnapshot = cleanText(input.overseasCustomerServiceNameSnapshot);
+  const overseasCustomerServiceEmailSnapshot = cleanText(input.overseasCustomerServiceEmailSnapshot);
+  const overseasCustomerServiceEmployeeNumberSnapshot = cleanOptionalEmployeeNumber(input.overseasCustomerServiceEmployeeNumberSnapshot);
+  const quoteRebateRate = cleanNonNegativeNumber(input.quoteRebateRate, "Rebate rate");
+  const preparedForCustomerId = cleanOptionalBigintId(input.preparedForCustomerId);
+  const preparedForCustomerCodeSnapshot = cleanText(input.preparedForCustomerCodeSnapshot);
+  const preparedForCustomerNameSnapshot = cleanText(input.preparedForCustomerNameSnapshot);
+  const quotePreparedForDisplay = cleanText(input.quotePreparedForDisplay) ?? preparedForCustomerNameSnapshot;
+  const programLogoText = cleanText(input.programLogoText);
+  const fob = cleanText(input.fob) ?? "1 U.S. Final Destination";
   const changedBy = cleanText(input.changedBy) ?? "Unknown User";
   const changedByUserId = cleanOptionalUuid(input.changedByUserId);
   const changedByEmployeeNumber = cleanOptionalEmployeeNumber(input.changedByEmployeeNumber);
   const calculation = input.calculation;
+  const status = quoteStatus(input.quoteStatus, "DRAFT");
 
-  if (!calculation?.items?.length) {
-    throw new Error("At least one quote item is required before saving.");
-  }
+  validatePersistedCalculation(calculation);
 
   const client = await db.connect();
 
   try {
     await client.query("BEGIN");
 
-    const headerResult = await client.query<{ id: string; quoteNumber: string }>(
+    const headerResult = await client.query<{ id: string; quoteNumber: string; quoteStatus: QuickTurnQuoteStatus }>(
       `
       INSERT INTO public.quick_turn_quotes (
         quote_name,
+        quote_status,
+        workflow_sales_order_number,
+        overseas_customer_service_user_id,
+        overseas_customer_service_name_snapshot,
+        overseas_customer_service_email_snapshot,
+        overseas_customer_service_employee_number_snapshot,
+        quote_rebate_rate,
+        prepared_for_customer_id,
+        prepared_for_customer_code_snapshot,
+        prepared_for_customer_name_snapshot,
+        quote_prepared_for_display,
+        program_logo_text,
+        fob,
         program_id,
         factory_id,
         program_code_snapshot,
@@ -768,15 +1120,29 @@ export async function saveQuickTurnQuote(
         updated_by_user_id
       )
       VALUES (
-        $1, $2, $3, $4, $5, $6, $7,
-        $8::timestamptz, $9::date, $10,
-        $11::jsonb, $12::jsonb,
-        $13, $14, $15::uuid, $16, $14, $15::uuid
+        $1, $2, $3, $4::uuid, $5, $6, $7, $8, $9::bigint, $10, $11, $12, $13, $14,
+        $15, $16, $17, $18, $19, $20,
+        $21::timestamptz, $22::date, $23,
+        $24::jsonb, $25::jsonb,
+        $26, $27, $28::uuid, $29, $27, $28::uuid
       )
-      RETURNING id, quote_number AS "quoteNumber"
+      RETURNING id, quote_number AS "quoteNumber", quote_status AS "quoteStatus"
       `,
       [
         quoteName,
+        status,
+        workflowSalesOrderNumber,
+        overseasCustomerServiceUserId,
+        overseasCustomerServiceNameSnapshot,
+        overseasCustomerServiceEmailSnapshot,
+        overseasCustomerServiceEmployeeNumberSnapshot,
+        quoteRebateRate,
+        preparedForCustomerId,
+        preparedForCustomerCodeSnapshot,
+        preparedForCustomerNameSnapshot,
+        quotePreparedForDisplay,
+        programLogoText,
+        fob,
         calculation.program.id,
         calculation.factory.id,
         calculation.program.code,
@@ -796,184 +1162,17 @@ export async function saveQuickTurnQuote(
     );
 
     const quote = headerResult.rows[0];
-
-    for (const item of calculation.items) {
-      const itemResult = await client.query<{ id: string }>(
-        `
-        INSERT INTO public.quick_turn_quote_items (
-          quote_id,
-          sort_order,
-          base_item_id,
-          base_item_code_snapshot,
-          base_item_description_snapshot,
-          base_item_price_snapshot,
-          decorated_unit_cost_snapshot,
-          camo_option_id,
-          camo_code_snapshot,
-          camo_series_snapshot,
-          camo_supplier_snapshot,
-          camo_unit_price_snapshot,
-          notes
-        )
-        VALUES (
-          $1, $2, $3::uuid, $4, $5, $6, $7,
-          $8::uuid, $9, $10, $11, $12, $13
-        )
-        RETURNING id
-        `,
-        [
-          quote.id,
-          item.sortOrder,
-          item.baseItem.id,
-          item.baseItem.itemCode || item.baseItem.code,
-          item.baseItem.fabricDescription,
-          item.baseUnitPrice,
-          item.decoratedUnitCost,
-          item.camoOption?.id ?? null,
-          item.camoOption?.code ?? null,
-          item.camoOption?.series ?? null,
-          item.camoOption?.supplier ?? null,
-          item.camoUnitPrice,
-          item.notes,
-        ]
-      );
-
-      const quoteItemId = itemResult.rows[0].id;
-
-      for (const accessory of item.accessories) {
-        await client.query(
-          `
-          INSERT INTO public.quick_turn_quote_item_accessories (
-            quote_item_id,
-            accessory_id,
-            category_snapshot,
-            accessory_code_snapshot,
-            accessory_name_snapshot,
-            pricing_method_snapshot,
-            unit_price_snapshot,
-            input_values_snapshot,
-            calculated_unit_price_snapshot,
-            sort_order
-          )
-          VALUES ($1, $2::uuid, $3, $4, $5, $6, $7, $8::jsonb, $9, $10)
-          `,
-          [
-            quoteItemId,
-            accessory.id,
-            accessory.category,
-            accessory.code,
-            accessory.name,
-            accessory.pricingMethod,
-            accessory.unitPrice,
-            toJson(accessory.inputValues),
-            accessory.calculatedUnitPrice,
-            accessory.sortOrder,
-          ]
-        );
-      }
-
-      for (const fee of item.fees) {
-        await client.query(
-          `
-          INSERT INTO public.quick_turn_quote_item_fees (
-            quote_item_id,
-            fee_type_id,
-            fee_code_snapshot,
-            fee_name_snapshot,
-            amount_snapshot,
-            notes,
-            sort_order
-          )
-          VALUES ($1, $2, $3, $4, $5, $6, $7)
-          `,
-          [
-            quoteItemId,
-            fee.feeTypeId,
-            fee.feeCode,
-            fee.feeName,
-            fee.amount,
-            fee.notes,
-            fee.sortOrder,
-          ]
-        );
-      }
-
-      for (const calculatorResult of item.calculatorResults) {
-        const calculator = calculatorResult.calculator;
-
-        for (const resultBreak of calculatorResult.breaks) {
-          await client.query(
-            `
-            INSERT INTO public.quick_turn_quote_results (
-              quote_item_id,
-              calculator_id,
-              calculator_code_snapshot,
-              calculator_name_snapshot,
-              calculator_route_type_snapshot,
-              quantity_break_id,
-              break_label_snapshot,
-              min_quantity_snapshot,
-              max_quantity_snapshot,
-              management_review_required_snapshot,
-              margin_rate_snapshot,
-              surcharge_multiplier_snapshot,
-              duties_tax_rate_snapshot,
-              tariff_rate_snapshot,
-              rebate_rate_snapshot,
-              air_freight_amount_snapshot,
-              ddp_base_amount_snapshot,
-              ddp_markup_rate_snapshot,
-              mo_shipping_amount_snapshot,
-              surcharged_decorated_cost_snapshot,
-              camo_unit_price_snapshot,
-              pre_margin_cost_snapshot,
-              unit_price_snapshot
-            )
-            VALUES (
-              $1, $2, $3, $4, $5, $6,
-              $7, $8, $9, $10,
-              $11, $12, $13, $14, $15,
-              $16, $17, $18, $19,
-              $20, $21, $22, $23
-            )
-            `,
-            [
-              quoteItemId,
-              calculator.id,
-              calculator.code,
-              calculator.name,
-              calculator.routeType,
-              resultBreak.quantityBreakId,
-              resultBreak.breakLabel,
-              resultBreak.minQuantity,
-              resultBreak.maxQuantity,
-              resultBreak.managementReviewRequired,
-              resultBreak.marginRate,
-              resultBreak.surchargeMultiplier,
-              calculator.dutiesTaxRate,
-              calculator.tariffRate,
-              calculator.rebateRate,
-              resultBreak.airFreightAmount,
-              resultBreak.ddpBaseAmount,
-              resultBreak.ddpMarkupRate,
-              resultBreak.moShippingAmount,
-              resultBreak.surchargedDecoratedCost,
-              resultBreak.camoUnitPrice,
-              resultBreak.preMarginCost,
-              resultBreak.unitPrice,
-            ]
-          );
-        }
-      }
-    }
+    await insertQuoteSnapshotRows(client, quote.id, calculation);
 
     await client.query("COMMIT");
 
     await createActivityHistory({
       entityType: QUICK_TURN_QUOTE_ENTITY_TYPE,
       entityId: quote.id,
-      eventType: "created",
-      message: `Quick Turn quote ${quote.quoteNumber} saved.`,
+      eventType: status === "DRAFT" ? "draft_created" : "created",
+      message: status === "DRAFT"
+        ? `Quick Turn draft ${quote.quoteNumber} created.`
+        : `Quick Turn quote ${quote.quoteNumber} saved.`,
       module: "Quick Turn Quote Calculator",
       userId: changedByUserId,
       userName: changedBy,
@@ -981,6 +1180,19 @@ export async function saveQuickTurnQuote(
       newValue: {
         quoteNumber: quote.quoteNumber,
         quoteName,
+        quoteStatus: status,
+        workflowSalesOrderNumber,
+        overseasCustomerServiceUserId,
+        overseasCustomerServiceNameSnapshot,
+        overseasCustomerServiceEmailSnapshot,
+        overseasCustomerServiceEmployeeNumberSnapshot,
+        quoteRebateRate,
+        preparedForCustomerId,
+        preparedForCustomerCodeSnapshot,
+        preparedForCustomerNameSnapshot,
+        quotePreparedForDisplay,
+        programLogoText,
+        fob,
         itemCount: calculation.items.length,
       },
     });
@@ -994,9 +1206,180 @@ export async function saveQuickTurnQuote(
   }
 }
 
+export async function updateDraftQuickTurnQuote(
+  id: string,
+  input: QuickTurnSaveQuoteInput
+): Promise<{ id: string; quoteNumber: string; quoteStatus: QuickTurnQuoteStatus }> {
+  const quoteName = cleanRequiredText(input.quoteName, "Quote name");
+  const notes = cleanText(input.notes);
+  const workflowSalesOrderNumber = cleanText(input.workflowSalesOrderNumber);
+  const overseasCustomerServiceUserId = cleanOptionalUuid(input.overseasCustomerServiceUserId);
+  const overseasCustomerServiceNameSnapshot = cleanText(input.overseasCustomerServiceNameSnapshot);
+  const overseasCustomerServiceEmailSnapshot = cleanText(input.overseasCustomerServiceEmailSnapshot);
+  const overseasCustomerServiceEmployeeNumberSnapshot = cleanOptionalEmployeeNumber(input.overseasCustomerServiceEmployeeNumberSnapshot);
+  const quoteRebateRate = cleanNonNegativeNumber(input.quoteRebateRate, "Rebate rate");
+  const preparedForCustomerId = cleanOptionalBigintId(input.preparedForCustomerId);
+  const preparedForCustomerCodeSnapshot = cleanText(input.preparedForCustomerCodeSnapshot);
+  const preparedForCustomerNameSnapshot = cleanText(input.preparedForCustomerNameSnapshot);
+  const quotePreparedForDisplay = cleanText(input.quotePreparedForDisplay) ?? preparedForCustomerNameSnapshot;
+  const programLogoText = cleanText(input.programLogoText);
+  const fob = cleanText(input.fob) ?? "1 U.S. Final Destination";
+  const changedBy = cleanText(input.changedBy) ?? "Unknown User";
+  const changedByUserId = cleanOptionalUuid(input.changedByUserId);
+  const changedByEmployeeNumber = cleanOptionalEmployeeNumber(input.changedByEmployeeNumber);
+  const calculation = input.calculation;
+
+  validatePersistedCalculation(calculation);
+
+  const client = await db.connect();
+
+  try {
+    await client.query("BEGIN");
+
+    const existing = await client.query<{
+      quoteNumber: string;
+      quoteStatus: QuickTurnQuoteStatus;
+      isVoided: boolean;
+    }>(
+      `
+      SELECT quote_number AS "quoteNumber",
+             quote_status AS "quoteStatus",
+             COALESCE(is_voided, false) AS "isVoided"
+      FROM public.quick_turn_quotes
+      WHERE id = $1
+      FOR UPDATE
+      `,
+      [id]
+    );
+
+    const row = existing.rows[0];
+    if (!row) throw new Error("Saved Quick Turn quote not found.");
+    if (row.isVoided) throw new Error("Voided Quick Turn quotes cannot be edited.");
+    if (row.quoteStatus !== "DRAFT") {
+      throw new Error("Published Quick Turn quotes are locked. Use Duplicate/Revise to make changes.");
+    }
+
+    const headerResult = await client.query<{ id: string; quoteNumber: string; quoteStatus: QuickTurnQuoteStatus }>(
+      `
+      UPDATE public.quick_turn_quotes
+      SET quote_name = $2,
+          workflow_sales_order_number = $3,
+          overseas_customer_service_user_id = $4::uuid,
+          overseas_customer_service_name_snapshot = $5,
+          overseas_customer_service_email_snapshot = $6,
+          overseas_customer_service_employee_number_snapshot = $7,
+          quote_rebate_rate = $8,
+          prepared_for_customer_id = $9::bigint,
+          prepared_for_customer_code_snapshot = $10,
+          prepared_for_customer_name_snapshot = $11,
+          quote_prepared_for_display = $12,
+          program_logo_text = $13,
+          fob = $14,
+          program_id = $15,
+          factory_id = $16,
+          program_code_snapshot = $17,
+          program_name_snapshot = $18,
+          factory_code_snapshot = $19,
+          factory_name_snapshot = $20,
+          generated_at = $21::timestamptz,
+          valid_until = $22::date,
+          disclaimer = $23,
+          input_snapshot = $24::jsonb,
+          result_snapshot = $25::jsonb,
+          notes = $26,
+          updated_at = now(),
+          updated_by = $27,
+          updated_by_user_id = $28::uuid
+      WHERE id = $1
+      RETURNING id, quote_number AS "quoteNumber", quote_status AS "quoteStatus"
+      `,
+      [
+        id,
+        quoteName,
+        workflowSalesOrderNumber,
+        overseasCustomerServiceUserId,
+        overseasCustomerServiceNameSnapshot,
+        overseasCustomerServiceEmailSnapshot,
+        overseasCustomerServiceEmployeeNumberSnapshot,
+        quoteRebateRate,
+        preparedForCustomerId,
+        preparedForCustomerCodeSnapshot,
+        preparedForCustomerNameSnapshot,
+        quotePreparedForDisplay,
+        programLogoText,
+        fob,
+        calculation.program.id,
+        calculation.factory.id,
+        calculation.program.code,
+        calculation.program.name,
+        calculation.factory.code,
+        calculation.factory.name,
+        calculation.generatedAt,
+        calculation.validUntil,
+        calculation.disclaimer,
+        toJson(calculation.input),
+        toJson(calculation),
+        notes,
+        changedBy,
+        changedByUserId,
+      ]
+    );
+
+    await client.query(`DELETE FROM public.quick_turn_quote_items WHERE quote_id = $1`, [id]);
+    await insertQuoteSnapshotRows(client, id, calculation);
+
+    await client.query("COMMIT");
+
+    const saved = headerResult.rows[0];
+
+    await createActivityHistory({
+      entityType: QUICK_TURN_QUOTE_ENTITY_TYPE,
+      entityId: id,
+      eventType: "draft_updated",
+      message: `Quick Turn draft ${saved.quoteNumber} updated.`,
+      module: "Quick Turn Quote Calculator",
+      userId: changedByUserId,
+      userName: changedBy,
+      employeeNumber: changedByEmployeeNumber,
+      newValue: {
+        quoteNumber: saved.quoteNumber,
+        quoteName,
+        quoteStatus: "DRAFT",
+        workflowSalesOrderNumber,
+        overseasCustomerServiceUserId,
+        overseasCustomerServiceNameSnapshot,
+        overseasCustomerServiceEmailSnapshot,
+        overseasCustomerServiceEmployeeNumberSnapshot,
+        quoteRebateRate,
+        preparedForCustomerId,
+        preparedForCustomerCodeSnapshot,
+        preparedForCustomerNameSnapshot,
+        quotePreparedForDisplay,
+        programLogoText,
+        fob,
+        itemCount: calculation.items.length,
+      },
+    });
+
+    return saved;
+  } catch (err) {
+    await client.query("ROLLBACK");
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
 const QUOTE_SORTS: Record<string, string> = {
   quoteNumber: "q.quote_number",
   quoteName: "q.quote_name",
+  quoteStatus: "q.quote_status",
+  workflowSalesOrderNumber: "q.workflow_sales_order_number",
+  overseasCustomerServiceName: "q.overseas_customer_service_name_snapshot",
+  quoteRebateRate: "q.quote_rebate_rate",
+  quotePreparedForDisplay: "q.quote_prepared_for_display",
+  programLogoText: "q.program_logo_text",
+  fob: "q.fob",
   programName: "q.program_name_snapshot",
   factoryName: "q.factory_name_snapshot",
   generatedAt: "q.generated_at",
@@ -1011,6 +1394,24 @@ function savedQuoteSummarySelect() {
     q.id,
     q.quote_number AS "quoteNumber",
     q.quote_name AS "quoteName",
+    q.quote_status AS "quoteStatus",
+    q.workflow_sales_order_number AS "workflowSalesOrderNumber",
+    q.overseas_customer_service_user_id::text AS "overseasCustomerServiceUserId",
+    q.overseas_customer_service_name_snapshot AS "overseasCustomerServiceNameSnapshot",
+    q.overseas_customer_service_email_snapshot AS "overseasCustomerServiceEmailSnapshot",
+    q.overseas_customer_service_employee_number_snapshot AS "overseasCustomerServiceEmployeeNumberSnapshot",
+    q.quote_rebate_rate::float8 AS "quoteRebateRate",
+    q.prepared_for_customer_id::text AS "preparedForCustomerId",
+    q.prepared_for_customer_code_snapshot AS "preparedForCustomerCodeSnapshot",
+    q.prepared_for_customer_name_snapshot AS "preparedForCustomerNameSnapshot",
+    q.quote_prepared_for_display AS "quotePreparedForDisplay",
+    q.program_logo_text AS "programLogoText",
+    q.fob AS fob,
+    q.source_quote_id AS "sourceQuoteId",
+    sq.quote_number AS "sourceQuoteNumber",
+    q.revision_number AS "revisionNumber",
+    q.published_at AS "publishedAt",
+    q.published_by AS "publishedBy",
     q.program_name_snapshot AS "programName",
     q.factory_name_snapshot AS "factoryName",
     q.generated_at AS "generatedAt",
@@ -1036,6 +1437,12 @@ export async function listSavedQuickTurnQuotes(
 
   pushWhere(where, buildVoidedWhereClause("q", resolveVoidMode(filters)));
 
+  const status = cleanText(filters.quoteStatus);
+  if (status) {
+    params.push(status.toUpperCase());
+    pushWhere(where, `q.quote_status = $${params.length}`);
+  }
+
   const q = cleanText(filters.q);
   if (q) {
     params.push(`%${q}%`);
@@ -1045,9 +1452,18 @@ export async function listSavedQuickTurnQuotes(
       `(
         q.quote_number ILIKE $${idx}
         OR q.quote_name ILIKE $${idx}
+        OR q.workflow_sales_order_number ILIKE $${idx}
+        OR q.overseas_customer_service_name_snapshot ILIKE $${idx}
+        OR q.overseas_customer_service_email_snapshot ILIKE $${idx}
+        OR q.prepared_for_customer_code_snapshot ILIKE $${idx}
+        OR q.prepared_for_customer_name_snapshot ILIKE $${idx}
+        OR q.quote_prepared_for_display ILIKE $${idx}
+        OR q.program_logo_text ILIKE $${idx}
+        OR q.fob ILIKE $${idx}
         OR q.program_name_snapshot ILIKE $${idx}
         OR q.factory_name_snapshot ILIKE $${idx}
         OR q.created_by ILIKE $${idx}
+        OR sq.quote_number ILIKE $${idx}
       )`
     );
   }
@@ -1060,6 +1476,7 @@ export async function listSavedQuickTurnQuotes(
     `
     SELECT COUNT(*)::int AS total
     FROM public.quick_turn_quotes q
+    LEFT JOIN public.quick_turn_quotes sq ON sq.id = q.source_quote_id
     ${whereSql}
     `,
     params
@@ -1070,9 +1487,10 @@ export async function listSavedQuickTurnQuotes(
     `
     SELECT ${savedQuoteSummarySelect()}
     FROM public.quick_turn_quotes q
+    LEFT JOIN public.quick_turn_quotes sq ON sq.id = q.source_quote_id
     LEFT JOIN public.quick_turn_quote_items qi ON qi.quote_id = q.id
     ${whereSql}
-    GROUP BY q.id
+    GROUP BY q.id, sq.quote_number
     ORDER BY ${sortBy} ${dir}, q.id DESC
     LIMIT $${dataParams.length - 1}
     OFFSET $${dataParams.length}
@@ -1106,9 +1524,10 @@ export async function getSavedQuickTurnQuoteById(
       q.input_snapshot AS "inputSnapshot",
       q.result_snapshot AS "resultSnapshot"
     FROM public.quick_turn_quotes q
+    LEFT JOIN public.quick_turn_quotes sq ON sq.id = q.source_quote_id
     LEFT JOIN public.quick_turn_quote_items qi ON qi.quote_id = q.id
     ${where}
-    GROUP BY q.id
+    GROUP BY q.id, sq.quote_number
     LIMIT 1
     `,
     [id]
@@ -1122,6 +1541,8 @@ export async function getSavedQuickTurnQuoteById(
     SELECT
       id,
       sort_order AS "sortOrder",
+      COALESCE(is_custom_cap, false) AS "isCustomCap",
+      custom_cap_description_snapshot AS "customCapDescription",
       base_item_code_snapshot AS "baseItemCode",
       base_item_description_snapshot AS "baseItemDescription",
       base_item_price_snapshot::float8 AS "baseItemPrice",
@@ -1241,6 +1662,316 @@ export async function getSavedQuickTurnQuoteById(
       results: resultsByItem.get(item.id) ?? [],
     })),
   };
+}
+
+export async function publishSavedQuickTurnQuote(
+  id: string,
+  input: QuickTurnAuditInput
+): Promise<{ id: string; quoteNumber: string; quoteStatus: QuickTurnQuoteStatus }> {
+  const changedBy = cleanText(input.changedBy) ?? "Unknown User";
+  const changedByUserId = cleanOptionalUuid(input.changedByUserId);
+  const changedByEmployeeNumber = cleanOptionalEmployeeNumber(input.changedByEmployeeNumber);
+
+  const client = await db.connect();
+
+  try {
+    await client.query("BEGIN");
+
+    const existing = await client.query<any>(
+      `
+      SELECT q.id,
+             q.quote_number AS "quoteNumber",
+             q.quote_name AS "quoteName",
+             q.quote_status AS "quoteStatus",
+             COALESCE(q.is_voided, false) AS "isVoided",
+             EXISTS (SELECT 1 FROM public.quick_turn_quote_items qi WHERE qi.quote_id = q.id) AS "hasItems",
+             EXISTS (
+               SELECT 1
+               FROM public.quick_turn_quote_results qr
+               JOIN public.quick_turn_quote_items qi ON qi.id = qr.quote_item_id
+               WHERE qi.quote_id = q.id
+             ) AS "hasResults"
+      FROM public.quick_turn_quotes q
+      WHERE q.id = $1
+      FOR UPDATE
+      `,
+      [id]
+    );
+
+    const row = existing.rows[0];
+    if (!row) throw new Error("Saved Quick Turn quote not found.");
+    if (row.isVoided) throw new Error("Voided Quick Turn quotes cannot be published.");
+    if (row.quoteStatus !== "DRAFT") throw new Error("Only draft Quick Turn quotes can be published.");
+    if (!row.hasItems || !row.hasResults) {
+      throw new Error("A draft must have saved calculation snapshots before publishing.");
+    }
+
+    const result = await client.query<{ id: string; quoteNumber: string; quoteStatus: QuickTurnQuoteStatus }>(
+      `
+      UPDATE public.quick_turn_quotes
+      SET quote_status = 'PUBLISHED',
+          published_at = now(),
+          published_by = $2,
+          published_by_user_id = $3::uuid,
+          updated_at = now(),
+          updated_by = $2,
+          updated_by_user_id = $3::uuid
+      WHERE id = $1
+      RETURNING id, quote_number AS "quoteNumber", quote_status AS "quoteStatus"
+      `,
+      [id, changedBy, changedByUserId]
+    );
+
+    await client.query("COMMIT");
+
+    const published = result.rows[0];
+
+    await createActivityHistory({
+      entityType: QUICK_TURN_QUOTE_ENTITY_TYPE,
+      entityId: id,
+      eventType: "quote_published",
+      message: `Quick Turn quote ${published.quoteNumber} published.`,
+      module: "Quick Turn Quote Calculator",
+      userId: changedByUserId,
+      userName: changedBy,
+      employeeNumber: changedByEmployeeNumber,
+      previousValue: { quoteStatus: "DRAFT" },
+      newValue: { quoteStatus: "PUBLISHED" },
+    });
+
+    return published;
+  } catch (err) {
+    await client.query("ROLLBACK");
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+function refreshedDuplicateCalculation(
+  rawCalculation: unknown,
+  workflowSalesOrderNumber: string | null
+): QuickTurnPersistedCalculation {
+  const calculation = rawCalculation as QuickTurnPersistedCalculation;
+  validatePersistedCalculation(calculation);
+
+  const now = new Date();
+  const generatedAt = now.toISOString();
+  const validUntil = addDaysAsDateString(now, 30);
+  const inputSnapshot = {
+    ...(calculation.input && typeof calculation.input === "object" ? calculation.input : {}),
+    workflowSalesOrderNumber,
+  };
+
+  return {
+    ...calculation,
+    generatedAt,
+    validUntil,
+    input: inputSnapshot,
+  };
+}
+
+export async function duplicateSavedQuickTurnQuote(
+  sourceId: string,
+  input: QuickTurnAuditInput & { quoteName?: string | null } = {}
+): Promise<{ id: string; quoteNumber: string; quoteStatus: QuickTurnQuoteStatus; revisionNumber: number }> {
+  const changedBy = cleanText(input.changedBy) ?? "Unknown User";
+  const changedByUserId = cleanOptionalUuid(input.changedByUserId);
+  const changedByEmployeeNumber = cleanOptionalEmployeeNumber(input.changedByEmployeeNumber);
+
+  const client = await db.connect();
+
+  try {
+    await client.query("BEGIN");
+
+    const sourceResult = await client.query<any>(
+      `
+      SELECT id,
+             quote_number AS "quoteNumber",
+             quote_name AS "quoteName",
+             workflow_sales_order_number AS "workflowSalesOrderNumber",
+             overseas_customer_service_user_id::text AS "overseasCustomerServiceUserId",
+             overseas_customer_service_name_snapshot AS "overseasCustomerServiceNameSnapshot",
+             overseas_customer_service_email_snapshot AS "overseasCustomerServiceEmailSnapshot",
+             overseas_customer_service_employee_number_snapshot AS "overseasCustomerServiceEmployeeNumberSnapshot",
+             quote_rebate_rate::float8 AS "quoteRebateRate",
+             prepared_for_customer_id::text AS "preparedForCustomerId",
+             prepared_for_customer_code_snapshot AS "preparedForCustomerCodeSnapshot",
+             prepared_for_customer_name_snapshot AS "preparedForCustomerNameSnapshot",
+             quote_prepared_for_display AS "quotePreparedForDisplay",
+             program_logo_text AS "programLogoText",
+             fob,
+             result_snapshot AS "resultSnapshot",
+             notes,
+             COALESCE(is_voided, false) AS "isVoided",
+             revision_number AS "revisionNumber"
+      FROM public.quick_turn_quotes
+      WHERE id = $1
+      FOR UPDATE
+      `,
+      [sourceId]
+    );
+
+    const source = sourceResult.rows[0];
+    if (!source) throw new Error("Saved Quick Turn quote not found.");
+    if (source.isVoided) throw new Error("Voided Quick Turn quotes cannot be duplicated or revised.");
+
+    const nextRevisionResult = await client.query<{ nextRevision: number }>(
+      `
+      SELECT COALESCE(MAX(revision_number), 0)::int + 1 AS "nextRevision"
+      FROM public.quick_turn_quotes
+      WHERE source_quote_id = $1
+      `,
+      [source.id]
+    );
+
+    const revisionNumber = Math.max(
+      nextRevisionResult.rows[0]?.nextRevision ?? 1,
+      Number(source.revisionNumber || 0) + 1
+    );
+    const quoteName = cleanText(input.quoteName) ?? `${source.quoteName} - Rev ${revisionNumber}`;
+    const workflowSalesOrderNumber = cleanText(source.workflowSalesOrderNumber);
+    const calculation = refreshedDuplicateCalculation(source.resultSnapshot, workflowSalesOrderNumber);
+
+    const headerResult = await client.query<{ id: string; quoteNumber: string; quoteStatus: QuickTurnQuoteStatus }>(
+      `
+      INSERT INTO public.quick_turn_quotes (
+        quote_name,
+        quote_status,
+        workflow_sales_order_number,
+        overseas_customer_service_user_id,
+        overseas_customer_service_name_snapshot,
+        overseas_customer_service_email_snapshot,
+        overseas_customer_service_employee_number_snapshot,
+        quote_rebate_rate,
+        prepared_for_customer_id,
+        prepared_for_customer_code_snapshot,
+        prepared_for_customer_name_snapshot,
+        quote_prepared_for_display,
+        program_logo_text,
+        fob,
+        source_quote_id,
+        revision_number,
+        program_id,
+        factory_id,
+        program_code_snapshot,
+        program_name_snapshot,
+        factory_code_snapshot,
+        factory_name_snapshot,
+        generated_at,
+        valid_until,
+        disclaimer,
+        input_snapshot,
+        result_snapshot,
+        notes,
+        created_by,
+        created_by_user_id,
+        created_by_employee_number,
+        updated_by,
+        updated_by_user_id
+      )
+      VALUES (
+        $1, 'DRAFT', $2, $3::uuid, $4, $5, $6, $7, $8::bigint, $9, $10, $11, $12, $13,
+        $14::uuid, $15, $16, $17, $18, $19, $20, $21,
+        $22::timestamptz, $23::date, $24,
+        $25::jsonb, $26::jsonb,
+        $27, $28, $29::uuid, $30, $28, $29::uuid
+      )
+      RETURNING id, quote_number AS "quoteNumber", quote_status AS "quoteStatus"
+      `,
+      [
+        quoteName,
+        workflowSalesOrderNumber,
+        cleanOptionalUuid(source.overseasCustomerServiceUserId),
+        cleanText(source.overseasCustomerServiceNameSnapshot),
+        cleanText(source.overseasCustomerServiceEmailSnapshot),
+        cleanOptionalEmployeeNumber(source.overseasCustomerServiceEmployeeNumberSnapshot),
+        cleanNonNegativeNumber(source.quoteRebateRate, "Rebate rate"),
+        cleanOptionalBigintId(source.preparedForCustomerId),
+        cleanText(source.preparedForCustomerCodeSnapshot),
+        cleanText(source.preparedForCustomerNameSnapshot),
+        cleanText(source.quotePreparedForDisplay),
+        cleanText(source.programLogoText),
+        cleanText(source.fob) ?? "1 U.S. Final Destination",
+        source.id,
+        revisionNumber,
+        calculation.program.id,
+        calculation.factory.id,
+        calculation.program.code,
+        calculation.program.name,
+        calculation.factory.code,
+        calculation.factory.name,
+        calculation.generatedAt,
+        calculation.validUntil,
+        calculation.disclaimer,
+        toJson({
+          ...(calculation.input && typeof calculation.input === "object" ? calculation.input : {}),
+          workflowSalesOrderNumber,
+          overseasCustomerServiceUserId: cleanOptionalUuid(source.overseasCustomerServiceUserId),
+          overseasCustomerServiceNameSnapshot: cleanText(source.overseasCustomerServiceNameSnapshot),
+          overseasCustomerServiceEmailSnapshot: cleanText(source.overseasCustomerServiceEmailSnapshot),
+          overseasCustomerServiceEmployeeNumberSnapshot: cleanOptionalEmployeeNumber(source.overseasCustomerServiceEmployeeNumberSnapshot),
+          quoteRebateRate: cleanNonNegativeNumber(source.quoteRebateRate, "Rebate rate"),
+          rebatePercent: cleanNonNegativeNumber(source.quoteRebateRate, "Rebate rate") * 100,
+        }),
+        toJson({
+          ...calculation,
+          input: {
+            ...(calculation.input && typeof calculation.input === "object" ? calculation.input : {}),
+            workflowSalesOrderNumber,
+            overseasCustomerServiceUserId: cleanOptionalUuid(source.overseasCustomerServiceUserId),
+            overseasCustomerServiceNameSnapshot: cleanText(source.overseasCustomerServiceNameSnapshot),
+            overseasCustomerServiceEmailSnapshot: cleanText(source.overseasCustomerServiceEmailSnapshot),
+            overseasCustomerServiceEmployeeNumberSnapshot: cleanOptionalEmployeeNumber(source.overseasCustomerServiceEmployeeNumberSnapshot),
+            quoteRebateRate: cleanNonNegativeNumber(source.quoteRebateRate, "Rebate rate"),
+            rebatePercent: cleanNonNegativeNumber(source.quoteRebateRate, "Rebate rate") * 100,
+          },
+        }),
+        source.notes,
+        changedBy,
+        changedByUserId,
+        changedByEmployeeNumber,
+      ]
+    );
+
+    const duplicate = headerResult.rows[0];
+    await insertQuoteSnapshotRows(client, duplicate.id, calculation);
+
+    await client.query("COMMIT");
+
+    await createActivityHistory({
+      entityType: QUICK_TURN_QUOTE_ENTITY_TYPE,
+      entityId: duplicate.id,
+      eventType: "quote_duplicated",
+      message: `Quick Turn draft ${duplicate.quoteNumber} duplicated/revised from ${source.quoteNumber}.`,
+      module: "Quick Turn Quote Calculator",
+      userId: changedByUserId,
+      userName: changedBy,
+      employeeNumber: changedByEmployeeNumber,
+      newValue: {
+        quoteNumber: duplicate.quoteNumber,
+        quoteName,
+        quoteStatus: "DRAFT",
+        sourceQuoteId: source.id,
+        sourceQuoteNumber: source.quoteNumber,
+        revisionNumber,
+        overseasCustomerServiceUserId: cleanOptionalUuid(source.overseasCustomerServiceUserId),
+        overseasCustomerServiceNameSnapshot: cleanText(source.overseasCustomerServiceNameSnapshot),
+        quoteRebateRate: cleanNonNegativeNumber(source.quoteRebateRate, "Rebate rate"),
+        preparedForCustomerId: cleanOptionalBigintId(source.preparedForCustomerId),
+        quotePreparedForDisplay: cleanText(source.quotePreparedForDisplay),
+        programLogoText: cleanText(source.programLogoText),
+        fob: cleanText(source.fob) ?? "1 U.S. Final Destination",
+      },
+    });
+
+    return { ...duplicate, revisionNumber };
+  } catch (err) {
+    await client.query("ROLLBACK");
+    throw err;
+  } finally {
+    client.release();
+  }
 }
 
 export async function voidSavedQuickTurnQuote(

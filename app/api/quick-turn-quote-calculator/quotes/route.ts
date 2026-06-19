@@ -6,6 +6,7 @@ import {
 } from "@/lib/quickTurnQuoteCalculator/permissions";
 import {
   listSavedQuickTurnQuotes,
+  type QuickTurnQuoteStatus,
   type SortDir,
 } from "@/lib/repositories/quickTurnQuoteCalculatorRepo";
 import { saveCalculatedQuickTurnQuote } from "@/lib/services/quickTurnQuoteCalculatorService";
@@ -35,6 +36,11 @@ function boolParam(v: string | null) {
   return v === "true" ? true : v === "false" ? false : undefined;
 }
 
+function quoteStatusParam(v: string | null): QuickTurnQuoteStatus | null {
+  const token = String(v || "").trim().toUpperCase();
+  return token === "DRAFT" || token === "PUBLISHED" ? token : null;
+}
+
 export async function GET(req: NextRequest) {
   const auth = (await getAuthFromRequest(req as any)) as AuthLike | null;
 
@@ -51,6 +57,7 @@ export async function GET(req: NextRequest) {
   try {
     const payload = await listSavedQuickTurnQuotes({
       q: sp.get("q"),
+      quoteStatus: quoteStatusParam(sp.get("quoteStatus")),
       includeVoided: boolParam(sp.get("includeVoided")),
       onlyVoided: boolParam(sp.get("onlyVoided")),
       sortBy: sp.get("sortBy"),
@@ -91,7 +98,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json(saved, { status: 201 });
   } catch (err: any) {
     return NextResponse.json(
-      { error: err?.message || "Failed to save Quick Turn quote." },
+      { error: err?.message || "Failed to save Quick Turn draft." },
       { status: 400 }
     );
   }
