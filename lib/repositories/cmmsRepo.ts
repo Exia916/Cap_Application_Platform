@@ -157,8 +157,8 @@ export async function listWorkOrdersPaged(args: {
   like("department", `d.name`);
   like("asset", `a.name`);
   like("priority", `pr.name`);
-  like("opInit", `coalesce(wo.operator_initials,'')`);
   like("operatorInitials", `coalesce(wo.operator_initials,'')`);
+  like("opInit", `coalesce(wo.operator_initials,'')`);
   like("commonIssue", `ic.name`);
   like("issueDialogue", `coalesce(wo.issue_dialogue,'')`);
   like(
@@ -174,24 +174,32 @@ export async function listWorkOrdersPaged(args: {
 
   const whereSql = where.length ? `WHERE ${where.join(" AND ")}` : "";
 
-  const sortExpr =
-    sortBy === "workOrderId"
-      ? "wo.work_order_id"
-      : sortBy === "date" || sortBy === "requestedAt" || sortBy === "requested_at"
-        ? "wo.requested_at"
-        : sortBy === "name" || sortBy === "requestedByName"
-          ? "wo.requested_by_name"
-          : sortBy === "department"
-            ? "d.name"
-            : sortBy === "asset"
-              ? "a.name"
-              : sortBy === "priority"
-                ? "pr.name"
-                : sortBy === "commonIssue"
-                  ? "ic.name"
-                  : sortBy === "status"
-                    ? "st.name"
-                    : "wo.requested_at";
+  const requesterTechNamesSortExpr = `coalesce((
+    SELECT string_agg(t2.name::text, ', ' ORDER BY t2.name)
+    FROM ${S}.work_order_techs wot2
+    JOIN ${S}.techs t2 ON t2.id = wot2.tech_id
+    WHERE wot2.work_order_id = wo.work_order_id
+  ), '')`;
+
+  const requesterSortMap: Record<string, string> = {
+    workOrderId: "wo.work_order_id",
+    date: "wo.requested_at",
+    requestedAt: "wo.requested_at",
+    requested_at: "wo.requested_at",
+    name: "wo.requested_by_name",
+    requestedByName: "wo.requested_by_name",
+    department: "d.name",
+    asset: "a.name",
+    priority: "pr.name",
+    operatorInitials: "wo.operator_initials",
+    opInit: "wo.operator_initials",
+    commonIssue: "ic.name",
+    issueDialogue: "wo.issue_dialogue",
+    tech: requesterTechNamesSortExpr,
+    status: "st.name",
+  };
+
+  const sortExpr = requesterSortMap[sortBy] ?? "wo.requested_at";
 
   const countSql = `
     SELECT count(*)::int AS c
@@ -854,6 +862,8 @@ export async function listWorkOrdersTechPaged(args: {
   like("department", `d.name`);
   like("asset", `a.name`);
   like("priority", `pr.name`);
+  like("operatorInitials", `coalesce(wo.operator_initials,'')`);
+  like("opInit", `coalesce(wo.operator_initials,'')`);
   like("commonIssue", `ic.name`);
   like("issueDialogue", `coalesce(wo.issue_dialogue,'')`);
   like("type", `coalesce(typ.name,'')`);
@@ -872,22 +882,32 @@ export async function listWorkOrdersTechPaged(args: {
 
   const whereSql = where.length ? `WHERE ${where.join(" AND ")}` : "";
 
-  const sortExpr =
-    sortBy === "workOrderId"
-      ? "wo.work_order_id"
-      : sortBy === "requestedAt"
-        ? "wo.requested_at"
-        : sortBy === "requestedByName"
-          ? "wo.requested_by_name"
-          : sortBy === "department"
-            ? "d.name"
-            : sortBy === "asset"
-              ? "a.name"
-              : sortBy === "priority"
-                ? "pr.name"
-                : sortBy === "status"
-                  ? "st.name"
-                  : "wo.requested_at";
+  const techNamesSortExpr = `coalesce((
+    SELECT string_agg(t2.name::text, ', ' ORDER BY t2.name)
+    FROM ${S}.work_order_techs wot2
+    JOIN ${S}.techs t2 ON t2.id = wot2.tech_id
+    WHERE wot2.work_order_id = wo.work_order_id
+  ), '')`;
+
+  const techSortMap: Record<string, string> = {
+    workOrderId: "wo.work_order_id",
+    requestedAt: "wo.requested_at",
+    requestedByName: "wo.requested_by_name",
+    department: "d.name",
+    asset: "a.name",
+    priority: "pr.name",
+    operatorInitials: "wo.operator_initials",
+    opInit: "wo.operator_initials",
+    commonIssue: "ic.name",
+    issueDialogue: "wo.issue_dialogue",
+    type: "typ.name",
+    tech: techNamesSortExpr,
+    status: "st.name",
+    resolution: "wo.resolution",
+    downTimeRecorded: "wo.down_time_recorded",
+  };
+
+  const sortExpr = techSortMap[sortBy] ?? "wo.requested_at";
 
   const countSql = `
     SELECT count(*)::int AS c

@@ -249,11 +249,11 @@ export default function CMMSPage() {
       {
         key: "operatorInitials",
         header: "Op Name",
-        sortable: false,
-        serverSortable: false,
+        sortable: true,
         filterable: true,
-        placeholder: "DT…",
+        placeholder: "Op name…",
         render: cell("operatorInitials"),
+        getSearchText: (r) => String(r.operatorInitials ?? ""),
       },
       {
         key: "commonIssue",

@@ -1,4 +1,4 @@
--- db/migrations/035_quick_turn_os_cs_rebate.sql
+-- db/migrations/036_quick_turn_os_cs_rebate.sql
 -- Adds quote-level Overseas Customer Service owner and quote rebate percentage.
 
 BEGIN;
