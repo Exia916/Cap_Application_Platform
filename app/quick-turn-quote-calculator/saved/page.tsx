@@ -10,15 +10,41 @@ import type { SavedQuickTurnQuoteSummary } from "../types";
 import { fmtDateOnly, fmtDateTime } from "../format";
 
 type Filters = {
-  q: string;
+  quoteNumber: string;
+  quoteName: string;
   quoteStatus: string;
   includeVoided: string;
+  workflowSalesOrderNumber: string;
+  revision: string;
+  preparedForCustomer: string;
+  overseasCustomerService: string;
+  programName: string;
+  factoryName: string;
+  generatedFrom: string;
+  generatedTo: string;
+  validUntilFrom: string;
+  validUntilTo: string;
+  itemCount: string;
+  createdBy: string;
 };
 
 const DEFAULT_FILTERS: Filters = {
-  q: "",
+  quoteNumber: "",
+  quoteName: "",
   quoteStatus: "",
   includeVoided: "",
+  workflowSalesOrderNumber: "",
+  revision: "",
+  preparedForCustomer: "",
+  overseasCustomerService: "",
+  programName: "",
+  factoryName: "",
+  generatedFrom: "",
+  generatedTo: "",
+  validUntilFrom: "",
+  validUntilTo: "",
+  itemCount: "",
+  createdBy: "",
 };
 
 function statusBadge(row: SavedQuickTurnQuoteSummary) {
@@ -36,6 +62,65 @@ function statusBadge(row: SavedQuickTurnQuoteSummary) {
   }
 
   return <span className="badge badge-success">Published</span>;
+}
+
+function displayDash(value: string | null | undefined) {
+  const s = String(value ?? "").trim();
+  return s ? s : "—";
+}
+
+function customerDisplay(row: SavedQuickTurnQuoteSummary) {
+  const main =
+    row.quotePreparedForDisplay || row.preparedForCustomerNameSnapshot || row.preparedForCustomerCodeSnapshot || "";
+  const code = row.preparedForCustomerCodeSnapshot || "";
+  const name = row.preparedForCustomerNameSnapshot || "";
+  const meta = code && name && main !== `${code} - ${name}` && main !== name ? `${code} - ${name}` : "";
+
+  if (!main && !meta) return "—";
+
+  return (
+    <div style={{ display: "grid", gap: 2 }}>
+      <span>{main || meta}</span>
+      {meta ? <span style={{ fontSize: 11, opacity: 0.75 }}>{meta}</span> : null}
+    </div>
+  );
+}
+
+function textFilter(value: string, onChange: (value: string) => void, placeholder: string) {
+  return (
+    <input
+      className="input"
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      placeholder={placeholder}
+    />
+  );
+}
+
+function dateRangeFilter(args: {
+  fromValue: string;
+  toValue: string;
+  onFromChange: (value: string) => void;
+  onToChange: (value: string) => void;
+}) {
+  return (
+    <div style={{ display: "grid", gap: 6, minWidth: 145 }}>
+      <input
+        className="input"
+        type="date"
+        value={args.fromValue}
+        onChange={(e) => args.onFromChange(e.target.value)}
+        aria-label="From date"
+      />
+      <input
+        className="input"
+        type="date"
+        value={args.toValue}
+        onChange={(e) => args.onToChange(e.target.value)}
+        aria-label="To date"
+      />
+    </div>
+  );
 }
 
 export default function SavedQuickTurnQuotesPage() {
@@ -70,9 +155,15 @@ export default function SavedQuickTurnQuotesPage() {
     sp.set("sortBy", sortBy);
     sp.set("sortDir", sortDir);
 
-    if (debouncedFilters.q.trim()) sp.set("q", debouncedFilters.q.trim());
-    if (debouncedFilters.quoteStatus) sp.set("quoteStatus", debouncedFilters.quoteStatus);
-    if (debouncedFilters.includeVoided === "true") sp.set("includeVoided", "true");
+    for (const [key, value] of Object.entries(debouncedFilters)) {
+      const trimmed = String(value ?? "").trim();
+      if (!trimmed) continue;
+      if (key === "includeVoided") {
+        if (trimmed === "true") sp.set("includeVoided", "true");
+        continue;
+      }
+      sp.set(key, trimmed);
+    }
 
     return sp.toString();
   }, [debouncedFilters, pageSize, offset, sortBy, sortDir]);
@@ -136,6 +227,7 @@ export default function SavedQuickTurnQuotesPage() {
         key: "quoteNumber",
         header: "CAP Quote #",
         sortable: true,
+        filterRender: textFilter(filters.quoteNumber, (value) => onFilterChange("quoteNumber", value), "CAP quote #"),
         render: (row) => row.quoteNumber,
         getSearchText: (row) => row.quoteNumber,
       },
@@ -143,14 +235,7 @@ export default function SavedQuickTurnQuotesPage() {
         key: "quoteName",
         header: "Customer Quote # / Quote Name",
         sortable: true,
-        filterRender: (
-          <input
-            className="input"
-            value={filters.q}
-            onChange={(e) => onFilterChange("q", e.target.value)}
-            placeholder="Quote #, name, SO/ref, program, factory, creator"
-          />
-        ),
+        filterRender: textFilter(filters.quoteName, (value) => onFilterChange("quoteName", value), "Customer quote # / name"),
         render: (row) => row.quoteName,
         getSearchText: (row) => row.quoteName,
       },
@@ -186,19 +271,39 @@ export default function SavedQuickTurnQuotesPage() {
         key: "workflowSalesOrderNumber",
         header: "SO / Ref #",
         sortable: true,
+        filterRender: textFilter(filters.workflowSalesOrderNumber, (value) => onFilterChange("workflowSalesOrderNumber", value), "SO / ref"),
         render: (row) => row.workflowSalesOrderNumber || "—",
         getSearchText: (row) => row.workflowSalesOrderNumber || "",
       },
       {
         key: "revisionNumber",
         header: "Revision",
-        render: (row) => row.revisionNumber ? `Rev ${row.revisionNumber}` : "Original",
-        getSearchText: (row) => row.revisionNumber ? `Rev ${row.revisionNumber}` : "Original",
+        sortable: true,
+        filterRender: textFilter(filters.revision, (value) => onFilterChange("revision", value), "Original or Rev #"),
+        render: (row) => (row.revisionNumber ? `Rev ${row.revisionNumber}` : "Original"),
+        getSearchText: (row) => (row.revisionNumber ? `Rev ${row.revisionNumber}` : "Original"),
+      },
+      {
+        key: "preparedForCustomer",
+        header: "Customer",
+        sortable: true,
+        filterRender: textFilter(filters.preparedForCustomer, (value) => onFilterChange("preparedForCustomer", value), "Customer/code/display"),
+        render: (row) => customerDisplay(row),
+        getSearchText: (row) => [row.quotePreparedForDisplay, row.preparedForCustomerCodeSnapshot, row.preparedForCustomerNameSnapshot].filter(Boolean).join(" "),
+      },
+      {
+        key: "overseasCustomerService",
+        header: "OS Customer Service",
+        sortable: true,
+        filterRender: textFilter(filters.overseasCustomerService, (value) => onFilterChange("overseasCustomerService", value), "OS CS"),
+        render: (row) => displayDash(row.overseasCustomerServiceNameSnapshot),
+        getSearchText: (row) => [row.overseasCustomerServiceNameSnapshot, row.overseasCustomerServiceEmailSnapshot].filter(Boolean).join(" "),
       },
       {
         key: "programName",
         header: "Program",
         sortable: true,
+        filterRender: textFilter(filters.programName, (value) => onFilterChange("programName", value), "Program"),
         render: (row) => row.programName,
         getSearchText: (row) => row.programName,
       },
@@ -206,6 +311,7 @@ export default function SavedQuickTurnQuotesPage() {
         key: "factoryName",
         header: "Factory",
         sortable: true,
+        filterRender: textFilter(filters.factoryName, (value) => onFilterChange("factoryName", value), "Factory"),
         render: (row) => row.factoryName,
         getSearchText: (row) => row.factoryName,
       },
@@ -213,6 +319,12 @@ export default function SavedQuickTurnQuotesPage() {
         key: "generatedAt",
         header: "Generated",
         sortable: true,
+        filterRender: dateRangeFilter({
+          fromValue: filters.generatedFrom,
+          toValue: filters.generatedTo,
+          onFromChange: (value) => onFilterChange("generatedFrom", value),
+          onToChange: (value) => onFilterChange("generatedTo", value),
+        }),
         render: (row) => fmtDateTime(row.generatedAt),
         getSearchText: (row) => fmtDateTime(row.generatedAt),
       },
@@ -220,12 +332,20 @@ export default function SavedQuickTurnQuotesPage() {
         key: "validUntil",
         header: "Valid Through",
         sortable: true,
+        filterRender: dateRangeFilter({
+          fromValue: filters.validUntilFrom,
+          toValue: filters.validUntilTo,
+          onFromChange: (value) => onFilterChange("validUntilFrom", value),
+          onToChange: (value) => onFilterChange("validUntilTo", value),
+        }),
         render: (row) => fmtDateOnly(row.validUntil),
         getSearchText: (row) => fmtDateOnly(row.validUntil),
       },
       {
         key: "itemCount",
         header: "Items",
+        sortable: true,
+        filterRender: textFilter(filters.itemCount, (value) => onFilterChange("itemCount", value), "#"),
         render: (row) => row.itemCount,
         getSearchText: (row) => String(row.itemCount ?? 0),
       },
@@ -233,6 +353,7 @@ export default function SavedQuickTurnQuotesPage() {
         key: "createdBy",
         header: "Created By",
         sortable: true,
+        filterRender: textFilter(filters.createdBy, (value) => onFilterChange("createdBy", value), "Created by"),
         render: (row) => row.createdBy || "—",
         getSearchText: (row) => row.createdBy || "",
       },
@@ -261,7 +382,7 @@ export default function SavedQuickTurnQuotesPage() {
         ),
       },
     ],
-    [filters.includeVoided, filters.q, filters.quoteStatus]
+    [filters]
   );
 
   return (
@@ -309,6 +430,10 @@ export default function SavedQuickTurnQuotesPage() {
           Status: row.isVoided ? "Voided" : row.quoteStatus,
           "SO / Ref #": row.workflowSalesOrderNumber || "",
           Revision: row.revisionNumber ? `Rev ${row.revisionNumber}` : "Original",
+          Customer: row.quotePreparedForDisplay || row.preparedForCustomerNameSnapshot || "",
+          "Customer Code": row.preparedForCustomerCodeSnapshot || "",
+          "OS Customer Service": row.overseasCustomerServiceNameSnapshot || "",
+          "OS Customer Service Email": row.overseasCustomerServiceEmailSnapshot || "",
           "Source Quote": row.sourceQuoteNumber || "",
           Program: row.programName,
           Factory: row.factoryName,

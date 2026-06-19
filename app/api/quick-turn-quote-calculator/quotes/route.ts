@@ -8,7 +8,7 @@ import {
   listSavedQuickTurnQuotes,
   type QuickTurnQuoteStatus,
   type SortDir,
-} from "@/lib/repositories/quickTurnQuoteCalculatorRepo";
+} from "@/lib/repositories/quickTurnQuoteSavedListRepo";
 import { saveCalculatedQuickTurnQuote } from "@/lib/services/quickTurnQuoteCalculatorService";
 
 export const runtime = "nodejs";
@@ -57,7 +57,21 @@ export async function GET(req: NextRequest) {
   try {
     const payload = await listSavedQuickTurnQuotes({
       q: sp.get("q"),
+      quoteNumber: sp.get("quoteNumber"),
+      quoteName: sp.get("quoteName"),
       quoteStatus: quoteStatusParam(sp.get("quoteStatus")),
+      workflowSalesOrderNumber: sp.get("workflowSalesOrderNumber"),
+      revision: sp.get("revision"),
+      preparedForCustomer: sp.get("preparedForCustomer"),
+      overseasCustomerService: sp.get("overseasCustomerService"),
+      programName: sp.get("programName"),
+      factoryName: sp.get("factoryName"),
+      generatedFrom: sp.get("generatedFrom"),
+      generatedTo: sp.get("generatedTo"),
+      validUntilFrom: sp.get("validUntilFrom"),
+      validUntilTo: sp.get("validUntilTo"),
+      itemCount: sp.get("itemCount"),
+      createdBy: sp.get("createdBy"),
       includeVoided: boolParam(sp.get("includeVoided")),
       onlyVoided: boolParam(sp.get("onlyVoided")),
       sortBy: sp.get("sortBy"),
