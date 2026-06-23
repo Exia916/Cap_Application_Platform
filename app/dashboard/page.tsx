@@ -6,6 +6,36 @@ import WelcomeCard from "./_components/WelcomeCard";
 import SalesOrderLookupCard from "@/components/home/SalesOrderLookupCard";
 
 export default function DashboardPage() {
+  useEffect(() => {
+    let cancelled = false;
+
+    async function redirectExternalUsers() {
+      try {
+        const res = await fetch("/api/me", {
+          cache: "no-store",
+          credentials: "include",
+        });
+
+        if (!res.ok) return;
+
+        const data = await res.json().catch(() => null);
+        const me = data?.user ?? data;
+
+        if (!cancelled && me?.isExternal) {
+          window.location.replace("/partner-work/workflow");
+        }
+      } catch {
+        // Keep the internal dashboard behavior unchanged if the check fails.
+      }
+    }
+
+    redirectExternalUsers();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   return (
     <div
       style={{

@@ -14,6 +14,7 @@ import {
   createSecurityQuestionChallengeToken,
   setSecurityQuestionChallengeCookie,
 } from "@/lib/auth/securityQuestionTokens";
+import { getExternalPartnerContextForUserId } from "@/lib/repositories/externalPartnerRepo";
 
 function hasActiveBypass(value?: string | null) {
   if (!value) return false;
@@ -37,6 +38,13 @@ function allowOffsiteSetupDuringEnforce() {
   return String(process.env.OFFSITE_SECURITY_QUESTIONS_ALLOW_OFFSITE_SETUP ?? "")
     .trim()
     .toLowerCase() === "true";
+}
+
+async function getPostLoginRedirect(userId: string | null | undefined) {
+  if (!userId) return "/dashboard";
+
+  const externalContext = await getExternalPartnerContextForUserId(userId);
+  return externalContext ? "/partner-work/workflow" : "/dashboard";
 }
 
 function setNormalAuthCookie(res: NextResponse, token: string) {
@@ -99,6 +107,7 @@ export async function POST(req: NextRequest) {
     }
 
     const { token, user } = result;
+    const postLoginRedirect = await getPostLoginRedirect(user.id);
 
     await logSecurityEvent({
       req,
@@ -137,7 +146,6 @@ export async function POST(req: NextRequest) {
     const offsiteSetupAllowed =
       securityQuestionsMode === "enroll" ||
       (securityQuestionsMode === "enforce" && allowOffsiteSetupDuringEnforce());
-
     await logSecurityEvent({
       req,
       category: "SECURITY",
@@ -327,7 +335,11 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const res = NextResponse.json({ success: true, user });
+    const res = NextResponse.json({
+      success: true,
+      user,
+      redirectTo: postLoginRedirect,
+    });
 
     clearSecurityQuestionChallengeCookie(res);
     setNormalAuthCookie(res, token);

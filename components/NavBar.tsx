@@ -32,6 +32,23 @@ type Me = {
   employeeNumber: number | null;
   role: string | null;
   department?: string | null;
+  isExternal?: boolean;
+  externalPartnerUserId?: string | null;
+  externalPartnerId?: string | null;
+  externalPartnerCode?: string | null;
+  externalPartnerName?: string | null;
+  externalPartnerType?: string | null;
+  externalRole?: string | null;
+  externalModules?: Array<{
+    moduleKey: string;
+    canView: boolean;
+    canAssignSelf: boolean;
+    canUpload: boolean;
+    canDownload: boolean;
+    canNote: boolean;
+    canComplete: boolean;
+    isActive: boolean;
+  }>;
 };
 
 type MenuItem = {
@@ -221,6 +238,21 @@ const department = useMemo(
 );
 const username = useMemo(() => (me?.username ?? "").trim().toLowerCase(), [me?.username]);
 
+const isExternal = !!me?.isExternal;
+const externalModules = me?.externalModules ?? [];
+const canSeePartnerWorkflow =
+  isExternal &&
+  externalModules.some(
+    (module) =>
+      module.moduleKey === "design_workflow" &&
+      module.canView === true &&
+      module.isActive !== false,
+  );
+
+const partnerWorkHref = canSeePartnerWorkflow
+  ? "/partner-work/workflow"
+  : "/partner-work";
+
   const GLOBAL_SEARCH_ROLES = [
     "ADMIN",
     "SUPERVISOR",
@@ -232,7 +264,7 @@ const username = useMemo(() => (me?.username ?? "").trim().toLowerCase(), [me?.u
   const isAdmin = role === "ADMIN" || username === "admin";
   const isManager = isAdmin || role === "MANAGER" || role === "SUPERVISOR";
 
-  const canGlobalSearch = GLOBAL_SEARCH_ROLES.includes(role as any);
+  const canGlobalSearch = !isExternal && GLOBAL_SEARCH_ROLES.includes(role as any);
 
     const DESIGN_LOOKUP_ROLES = [
     "ADMIN",
@@ -370,6 +402,7 @@ const canSeeQuickTurnQuoteCalculator =
     { kind: "section" as const, label: "Administration", show: meLoaded && isAdmin },
     { href: "/admin", label: "Admin Home", show: meLoaded && isAdmin },
     { href: "/admin/users", label: "Admin Users", show: meLoaded && isAdmin },
+    { href: "/admin/external-partners", label: "External Partners", show: meLoaded && isAdmin },
     { href: "/admin/master-data", label: "Master Data (Lists)", show: meLoaded && isAdmin },
     { href: "/admin/logs", label: "Application Logs", show: meLoaded && isAdmin },
     { href: "/admin/platform/events", label: "Platform Events", show: meLoaded && isAdmin },
@@ -488,6 +521,173 @@ const canSeeQuickTurnQuoteCalculator =
 
           <span style={brandTitle}>CAP | Cap Application Platform</span>
         </Link>
+      </nav>
+    );
+  }
+
+  if (meLoaded && isExternal) {
+    return (
+      <nav style={navMode === "small" ? { ...nav, flexDirection: "column", padding: 0 } : nav}>
+        {isNavigating && <div style={loadingBar} />}
+
+        <div
+          ref={menusWrapRef}
+          style={
+            navMode === "small"
+              ? { ...navInner, maxWidth: "none", padding: "10px 16px" }
+              : navInner
+          }
+        >
+          <div style={left}>
+            <Link
+              href={partnerWorkHref}
+              style={brandWrap}
+              title="CAP Partner Work"
+              onClick={handleNavigate}
+            >
+              <Image
+                src="/brand/ca-mark.jpg"
+                alt="Cap America"
+                width={32}
+                height={32}
+                priority
+                style={{ objectFit: "contain" }}
+              />
+              {navMode !== "small" ? (
+                <span style={brandTitle}>CAP | Partner Work</span>
+              ) : null}
+            </Link>
+
+            {navMode !== "small" ? (
+              <>
+                <NavLink
+                  href={partnerWorkHref}
+                  label="Partner Work"
+                  pathname={pathname}
+                  onClick={handleNavigate}
+                />
+
+                <NavLink
+                  href="/notifications"
+                  label="Notifications"
+                  pathname={pathname}
+                  onClick={handleNavigate}
+                />
+              </>
+            ) : null}
+          </div>
+
+          <div style={right}>
+            {!mobileSearchOpen ? (
+              <div style={{ position: "relative" }}>
+                <button
+                  type="button"
+                  style={{
+                    ...userPillBtn,
+                    ...(openMenu === "user" ? pillOpen : {}),
+                  }}
+                  onClick={() => toggle("user")}
+                  aria-expanded={openMenu === "user"}
+                  aria-haspopup="menu"
+                  title="User menu"
+                >
+                  <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                    <span style={navMode === "small" ? userPillTextMobile : userPillText}>
+                      {display || me?.externalPartnerName || "Partner"}
+                    </span>
+                    <span style={chev} aria-hidden>
+                      ▾
+                    </span>
+                  </span>
+                </button>
+
+                {openMenu === "user" ? (
+                  <div
+                    style={{
+                      ...menuPanel,
+                      ...(navMode === "small" ? { right: 0, left: "auto" } : {}),
+                    }}
+                    role="menu"
+                    aria-label="User menu"
+                  >
+                    <div style={menuHeader}>
+                      <div style={menuUserName}>{display || "Partner User"}</div>
+                      <div style={menuUserMeta}>
+                        {me?.externalPartnerName || "External Partner"}
+                      </div>
+                    </div>
+
+                    <div style={menuDivider} />
+
+                    <Link
+                      href="/account"
+                      role="menuitem"
+                      style={menuItem}
+                      onClick={handleNavigate}
+                    >
+                      My Account
+                    </Link>
+
+                    <Link
+                      href="/notifications"
+                      role="menuitem"
+                      style={menuItem}
+                      onClick={handleNavigate}
+                    >
+                      Notifications
+                    </Link>
+
+                    <div style={menuDivider} />
+
+                    <Link
+                      href="/logout"
+                      role="menuitem"
+                      style={menuItemDanger}
+                      onClick={() => {
+                        setMe(null);
+                        setMeLoaded(false);
+                        setOpenMenu(null);
+                        setIsNavigating(true);
+                      }}
+                    >
+                      Logout
+                    </Link>
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+
+            {navMode === "small" && !mobileSearchOpen ? (
+              <button
+                type="button"
+                style={hamburgerBtn}
+                onClick={() => setMobileMenuOpen((prev) => !prev)}
+                aria-expanded={mobileMenuOpen}
+                aria-label={mobileMenuOpen ? "Close menu" : "Open menu"}
+              >
+                {mobileMenuOpen ? "✕" : "☰"}
+              </button>
+            ) : null}
+          </div>
+        </div>
+
+        {navMode === "small" && mobileMenuOpen ? (
+          <div style={mobilePanelStyle}>
+            <MobileNavPanel
+              sections={[
+                {
+                  title: "Partner",
+                  items: [
+                    { href: partnerWorkHref, label: "Partner Work", show: true },
+                    { href: "/notifications", label: "Notifications", show: true },
+                  ],
+                },
+              ]}
+              pathname={pathname}
+              onNavigate={handleNavigate}
+            />
+          </div>
+        ) : null}
       </nav>
     );
   }

@@ -9,6 +9,7 @@ import {
 } from "@/lib/repositories/designWorkflowRepo";
 import { syncWorkflowTasksForRequest } from "@/lib/services/workflowTaskSyncService";
 import { fireWorkflowRequestCreatedRules } from "@/lib/services/workflowNotificationRuleTriggerService";
+import { rejectExternalUserForInternalApi } from "@/lib/external-access/routeGuards";
 
 const dbQuery = db.query.bind(db);
 
@@ -26,6 +27,9 @@ export async function GET(req: NextRequest) {
   if (!user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+
+  const externalBlock = await rejectExternalUserForInternalApi(user);
+  if (externalBlock) return externalBlock;
 
   const params = req.nextUrl.searchParams;
 
@@ -68,6 +72,9 @@ export async function POST(req: NextRequest) {
   if (!user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+
+  const externalBlock = await rejectExternalUserForInternalApi(user);
+  if (externalBlock) return externalBlock;
 
   if (!CREATE_ROLES.includes(String(user.role || "").toUpperCase())) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });

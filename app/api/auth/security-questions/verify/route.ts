@@ -10,6 +10,7 @@ import {
   setSecurityQuestionChallengeCookie,
 } from "@/lib/auth/securityQuestionTokens";
 import { logError, logSecurityEvent } from "@/lib/logging/logger";
+import { getExternalPartnerContextForUserId } from "@/lib/repositories/externalPartnerRepo";
 
 export const runtime = "nodejs";
 
@@ -19,6 +20,13 @@ type VerifyBody = {
     answer?: string;
   }>;
 };
+
+async function getPostLoginRedirect(userId: string | null | undefined) {
+  if (!userId) return "/dashboard";
+
+  const externalContext = await getExternalPartnerContextForUserId(userId);
+  return externalContext ? "/partner-work/workflow" : "/dashboard";
+}
 
 export async function POST(req: NextRequest) {
   const challenge = getSecurityQuestionChallengeFromRequest(req);
@@ -149,6 +157,7 @@ export async function POST(req: NextRequest) {
     }
 
     const authToken = signAuthToken(challenge.user);
+    const postLoginRedirect = await getPostLoginRedirect(challenge.user.id);
 
     await logSecurityEvent({
       req,
@@ -168,6 +177,7 @@ export async function POST(req: NextRequest) {
       {
         success: true,
         user: challenge.user,
+        redirectTo: postLoginRedirect,
       },
       { status: 200 }
     );

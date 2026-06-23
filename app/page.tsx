@@ -1,5 +1,7 @@
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
+import { verifyJwt } from "@/lib/auth";
+import { getExternalPartnerContextForUserId } from "@/lib/repositories/externalPartnerRepo";
 
 export default async function HomePage() {
   const cookieStore = await cookies();
@@ -12,6 +14,16 @@ export default async function HomePage() {
     cookieStore.get("session")?.value;
 
   if (token) {
+    const auth = verifyJwt(token);
+
+    if (auth?.id) {
+      const externalContext = await getExternalPartnerContextForUserId(auth.id);
+
+      if (externalContext) {
+        redirect("/partner-work/workflow");
+      }
+    }
+
     redirect("/dashboard");
   }
 

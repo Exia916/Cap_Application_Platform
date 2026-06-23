@@ -18,6 +18,7 @@ import {
   isOsSecureVisibility,
   normalizeAttachmentVisibility,
 } from "@/lib/platform/attachmentVisibility";
+import { rejectExternalUserForInternalApi } from "@/lib/external-access/routeGuards";
 
 export const runtime = "nodejs";
 
@@ -74,6 +75,9 @@ export async function GET(
     if (!auth) {
       return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
     }
+
+    const externalBlock = await rejectExternalUserForInternalApi(auth);
+    if (externalBlock) return externalBlock;
 
     const actor = buildActor(auth);
 
@@ -160,6 +164,9 @@ export async function PATCH(
     if (!auth) {
       return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
     }
+
+    const externalBlock = await rejectExternalUserForInternalApi(auth);
+    if (externalBlock) return externalBlock;
 
     const actor = buildActor(auth);
 
@@ -272,6 +279,9 @@ export async function DELETE(
     if (!auth) {
       return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
     }
+
+    const externalBlock = await rejectExternalUserForInternalApi(auth);
+    if (externalBlock) return externalBlock;
 
     const actor = buildActor(auth);
 

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAuthFromRequest } from "@/lib/auth";
 import { listAssignableUsers } from "@/lib/repositories/assignableUsersRepo";
+import { rejectExternalUserForInternalApi } from "@/lib/external-access/routeGuards";
 
 export const runtime = "nodejs";
 
@@ -10,6 +11,9 @@ export async function GET(req: NextRequest) {
   if (!user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+
+  const externalBlock = await rejectExternalUserForInternalApi(user);
+  if (externalBlock) return externalBlock;
 
   try {
     const q = req.nextUrl.searchParams.get("q")?.trim() || null;
