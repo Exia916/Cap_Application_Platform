@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getAuthFromRequest } from "@/lib/auth";
+import { rejectExternalUserForInternalApi } from "@/lib/external-access/routeGuards";
 
 export async function GET(req: NextRequest) {
   const user = getAuthFromRequest(req);
@@ -8,6 +9,9 @@ export async function GET(req: NextRequest) {
   if (!user) {
     return new NextResponse("Unauthorized", { status: 401 });
   }
+
+  const externalBlock = await rejectExternalUserForInternalApi(user);
+  if (externalBlock) return externalBlock;
 
   try {
     const { rows } = await db.query<{

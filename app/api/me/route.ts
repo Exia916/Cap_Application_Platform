@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAuthFromRequest } from "@/lib/auth";
 import { db } from "@/lib/db";
+import {
+  getAuthUserId,
+  getExternalPartnerContextForUserId,
+  type ExternalModuleAccess,
+} from "@/lib/repositories/externalPartnerRepo";
 
 type FlatUser = {
   username: string | null;
@@ -14,6 +19,15 @@ type FlatUser = {
   emailNotificationsEnabled: boolean;
   inAppNotificationsEnabled: boolean;
   managerUserId: string | null;
+
+  isExternal: boolean;
+  externalPartnerUserId: string | null;
+  externalPartnerId: string | null;
+  externalPartnerCode: string | null;
+  externalPartnerName: string | null;
+  externalPartnerType: string | null;
+  externalRole: string | null;
+  externalModules: ExternalModuleAccess[];
 };
 
 type MeResponse = FlatUser & {
@@ -34,13 +48,18 @@ function emptyResponse(error = "Not authenticated"): MeResponse {
     emailNotificationsEnabled: true,
     inAppNotificationsEnabled: true,
     managerUserId: null,
+
+    isExternal: false,
+    externalPartnerUserId: null,
+    externalPartnerId: null,
+    externalPartnerCode: null,
+    externalPartnerName: null,
+    externalPartnerType: null,
+    externalRole: null,
+    externalModules: [],
+
     user: null,
   };
-}
-
-function authUserId(auth: any): string | null {
-  const value = auth?.id ?? auth?.userId ?? auth?.sub ?? null;
-  return value == null ? null : String(value);
 }
 
 export async function GET(req: NextRequest) {
@@ -50,7 +69,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json(emptyResponse(), { status: 401 });
   }
 
-  const userId = authUserId(auth);
+  const userId = getAuthUserId(auth);
 
   const basePayload: FlatUser = {
     username: (auth as any).username ?? null,
@@ -62,9 +81,7 @@ export async function GET(req: NextRequest) {
     employeeNumber:
       (auth as any).employeeNumber != null
         ? Number((auth as any).employeeNumber)
-        : (auth as any).userId != null
-          ? Number((auth as any).userId)
-          : null,
+        : null,
     role: (auth as any).role ?? null,
     department: (auth as any).department ?? null,
     userId,
@@ -73,6 +90,15 @@ export async function GET(req: NextRequest) {
     emailNotificationsEnabled: true,
     inAppNotificationsEnabled: true,
     managerUserId: null,
+
+    isExternal: false,
+    externalPartnerUserId: null,
+    externalPartnerId: null,
+    externalPartnerCode: null,
+    externalPartnerName: null,
+    externalPartnerType: null,
+    externalRole: null,
+    externalModules: [],
   };
 
   if (!userId) {
@@ -81,7 +107,7 @@ export async function GET(req: NextRequest) {
         ...basePayload,
         user: basePayload,
       },
-      { status: 200 }
+      { status: 200 },
     );
   }
 
@@ -107,15 +133,16 @@ export async function GET(req: NextRequest) {
         email,
         COALESCE(email_notifications_enabled, true) AS "emailNotificationsEnabled",
         COALESCE(in_app_notifications_enabled, true) AS "inAppNotificationsEnabled",
-        manager_user_id AS "managerUserId"
+        manager_user_id::text AS "managerUserId"
       FROM public.users
-      WHERE id = $1
+      WHERE id = $1::uuid
       LIMIT 1
       `,
-      [userId]
+      [userId],
     );
 
     const dbUser = rows[0];
+    const external = await getExternalPartnerContextForUserId(userId);
 
     const payload: FlatUser = {
       ...basePayload,
@@ -128,6 +155,15 @@ export async function GET(req: NextRequest) {
       emailNotificationsEnabled: dbUser?.emailNotificationsEnabled ?? true,
       inAppNotificationsEnabled: dbUser?.inAppNotificationsEnabled ?? true,
       managerUserId: dbUser?.managerUserId ?? null,
+
+      isExternal: !!external,
+      externalPartnerUserId: external?.externalPartnerUserId ?? null,
+      externalPartnerId: external?.externalPartnerId ?? null,
+      externalPartnerCode: external?.externalPartnerCode ?? null,
+      externalPartnerName: external?.externalPartnerName ?? null,
+      externalPartnerType: external?.externalPartnerType ?? null,
+      externalRole: external?.externalRole ?? null,
+      externalModules: external?.externalModules ?? [],
     };
 
     return NextResponse.json<MeResponse>(
@@ -135,7 +171,7 @@ export async function GET(req: NextRequest) {
         ...payload,
         user: payload,
       },
-      { status: 200 }
+      { status: 200 },
     );
   } catch (err) {
     console.error("GET /api/me failed:", err);
@@ -145,7 +181,7 @@ export async function GET(req: NextRequest) {
         ...basePayload,
         user: basePayload,
       },
-      { status: 200 }
+      { status: 200 },
     );
   }
 }

@@ -121,7 +121,7 @@ export default function SecurityQuestionsLoginPage() {
         return;
       }
 
-      window.location.assign("/dashboard");
+      window.location.assign((data as any)?.redirectTo || "/dashboard");
     } catch {
       setError("Security verification failed.");
     } finally {

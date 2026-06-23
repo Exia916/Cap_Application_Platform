@@ -11,6 +11,7 @@ import {
   fireWorkflowFieldChangedRule,
   fireWorkflowStatusChangedRules,
 } from "@/lib/services/workflowNotificationRuleTriggerService";
+import { rejectExternalUserForInternalApi } from "@/lib/external-access/routeGuards";
 
 const dbQuery = db.query.bind(db);
 
@@ -321,6 +322,9 @@ export async function GET(
     return new NextResponse("Unauthorized", { status: 401 });
   }
 
+  const externalBlock = await rejectExternalUserForInternalApi(user);
+  if (externalBlock) return externalBlock;
+
   const { id } = await context.params;
 
   try {
@@ -345,6 +349,9 @@ export async function PUT(
   if (!user) {
     return new NextResponse("Unauthorized", { status: 401 });
   }
+
+  const externalBlock = await rejectExternalUserForInternalApi(user);
+  if (externalBlock) return externalBlock;
 
   if (!hasRole(user.role, EDIT_ROLES)) {
     return new NextResponse("Forbidden", { status: 403 });
@@ -487,7 +494,7 @@ export async function PUT(
         actor,
       });
     } catch (fieldRuleErr) {
-      console.error("Workflow field notification rule triggers failed after update:", fieldRuleErr);
+      console.error("Workflow field notification rule triggers failed:", fieldRuleErr);
     }
 
     return NextResponse.json(mapRequestRow(updated));
