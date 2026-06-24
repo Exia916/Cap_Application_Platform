@@ -1,0 +1,247 @@
+.pageStack {
+  display: grid;
+  gap: 16px;
+  align-content: start;
+}
+
+.pageStack :global(.section-card) {
+  padding: 16px;
+}
+
+.pageStack :global(.card) {
+  min-width: 0;
+}
+
+.pageStack :global(.page-header) {
+  margin-bottom: 2px;
+}
+
+.pageStack :global(.page-header-actions) {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.pageStack :global(.record-meta-grid) {
+  gap: 14px;
+}
+
+.pageStack :global(.record-meta-item) {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.pageStack :global(.record-meta-label),
+.pageStack :global(.record-meta-value) {
+  display: block;
+}
+
+.pageStack :global(.record-meta-value) {
+  line-height: 1.35;
+}
+
+.pageStack form {
+  min-width: 0;
+}
+
+.pageStack form label,
+.pageStack .fieldLike {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--text);
+}
+
+.pageStack form label :global(.input),
+.pageStack form label :global(.select),
+.pageStack form label :global(.textarea) {
+  font-weight: 400;
+}
+
+.formGrid,
+.formGridCompact,
+.filterGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 14px;
+  align-items: end;
+}
+
+.formGridCompact {
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+
+.filterGrid {
+  grid-template-columns: minmax(280px, 1fr) minmax(220px, 340px) auto;
+  margin-bottom: 14px;
+}
+
+.formActions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.checkboxRow {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  color: var(--text-muted);
+  font-weight: 700;
+}
+
+.setupCardGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(245px, 1fr));
+  gap: 14px;
+}
+
+.setupCard {
+  display: grid;
+  gap: 10px;
+  align-content: start;
+  min-height: 138px;
+  border: 1px solid var(--border);
+  background: var(--surface-subtle);
+  border-radius: 12px;
+  padding: 14px;
+}
+
+.setupCardTitle {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 900;
+  color: var(--text-soft);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.setupCardText {
+  margin: 0;
+  color: var(--text-muted);
+  line-height: 1.45;
+}
+
+.tableSection {
+  display: grid;
+  gap: 14px;
+}
+
+.pageStack :global(.table-wrap),
+.tableScroll {
+  width: 100%;
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+}
+
+.pageStack :global(.data-table) {
+  width: 100%;
+  min-width: 680px;
+  border-collapse: separate;
+  border-spacing: 0;
+  background: var(--surface);
+}
+
+.pageStack :global(.data-table th),
+.pageStack :global(.data-table td) {
+  padding: 11px 13px;
+  border-bottom: 1px solid var(--border-table);
+  text-align: left;
+  vertical-align: top;
+  white-space: nowrap;
+}
+
+.pageStack :global(.data-table th) {
+  background: var(--surface-muted);
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.pageStack :global(.data-table td) {
+  color: var(--text-muted);
+}
+
+.pageStack :global(.data-table tbody tr:last-child td) {
+  border-bottom: 0;
+}
+
+.pageStack :global(.data-table tbody tr:hover td) {
+  background: rgba(34, 68, 139, 0.035);
+}
+
+.priceGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: 14px;
+}
+
+.priceMethodCard {
+  display: grid;
+  gap: 12px;
+}
+
+.priceMethodHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.priceMethodTitle {
+  margin: 0;
+  font-size: 20px;
+  color: var(--text);
+}
+
+.inlineSummary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.csvTextarea {
+  font-family: var(--font-geist-mono), ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  min-height: 220px;
+}
+
+@media (max-width: 900px) {
+  .filterGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .pageStack :global(.page-header-actions),
+  .formActions {
+    justify-content: flex-start;
+  }
+}
+
+.pageStack :global(.card) > label,
+.pageStack :global(.section-card) > label {
+  display: grid;
+  gap: 6px;
+  margin-top: 14px;
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--text);
+}
+
+.pageStack :global(.card) > label :global(.input),
+.pageStack :global(.card) > label :global(.textarea),
+.pageStack :global(.section-card) > label :global(.input),
+.pageStack :global(.section-card) > label :global(.textarea) {
+  font-weight: 400;
+}
