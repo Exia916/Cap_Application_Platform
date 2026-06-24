@@ -4,6 +4,7 @@ import {
   createKnitQcSubmission,
   type KnitQcLineInput,
 } from "@/lib/repositories/knitQcRepo";
+import { validateSessionBelongsToUser } from "@/lib/repositories/productionWorkSessionRepo";
 import { createActivityHistory } from "@/lib/repositories/activityHistoryRepo";
 import { logAuditEvent, logError, logWarn } from "@/lib/logging/logger";
 
@@ -13,6 +14,7 @@ type PostBody = {
   entryTs?: string;
   stockOrder?: boolean;
   salesOrder?: string | null;
+  sessionId?: string | null;
   notes?: string | null;
   lines?: Array<{
     detailNumber?: string | number | null;
@@ -118,6 +120,7 @@ function validateBody(body: any):
         stockOrder: boolean;
         salesOrderDisplay: string | null;
         salesOrderBase: string | null;
+        sessionId: string;
         notes: string | null;
         lines: KnitQcLineInput[];
       };
@@ -129,11 +132,16 @@ function validateBody(body: any):
 
   const stockOrder = !!body.stockOrder;
   const salesOrderInput = toNullableTrimmed(body.salesOrder);
+  const sessionId = toNullableTrimmed(body.sessionId);
   const notes = toNullableTrimmed(body.notes);
   const entryTs = body.entryTs ? new Date(body.entryTs) : new Date();
 
   if (Number.isNaN(entryTs.getTime())) {
     return { ok: false, error: "Invalid entry timestamp." };
+  }
+
+  if (!sessionId) {
+    return { ok: false, error: "You must start a Knit QC work session before submitting QC." };
   }
 
   const so = parseSalesOrderBase(salesOrderInput);
@@ -166,6 +174,7 @@ function validateBody(body: any):
       stockOrder,
       salesOrderDisplay: so.salesOrderDisplay,
       salesOrderBase: so.salesOrderBase,
+      sessionId,
       notes,
       lines: lines as KnitQcLineInput[],
     },
@@ -222,12 +231,27 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    const session = await validateSessionBelongsToUser({
+      sessionId: validated.value.sessionId,
+      moduleKey: "knit_qc",
+      employeeNumber,
+      requireOpen: true,
+    });
+
+    if (!session) {
+      return NextResponse.json<Resp>(
+        { error: "Session is invalid, closed, or does not belong to the current user." },
+        { status: 400 }
+      );
+    }
+
     const result = await createKnitQcSubmission({
       entryTs: validated.value.entryTs,
       name: authName,
       employeeNumber,
       stockOrder: validated.value.stockOrder,
       salesOrderDisplay: validated.value.salesOrderDisplay,
+      sessionId: validated.value.sessionId,
       notes: validated.value.notes,
       lines: validated.value.lines,
     });
@@ -251,6 +275,7 @@ export async function POST(req: NextRequest) {
           stockOrder: validated.value.stockOrder,
           salesOrder: validated.value.salesOrderDisplay,
           salesOrderBase: validated.value.salesOrderBase,
+          sessionId: validated.value.sessionId,
           lineCount: validated.value.lines.length,
         },
       });

@@ -32,6 +32,7 @@ export type KnitQcSubmission = {
   salesOrder: string | null;
   salesOrderBase: string | null;
   salesOrderDisplay: string | null;
+  sessionId: string | null;
   notes: string | null;
   isVoided: boolean;
   voidedAt: string | null;
@@ -83,6 +84,7 @@ export type CreateKnitQcSubmissionInput = {
   employeeNumber: number;
   stockOrder: boolean;
   salesOrderDisplay: string | null;
+  sessionId?: string | null;
   notes: string | null;
   lines: KnitQcLineInput[];
 };
@@ -107,6 +109,7 @@ export type KnitQcSubmissionSummaryRow = {
   salesOrder: string | null;
   salesOrderBase: string | null;
   salesOrderDisplay: string | null;
+  sessionId: string | null;
   lineCount: number;
   totalInspected: number;
   totalRejected: number;
@@ -115,6 +118,26 @@ export type KnitQcSubmissionSummaryRow = {
   voidedAt: string | null;
   voidedBy: string | null;
   voidReason: string | null;
+};
+
+export type RelatedKnitQcSubmissionRow = {
+  id: string;
+  entryTs: string;
+  entryDate: string;
+  name: string;
+  employeeNumber: number;
+  shift: string | null;
+  stockOrder: boolean;
+  salesOrder: string | null;
+  salesOrderBase: string | null;
+  salesOrderDisplay: string | null;
+  sessionId: string | null;
+  notes: string | null;
+  isVoided: boolean;
+  lineCount: number;
+  totalOrderQuantity: number;
+  totalInspected: number;
+  totalRejected: number;
 };
 
 export type ListKnitQcSubmissionSummariesRangeArgs = StandardRepoOptions & {
@@ -243,6 +266,7 @@ function submissionSelectSql() {
       COALESCE(s.sales_order_display, s.sales_order_base) AS "salesOrder",
       s.sales_order_base AS "salesOrderBase",
       s.sales_order_display AS "salesOrderDisplay",
+      s.session_id AS "sessionId",
       s.notes,
       COALESCE(s.is_voided, false) AS "isVoided",
       s.voided_at AS "voidedAt",
@@ -451,9 +475,10 @@ export async function createKnitQcSubmission(
         stock_order,
         sales_order_base,
         sales_order_display,
+        session_id,
         notes
       )
-      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
       RETURNING id
       `,
       [
@@ -465,6 +490,7 @@ export async function createKnitQcSubmission(
         input.stockOrder,
         so.salesOrderBase,
         so.salesOrderDisplay,
+        input.sessionId ?? null,
         normalizeOptionalText(input.notes),
       ]
     );
@@ -679,6 +705,55 @@ export async function listKnitQcSubmissionsBySalesOrder(
   return rows;
 }
 
+export async function listRelatedKnitQcSubmissionsForSession(
+  sessionId: string
+): Promise<RelatedKnitQcSubmissionRow[]> {
+  const { rows } = await db.query<RelatedKnitQcSubmissionRow>(
+    `
+    SELECT
+      s.id,
+      s.entry_ts AS "entryTs",
+      s.entry_date AS "entryDate",
+      s.name,
+      s.employee_number AS "employeeNumber",
+      s.shift,
+      s.stock_order AS "stockOrder",
+      COALESCE(s.sales_order_display, s.sales_order_base) AS "salesOrder",
+      s.sales_order_base AS "salesOrderBase",
+      s.sales_order_display AS "salesOrderDisplay",
+      s.session_id AS "sessionId",
+      s.notes,
+      COALESCE(s.is_voided, false) AS "isVoided",
+      COUNT(l.id)::int AS "lineCount",
+      COALESCE(SUM(l.order_quantity), 0)::int AS "totalOrderQuantity",
+      COALESCE(SUM(l.inspected_quantity), 0)::int AS "totalInspected",
+      COALESCE(SUM(l.rejected_quantity), 0)::int AS "totalRejected"
+    FROM public.knit_qc_submissions s
+    LEFT JOIN public.knit_qc_submission_lines l
+      ON l.submission_id = s.id
+    WHERE s.session_id = $1
+      AND COALESCE(s.is_voided, false) = false
+    GROUP BY
+      s.id,
+      s.entry_ts,
+      s.entry_date,
+      s.name,
+      s.employee_number,
+      s.shift,
+      s.stock_order,
+      s.sales_order_display,
+      s.sales_order_base,
+      s.session_id,
+      s.notes,
+      s.is_voided
+    ORDER BY s.entry_ts DESC, s.id DESC
+    `,
+    [sessionId]
+  );
+
+  return rows;
+}
+
 export async function listKnitQcSubmissionSummariesRange(
   args: ListKnitQcSubmissionSummariesRangeArgs
 ): Promise<{ rows: KnitQcSubmissionSummaryRow[]; totalCount: number }> {
@@ -712,6 +787,7 @@ export async function listKnitQcSubmissionSummariesRange(
       COALESCE(s.sales_order_display, s.sales_order_base) AS "salesOrder",
       s.sales_order_base AS "salesOrderBase",
       s.sales_order_display AS "salesOrderDisplay",
+      s.session_id AS "sessionId",
       COUNT(l.id)::int AS "lineCount",
       COALESCE(SUM(l.inspected_quantity), 0)::int AS "totalInspected",
       COALESCE(SUM(l.rejected_quantity), 0)::int AS "totalRejected",
@@ -734,6 +810,7 @@ export async function listKnitQcSubmissionSummariesRange(
       s.stock_order,
       s.sales_order_display,
       s.sales_order_base,
+      s.session_id,
       s.notes,
       s.is_voided,
       s.voided_at,

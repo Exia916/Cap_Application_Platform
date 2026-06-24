@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import WorkSessionCard from "@/components/platform/WorkSessionCard";
 
 type Line = {
   detailNumber: string;
@@ -25,6 +26,7 @@ type LoadedSubmission = {
   salesOrder: string | null;
   salesOrderBase: string | null;
   salesOrderDisplay: string | null;
+  sessionId?: string | null;
   notes: string | null;
   isVoided?: boolean;
   voidedAt?: string | null;
@@ -52,6 +54,40 @@ type LoadedLine = {
   rejectedQuantity: number | null;
   rejectReasonId: string | null;
   qcEmployeeNumber: number | null;
+  notes: string | null;
+};
+
+type MeResponse = {
+  userId?: string | null;
+  username?: string | null;
+  displayName?: string | null;
+  employeeNumber?: number | null;
+  role?: string | null;
+};
+
+type WorkSessionArea = {
+  id: string;
+  moduleKey: string;
+  areaCode: string;
+  areaLabel: string;
+  sortOrder: number;
+  isActive: boolean;
+};
+
+type WorkSession = {
+  id: string;
+  moduleKey: string;
+  areaCode: string;
+  workDate: string;
+  shiftDate: string | null;
+  shift: string | null;
+  userId: string | null;
+  username: string | null;
+  employeeNumber: number | null;
+  operatorName: string;
+  timeIn: string;
+  timeOut: string | null;
+  isOpen: boolean;
   notes: string | null;
 };
 
@@ -168,7 +204,12 @@ export default function KnitQcForm({ initialSubmissionId }: Props) {
   const router = useRouter();
   const isEditMode = !!initialSubmissionId;
 
+  const [me, setMe] = useState<MeResponse | null>(null);
+  const [sessionAreas, setSessionAreas] = useState<WorkSessionArea[]>([]);
+  const [openSession, setOpenSession] = useState<WorkSession | null>(null);
+
   const [loading, setLoading] = useState(isEditMode);
+  const [sessionLoading, setSessionLoading] = useState(!isEditMode);
   const [saving, setSaving] = useState(false);
   const [serverError, setServerError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
@@ -219,6 +260,62 @@ export default function KnitQcForm({ initialSubmissionId }: Props) {
       }
     })();
   }, []);
+
+  useEffect(() => {
+    if (isEditMode) {
+      setSessionLoading(false);
+      return;
+    }
+
+    let alive = true;
+
+    (async () => {
+      setSessionLoading(true);
+
+      try {
+        const [meRes, sessionAreaRes] = await Promise.all([
+          fetch("/api/me", { cache: "no-store", credentials: "include" }),
+          fetch("/api/platform/work-sessions/areas?moduleKey=knit_qc", {
+            cache: "no-store",
+            credentials: "include",
+          }),
+        ]);
+
+        let meData: MeResponse | null = null;
+
+        if (meRes.ok) {
+          meData = await meRes.json().catch(() => null);
+          if (alive) setMe(meData);
+        }
+
+        if (sessionAreaRes.ok) {
+          const data = await sessionAreaRes.json().catch(() => ({}));
+          if (alive) setSessionAreas(Array.isArray(data?.rows) ? data.rows : []);
+        }
+
+        if (meData?.employeeNumber) {
+          const sessionRes = await fetch(
+            `/api/platform/work-sessions?moduleKey=knit_qc&employeeNumber=${encodeURIComponent(
+              String(meData.employeeNumber)
+            )}&isOpen=true&limit=1&offset=0`,
+            { cache: "no-store", credentials: "include" }
+          );
+
+          const sessionData = await sessionRes.json().catch(() => ({}));
+          const rows = Array.isArray(sessionData?.rows) ? sessionData.rows : [];
+          if (alive) setOpenSession(rows[0] ?? null);
+        }
+      } catch {
+        // ignore session bootstrap errors; submit validation still protects the API
+      } finally {
+        if (alive) setSessionLoading(false);
+      }
+    })();
+
+    return () => {
+      alive = false;
+    };
+  }, [isEditMode]);
 
   useEffect(() => {
     if (!isEditMode || !initialSubmissionId) {
@@ -417,6 +514,11 @@ export default function KnitQcForm({ initialSubmissionId }: Props) {
       return;
     }
 
+    if (!isEditMode && !openSession?.id) {
+      setServerError("You must start a Knit QC work session before submitting QC.");
+      return;
+    }
+
     const nextErrors = validate();
     setErrors(nextErrors);
 
@@ -444,6 +546,7 @@ export default function KnitQcForm({ initialSubmissionId }: Props) {
           entryTs: payloadEntryTs,
           stockOrder,
           salesOrder: salesOrder.trim() || null,
+          sessionId: !isEditMode ? openSession?.id ?? null : null,
           notes: notes.trim() || null,
           lines: lines.map((l) => ({
             detailNumber: l.detailNumber.trim(),
@@ -536,6 +639,18 @@ export default function KnitQcForm({ initialSubmissionId }: Props) {
           ← Back to List
         </button>
       </div>
+
+      {!isEditMode ? (
+        <WorkSessionCard
+          moduleKey="knit_qc"
+          moduleLabel="Knit QC"
+          session={openSession}
+          areas={sessionAreas}
+          disabled={saving || sessionLoading || isVoided}
+          onStarted={(session) => setOpenSession(session)}
+          onClosed={() => setOpenSession(null)}
+        />
+      ) : null}
 
       <div>
         <h1 style={{ margin: 0, marginBottom: 6 }}>
