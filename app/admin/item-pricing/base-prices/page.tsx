@@ -160,6 +160,8 @@ export default function ItemPricingBasePricesPage() {
           rows={rows}
           loading={loading}
           error={error}
+            filters={{}}
+            onFilterChange={() => {}}
           sortBy={sortBy}
           sortDir={sortDir}
           onToggleSort={(key) => { if (sortBy !== key) { setSortBy(key); setSortDir("asc"); } else setSortDir((d) => d === "asc" ? "desc" : "asc"); }}

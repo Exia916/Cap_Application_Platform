@@ -170,6 +170,8 @@ export default function ItemPricingPriceBooksPage() {
           onPageSizeChange={setPageSize}
           rowKey={(r) => r.id}
           emptyText="No price books found."
+          filters={{}}
+          onFilterChange={() => {}}
           enableCsvExport
           csvFilename="item_pricing_price_books.csv"
           rowToCsv={(r) => ({ Code: r.code, Name: r.name, Status: r.status, Items: r.itemCount, Validation: r.lastValidationStatus || "", Errors: r.lastValidationErrorCount || 0, Warnings: r.lastValidationWarningCount || 0, Effective: fmtDate(r.effectiveDate), Updated: fmtDate(r.updatedAt) })}

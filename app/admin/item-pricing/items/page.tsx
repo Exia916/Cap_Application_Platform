@@ -155,6 +155,9 @@ export default function ItemPricingItemsPage() {
           sortBy={sortBy}
           sortDir={sortDir}
           onToggleSort={(key) => { if (sortBy !== key) { setSortBy(key); setSortDir("asc"); } else setSortDir((d) => d === "asc" ? "desc" : "asc"); }}
+          // provide filters/onFilterChange to satisfy DataTable Props
+          filters={{}}
+          onFilterChange={() => {}}
           totalCount={total}
           pageIndex={pageIndex}
           pageSize={pageSize}

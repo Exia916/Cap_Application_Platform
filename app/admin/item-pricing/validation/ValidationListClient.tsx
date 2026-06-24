@@ -165,6 +165,8 @@ export default function ValidationListClient({ initialPriceBookId = "" }: { init
           onPageSizeChange={setPageSize}
           rowKey={(r) => r.id}
           emptyText="No validation runs found."
+            filters={{}}
+            onFilterChange={() => {}}
           enableCsvExport
           csvFilename="item_pricing_validation_runs.csv"
           rowToCsv={(r) => ({ PriceBook: r.priceBookCode, Status: r.status, Items: r.itemCount, Errors: r.errorCount, Warnings: r.warningCount, Created: fmtDateTime(r.createdAt), CreatedBy: r.createdBy || "" })}
