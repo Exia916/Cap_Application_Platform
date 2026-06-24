@@ -249,22 +249,25 @@ const canSeePartnerWorkflow =
       module.isActive !== false,
   );
 
+const GLOBAL_SEARCH_ROLES = [
+  "ADMIN",
+  "SUPERVISOR",
+  "MANAGER",
+  "PURCHASING",
+  "SALES",
+] as const;
+
+const isAdmin = role === "ADMIN" || username === "admin";
+const isManager = isAdmin || role === "MANAGER" || role === "SUPERVISOR";
+
+const canSeeItemPricingSetup =
+  meLoaded && !isExternal && (isAdmin || role === "MANAGER");
+
 const partnerWorkHref = canSeePartnerWorkflow
   ? "/partner-work/workflow"
   : "/partner-work";
 
-  const GLOBAL_SEARCH_ROLES = [
-    "ADMIN",
-    "SUPERVISOR",
-    "MANAGER",
-    "PURCHASING",
-    "SALES",
-  ] as const;
-
-  const isAdmin = role === "ADMIN" || username === "admin";
-  const isManager = isAdmin || role === "MANAGER" || role === "SUPERVISOR";
-
-  const canGlobalSearch = !isExternal && GLOBAL_SEARCH_ROLES.includes(role as any);
+const canGlobalSearch = !isExternal && GLOBAL_SEARCH_ROLES.includes(role as any);
 
     const DESIGN_LOOKUP_ROLES = [
     "ADMIN",
@@ -395,6 +398,11 @@ const canSeeQuickTurnQuoteCalculator =
     label: "Recut Accountability Rules",
     show: canSeeReports,
   },
+  {
+  href: "/admin/item-pricing",
+  label: "Item Pricing Setup",
+  show: canSeeItemPricingSetup,
+},
   { href: "/manager/tasks", label: "Task Oversight", show: meLoaded && isManager },
 ].filter((x) => x.show !== false);
 
