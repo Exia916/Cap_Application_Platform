@@ -133,6 +133,37 @@ function resetFormState() {
   };
 }
 
+function normalizeAreaKey(value: unknown) {
+  return String(value ?? "")
+    .trim()
+    .replace(/\s+/g, " ")
+    .toUpperCase();
+}
+
+function findKnitAreaForSessionArea(
+  areaCode: string | null | undefined,
+  sessionAreas: WorkSessionArea[],
+  knitAreaOptions: KnitAreaOption[]
+) {
+  const normalizedCode = normalizeAreaKey(areaCode);
+  if (!normalizedCode) return null;
+
+  const sessionArea = sessionAreas.find(
+    (a) => normalizeAreaKey(a.areaCode) === normalizedCode
+  );
+
+  const candidates = new Set(
+    [areaCode, sessionArea?.areaLabel]
+      .filter(Boolean)
+      .map((x) => normalizeAreaKey(x))
+  );
+
+  return (
+    knitAreaOptions.find((x) => candidates.has(normalizeAreaKey(x.areaName))) ??
+    null
+  );
+}
+
 function FieldBlock({
   label,
   error,
@@ -356,6 +387,8 @@ export default function KnitProductionForm({ initialSubmissionId }: Props) {
         ]);
 
         let meData: MeResponse | null = null;
+        let areaRows: KnitAreaOption[] = [];
+        let sessionAreaRows: WorkSessionArea[] = [];
 
         if (meRes.ok) {
           meData = await meRes.json();
@@ -369,17 +402,18 @@ export default function KnitProductionForm({ initialSubmissionId }: Props) {
 
         if (knitAreaRes.ok) {
           const data = await knitAreaRes.json();
-          const rows = Array.isArray(data?.rows) ? data.rows : [];
-          setKnitAreaOptions(rows);
+          areaRows = Array.isArray(data?.rows) ? data.rows : [];
+          setKnitAreaOptions(areaRows);
 
-          if (!isEditMode && rows.length > 0) {
-            setKnitArea((prev) => prev || String(rows[0]?.areaName ?? ""));
+          if (!isEditMode && areaRows.length > 0) {
+            setKnitArea((prev) => prev || String(areaRows[0]?.areaName ?? ""));
           }
         }
 
         if (sessionAreaRes.ok) {
           const data = await sessionAreaRes.json();
-          setSessionAreas(Array.isArray(data?.rows) ? data.rows : []);
+          sessionAreaRows = Array.isArray(data?.rows) ? data.rows : [];
+          setSessionAreas(sessionAreaRows);
         }
 
         if (!isEditMode && meData?.employeeNumber) {
@@ -394,7 +428,18 @@ export default function KnitProductionForm({ initialSubmissionId }: Props) {
 
           const sessionData = await sessionRes.json().catch(() => ({}));
           const rows = Array.isArray(sessionData?.rows) ? sessionData.rows : [];
-          setOpenSession(rows[0] ?? null);
+          const currentSession = rows[0] ?? null;
+          setOpenSession(currentSession);
+
+          const matched = findKnitAreaForSessionArea(
+            currentSession?.areaCode,
+            sessionAreaRows,
+            areaRows
+          );
+
+          if (matched?.areaName) {
+            setKnitArea(String(matched.areaName));
+          }
         }
       } catch {
         // ignore bootstrap errors
@@ -470,17 +515,17 @@ export default function KnitProductionForm({ initialSubmissionId }: Props) {
 
   useEffect(() => {
     if (!isEditMode && openSession?.areaCode) {
-      const matched = knitAreaOptions.find(
-        (x) =>
-          String(x.areaName ?? "").trim().toUpperCase() ===
-          String(openSession.areaCode).trim().toUpperCase()
+      const matched = findKnitAreaForSessionArea(
+        openSession.areaCode,
+        sessionAreas,
+        knitAreaOptions
       );
 
       if (matched?.areaName) {
         setKnitArea(String(matched.areaName));
       }
     }
-  }, [isEditMode, openSession?.areaCode, knitAreaOptions]);
+  }, [isEditMode, openSession?.areaCode, sessionAreas, knitAreaOptions]);
 
   function clearSalesOrderError() {
     setErrors((prev) => {
@@ -581,8 +626,14 @@ export default function KnitProductionForm({ initialSubmissionId }: Props) {
 
   function resetForNewEntry() {
     const next = resetFormState();
+    const sessionMatchedKnitArea = findKnitAreaForSessionArea(
+      openSession?.areaCode,
+      sessionAreas,
+      knitAreaOptions
+    );
     const defaultKnitArea =
-      knitAreaOptions.length > 0 ? String(knitAreaOptions[0]?.areaName ?? "") : "";
+      sessionMatchedKnitArea?.areaName ??
+      (knitAreaOptions.length > 0 ? String(knitAreaOptions[0]?.areaName ?? "") : "");
 
     setEntryTs(next.entryTs);
     setStockOrder(next.stockOrder);
@@ -740,10 +791,10 @@ export default function KnitProductionForm({ initialSubmissionId }: Props) {
           onStarted={(session) => {
             setOpenSession(session);
 
-            const matched = knitAreaOptions.find(
-              (x) =>
-                String(x.areaName ?? "").trim().toUpperCase() ===
-                String(session.areaCode ?? "").trim().toUpperCase()
+            const matched = findKnitAreaForSessionArea(
+              session.areaCode,
+              sessionAreas,
+              knitAreaOptions
             );
 
             if (matched?.areaName) {

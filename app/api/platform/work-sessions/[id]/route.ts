@@ -6,6 +6,7 @@ import {
   listRelatedKnitSubmissionsForSession,
   updateWorkSession,
 } from "@/lib/repositories/productionWorkSessionRepo";
+import { listRelatedKnitQcSubmissionsForSession } from "@/lib/repositories/knitQcRepo";
 import { createActivityHistory } from "@/lib/repositories/activityHistoryRepo";
 import { logAuditEvent, logError } from "@/lib/logging/logger";
 
@@ -23,11 +24,32 @@ function isElevatedRole(role: string | null | undefined) {
   return v === "ADMIN" || v === "MANAGER" || v === "SUPERVISOR";
 }
 
+type RelatedSubmissionRow = {
+  id: string;
+  moduleKey: "knit_production" | "knit_qc";
+  label: string;
+  entryTs: string;
+  entryDate: string;
+  name: string;
+  employeeNumber: number;
+  salesOrder: string | null;
+  area: string | null;
+  lineCount: number;
+  totalQuantity: number | null;
+  totalOrderQuantity: number | null;
+  totalInspected: number | null;
+  totalRejected: number | null;
+  notes: string | null;
+  href: string;
+};
+
 type GetResp =
   | {
       session: any;
       areas: any[];
       knitSubmissions: any[];
+      knitQcSubmissions: any[];
+      relatedSubmissions: RelatedSubmissionRow[];
       canManage: boolean;
     }
   | { error: string };
@@ -81,10 +103,55 @@ export async function GET(
   }
 
   const areas = await listAvailableWorkAreas(session.moduleKey);
+
   const knitSubmissions =
     session.moduleKey === "knit_production"
       ? await listRelatedKnitSubmissionsForSession(session.id)
       : [];
+
+  const knitQcSubmissions =
+    session.moduleKey === "knit_qc"
+      ? await listRelatedKnitQcSubmissionsForSession(session.id)
+      : [];
+
+  const relatedSubmissions: RelatedSubmissionRow[] = [
+    ...knitSubmissions.map((row: any) => ({
+      id: String(row.id),
+      moduleKey: "knit_production" as const,
+      label: "Knit Production",
+      entryTs: row.entryTs,
+      entryDate: row.entryDate,
+      name: row.name,
+      employeeNumber: row.employeeNumber,
+      salesOrder: row.salesOrder ?? row.salesOrderDisplay ?? null,
+      area: row.knitArea ?? null,
+      lineCount: Number(row.lineCount ?? 0),
+      totalQuantity: Number(row.totalQuantity ?? 0),
+      totalOrderQuantity: null,
+      totalInspected: null,
+      totalRejected: null,
+      notes: row.notes ?? null,
+      href: `/knit-production/${row.id}`,
+    })),
+    ...knitQcSubmissions.map((row: any) => ({
+      id: String(row.id),
+      moduleKey: "knit_qc" as const,
+      label: "Knit QC",
+      entryTs: row.entryTs,
+      entryDate: row.entryDate,
+      name: row.name,
+      employeeNumber: row.employeeNumber,
+      salesOrder: row.salesOrder ?? row.salesOrderDisplay ?? null,
+      area: null,
+      lineCount: Number(row.lineCount ?? 0),
+      totalQuantity: null,
+      totalOrderQuantity: Number(row.totalOrderQuantity ?? 0),
+      totalInspected: Number(row.totalInspected ?? 0),
+      totalRejected: Number(row.totalRejected ?? 0),
+      notes: row.notes ?? null,
+      href: `/knit-qc/${row.id}`,
+    })),
+  ];
 
   const canManage = elevated || ownsByUserId || ownsByEmployee;
 
@@ -93,6 +160,8 @@ export async function GET(
       session,
       areas,
       knitSubmissions,
+      knitQcSubmissions,
+      relatedSubmissions,
       canManage,
     },
     { status: 200 }

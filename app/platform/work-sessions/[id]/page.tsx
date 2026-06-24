@@ -42,7 +42,26 @@ type WorkSessionArea = {
   isActive: boolean;
 };
 
-type RelatedKnitSubmissionRow = {
+type RelatedSubmissionRow = {
+  id: string;
+  moduleKey: "knit_production" | "knit_qc";
+  label: string;
+  entryTs: string;
+  entryDate: string;
+  name: string;
+  employeeNumber: number;
+  salesOrder: string | null;
+  area: string | null;
+  lineCount: number;
+  totalQuantity: number | null;
+  totalOrderQuantity: number | null;
+  totalInspected: number | null;
+  totalRejected: number | null;
+  notes: string | null;
+  href: string;
+};
+
+type LegacyRelatedKnitSubmissionRow = {
   id: string;
   entryTs: string;
   entryDate: string;
@@ -68,7 +87,8 @@ type MeResponse = {
 type ApiResp = {
   session?: WorkSession;
   areas?: WorkSessionArea[];
-  knitSubmissions?: RelatedKnitSubmissionRow[];
+  relatedSubmissions?: RelatedSubmissionRow[];
+  knitSubmissions?: LegacyRelatedKnitSubmissionRow[];
   canManage?: boolean;
   error?: string;
 };
@@ -109,6 +129,17 @@ function yesNo(v: unknown) {
   return v ? "Yes" : "No";
 }
 
+function moduleLabel(moduleKey?: string | null) {
+  switch (String(moduleKey ?? "")) {
+    case "knit_production":
+      return "Knit Production";
+    case "knit_qc":
+      return "Knit QC";
+    default:
+      return String(moduleKey ?? "");
+  }
+}
+
 function Info({
   label,
   value,
@@ -133,11 +164,11 @@ function Info({
 
 function SidebarNav({
   session,
-  knitCount,
+  relatedCount,
   canManage,
 }: {
   session: WorkSession;
-  knitCount: number;
+  relatedCount: number;
   canManage: boolean;
 }) {
   return (
@@ -151,10 +182,10 @@ function SidebarNav({
             <span className={session.isOpen ? "badge badge-success" : "badge badge-neutral"}>
               {session.isOpen ? "Open" : "Closed"}
             </span>
-            <span className="badge badge-neutral">{session.moduleKey}</span>
+            <span className="badge badge-neutral">{moduleLabel(session.moduleKey)}</span>
             <span className="badge badge-neutral">{session.areaCode}</span>
             <span className="badge badge-neutral">
-              {knitCount} Knit {knitCount === 1 ? "Submission" : "Submissions"}
+              {relatedCount} Related {relatedCount === 1 ? "Record" : "Records"}
             </span>
           </div>
         </div>
@@ -201,7 +232,7 @@ export default function WorkSessionDetailPage({
   const [error, setError] = useState<string | null>(null);
   const [session, setSession] = useState<WorkSession | null>(null);
   const [areas, setAreas] = useState<WorkSessionArea[]>([]);
-  const [knitSubmissions, setKnitSubmissions] = useState<RelatedKnitSubmissionRow[]>([]);
+  const [relatedSubmissions, setRelatedSubmissions] = useState<RelatedSubmissionRow[]>([]);
   const [canManage, setCanManage] = useState(false);
   const [, setMe] = useState<MeResponse | null>(null);
 
@@ -230,9 +261,32 @@ export default function WorkSessionDetailPage({
           throw new Error(data?.error || "Failed to load work session.");
         }
 
+        const relatedRows = Array.isArray(data.relatedSubmissions)
+          ? data.relatedSubmissions
+          : Array.isArray(data.knitSubmissions)
+            ? data.knitSubmissions.map((row) => ({
+                id: String(row.id),
+                moduleKey: "knit_production" as const,
+                label: "Knit Production",
+                entryTs: row.entryTs,
+                entryDate: row.entryDate,
+                name: row.name,
+                employeeNumber: row.employeeNumber,
+                salesOrder: row.salesOrder ?? row.salesOrderDisplay ?? null,
+                area: row.knitArea ?? null,
+                lineCount: Number(row.lineCount ?? 0),
+                totalQuantity: Number(row.totalQuantity ?? 0),
+                totalOrderQuantity: null,
+                totalInspected: null,
+                totalRejected: null,
+                notes: row.notes ?? null,
+                href: `/knit-production/${row.id}`,
+              }))
+            : [];
+
         setSession(data.session);
         setAreas(Array.isArray(data.areas) ? data.areas : []);
-        setKnitSubmissions(Array.isArray(data.knitSubmissions) ? data.knitSubmissions : []);
+        setRelatedSubmissions(relatedRows);
         setCanManage(!!data.canManage);
         setMe(meData);
       } catch (err: any) {
@@ -291,7 +345,7 @@ export default function WorkSessionDetailPage({
         <div className="record-header-main">
           <h1 className="record-title">Work Session</h1>
           <p className="record-subtitle">
-            Unified session view for details, related production, collaboration, files, and audit history.
+            Unified session view for details, related production/QC records, collaboration, files, and audit history.
           </p>
         </div>
 
@@ -314,7 +368,7 @@ export default function WorkSessionDetailPage({
       <div className="record-layout">
         <SidebarNav
           session={session}
-          knitCount={knitSubmissions.length}
+          relatedCount={relatedSubmissions.length}
           canManage={canManage}
         />
 
@@ -326,7 +380,8 @@ export default function WorkSessionDetailPage({
               </div>
 
               <div className="record-meta-grid">
-                <Info label="Module" value={session.moduleKey} />
+                <Info label="Module" value={moduleLabel(session.moduleKey)} />
+                <Info label="Module Key" value={session.moduleKey} />
                 <Info label="Area" value={areaLabel} />
                 <Info label="Operator" value={session.operatorName} />
                 <Info label="Employee #" value={session.employeeNumber} />
@@ -364,48 +419,49 @@ export default function WorkSessionDetailPage({
             <div className="record-section-card">
               <div className="record-section-header">
                 <div className="record-badge-row">
-                  <h2 className="record-section-title">Related Knit Submissions</h2>
-                  <span className="record-count-badge">{knitSubmissions.length}</span>
+                  <h2 className="record-section-title">Related Records</h2>
+                  <span className="record-count-badge">{relatedSubmissions.length}</span>
                 </div>
               </div>
 
-              {session.moduleKey !== "knit_production" ? (
-                <div className="text-muted">
-                  Related submission view is currently enabled for Knit Production sessions only.
-                </div>
-              ) : knitSubmissions.length === 0 ? (
-                <div className="text-muted">No knit submissions found for this session.</div>
+              {relatedSubmissions.length === 0 ? (
+                <div className="text-muted">No related records found for this session.</div>
               ) : (
                 <div className="table-card">
                   <div className="table-scroll">
                     <table className="table-clean">
                       <thead>
                         <tr>
-                          <th>ID</th>
+                          <th>Module</th>
                           <th>Entry Time</th>
                           <th>Sales Order</th>
-                          <th>Knit Area</th>
+                          <th>Area</th>
                           <th>Lines</th>
                           <th>Total Qty</th>
+                          <th>Inspected</th>
+                          <th>Rejected</th>
                           <th>Notes</th>
                           <th></th>
                         </tr>
                       </thead>
                       <tbody>
-                        {knitSubmissions.map((row) => (
-                          <tr key={row.id}>
-                            <td>{row.id}</td>
+                        {relatedSubmissions.map((row) => (
+                          <tr key={`${row.moduleKey}-${row.id}`}>
+                            <td>{row.label}</td>
                             <td>{fmtTs(row.entryTs)}</td>
-                            <td>{row.salesOrder ?? row.salesOrderDisplay ?? ""}</td>
-                            <td>{row.knitArea ?? ""}</td>
+                            <td>{row.salesOrder ?? ""}</td>
+                            <td>{row.area ?? ""}</td>
                             <td>{row.lineCount}</td>
-                            <td>{row.totalQuantity}</td>
+                            <td>
+                              {row.moduleKey === "knit_qc"
+                                ? row.totalOrderQuantity ?? ""
+                                : row.totalQuantity ?? ""}
+                            </td>
+                            <td>{row.totalInspected ?? ""}</td>
+                            <td>{row.totalRejected ?? ""}</td>
                             <td style={{ whiteSpace: "pre-wrap" }}>{row.notes ?? ""}</td>
                             <td>
-                              <Link
-                                href={`/knit-production/${row.id}`}
-                                className="btn btn-secondary btn-sm"
-                              >
+                              <Link href={row.href} className="btn btn-secondary btn-sm">
                                 View
                               </Link>
                             </td>
