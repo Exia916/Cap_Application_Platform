@@ -229,20 +229,178 @@ export default function RecutSupervisorReviewPage() {
 
   const columns = useMemo<Column<Row>[]>(() => {
     return [
-      { key: "recutId", header: "Recut ID", sortable: true, filterable: true, placeholder: "Recut ID", render: (r) => r.recutId },
-      { key: "requestedDate", header: "Date Requested", sortable: true, filterable: true, placeholder: "Date Requested", render: (r) => formatDate(r.requestedDate) },
-      { key: "requestedTime", header: "Time Requested", sortable: true, filterable: true, placeholder: "Time Requested", render: (r) => formatTime(r.requestedTime) },
-      { key: "requestedByName", header: "Name", sortable: true, filterable: true, placeholder: "Name", render: (r) => r.requestedByName },
-      { key: "requestedDepartment", header: "Requested Department", sortable: true, filterable: true, placeholder: "Requested Department", render: (r) => r.requestedDepartment },
-      { key: "salesOrder", header: "Sales Order #", sortable: true, filterable: true, placeholder: "Sales Order #", render: (r) => r.salesOrder },
-      { key: "designName", header: "Design Name", sortable: true, filterable: true, placeholder: "Design Name", render: (r) => r.designName },
-      { key: "recutReason", header: "Recut Reason", sortable: true, filterable: true, placeholder: "Recut Reason", render: (r) => r.recutReason },
-      { key: "detailNumber", header: "Detail #", sortable: true, filterable: true, placeholder: "Detail #", render: (r) => r.detailNumber },
-      { key: "capStyle", header: "Cap Style", sortable: true, filterable: true, placeholder: "Cap Style", render: (r) => r.capStyle },
-      { key: "pieces", header: "Pieces", sortable: true, filterable: true, placeholder: "Pieces", render: (r) => r.pieces },
-      { key: "operator", header: "Operator", sortable: true, filterable: true, placeholder: "Operator", render: (r) => r.operator },
-      { key: "deliverTo", header: "Deliver To", sortable: true, filterable: true, placeholder: "Deliver To", render: (r) => r.deliverTo },
-      { key: "notes", header: "Notes", sortable: true, filterable: true, placeholder: "Notes", render: (r) => r.notes || "" },
+      {
+        key: "actions",
+        header: "Actions",
+        sortable: false,
+        filterable: false,
+        serverSortable: false,
+        width: 132,
+        getSearchText: () => "",
+        render: (r) => (
+          <div style={actionStackStyle}>
+            <Link
+              href={withReturnTo(`/recuts/${r.id}`)}
+              className="btn btn-secondary btn-sm"
+              style={actionControlStyle}
+            >
+              View
+            </Link>
+
+            <Link
+              href={withReturnTo(`/recuts/${r.id}/edit`)}
+              className="btn btn-primary btn-sm"
+              style={actionControlStyle}
+            >
+              Edit
+            </Link>
+
+            {r.supervisorApproved ? (
+              <span className="text-success" style={actionStatusStyle}>
+                Approved
+              </span>
+            ) : (
+              <button
+              type="button"
+              onClick={() => approveRow(r.id)}
+              disabled={approvingId === r.id}
+              className="btn btn-sm"
+              style={approveButtonStyle}
+            >
+              {approvingId === r.id ? "Approving..." : "Approve"}
+            </button>
+            )}
+
+            {r.isCompleted ? (
+              <span className="text-success" style={actionStatusStyle}>
+                Completed
+              </span>
+            ) : (
+              <button
+                type="button"
+                onClick={() => completeRow(r.id)}
+                disabled={completingId === r.id}
+                className="btn btn-secondary btn-sm"
+                style={actionControlStyle}
+              >
+                {completingId === r.id ? "Completing..." : "Complete"}
+              </button>
+            )}
+          </div>
+        ),
+      },
+      {
+        key: "salesOrder",
+        header: "Sales Order #",
+        sortable: true,
+        filterable: true,
+        placeholder: "Sales Order #",
+        render: (r) => r.salesOrder,
+      },
+      {
+        key: "operator",
+        header: "Operator",
+        sortable: true,
+        filterable: true,
+        placeholder: "Operator",
+        render: (r) => r.operator,
+      },
+      {
+        key: "pieces",
+        header: "Pieces",
+        sortable: true,
+        filterable: true,
+        placeholder: "Pieces",
+        render: (r) => r.pieces,
+      },
+      {
+        key: "recutReason",
+        header: "Recut Reason",
+        sortable: true,
+        filterable: true,
+        placeholder: "Recut Reason",
+        render: (r) => r.recutReason,
+      },
+      {
+        key: "notes",
+        header: "Notes",
+        sortable: true,
+        filterable: true,
+        placeholder: "Notes",
+        render: (r) => r.notes || "",
+      },
+      {
+        key: "requestedDepartment",
+        header: "Requested Department",
+        sortable: true,
+        filterable: true,
+        placeholder: "Requested Department",
+        render: (r) => r.requestedDepartment,
+      },
+      {
+        key: "requestedDate",
+        header: "Date Requested",
+        sortable: true,
+        filterable: true,
+        placeholder: "Date Requested",
+        render: (r) => formatDate(r.requestedDate),
+      },
+      {
+        key: "requestedTime",
+        header: "Time Requested",
+        sortable: true,
+        filterable: true,
+        placeholder: "Time Requested",
+        render: (r) => formatTime(r.requestedTime),
+      },
+      {
+        key: "detailNumber",
+        header: "Detail #",
+        sortable: true,
+        filterable: true,
+        placeholder: "Detail #",
+        render: (r) => r.detailNumber,
+      },
+      {
+        key: "recutId",
+        header: "Recut ID",
+        sortable: true,
+        filterable: true,
+        placeholder: "Recut ID",
+        render: (r) => r.recutId,
+      },
+      {
+        key: "requestedByName",
+        header: "Name",
+        sortable: true,
+        filterable: true,
+        placeholder: "Name",
+        render: (r) => r.requestedByName,
+      },
+      {
+        key: "designName",
+        header: "Design Name",
+        sortable: true,
+        filterable: true,
+        placeholder: "Design Name",
+        render: (r) => r.designName,
+      },
+      {
+        key: "capStyle",
+        header: "Cap Style",
+        sortable: true,
+        filterable: true,
+        placeholder: "Cap Style",
+        render: (r) => r.capStyle,
+      },
+      {
+        key: "deliverTo",
+        header: "Deliver To",
+        sortable: true,
+        filterable: true,
+        placeholder: "Deliver To",
+        render: (r) => r.deliverTo,
+      },
       {
         key: "event",
         header: "Event",
@@ -299,74 +457,6 @@ export default function RecutSupervisorReviewPage() {
           "Completed"
         ),
         render: (r) => (r.isCompleted ? <span className="badge badge-success">Completed</span> : "No"),
-      },
-      {
-        key: "view",
-        header: "View",
-        sortable: false,
-        filterable: false,
-        serverSortable: false,
-        render: (r) => (
-          <Link href={withReturnTo(`/recuts/${r.id}`)} className="btn btn-secondary btn-sm">
-            View
-          </Link>
-        ),
-      },
-      {
-        key: "edit",
-        header: "Edit",
-        sortable: false,
-        filterable: false,
-        serverSortable: false,
-        render: (r) => (
-          <Link href={withReturnTo(`/recuts/${r.id}/edit`)} className="btn btn-primary btn-sm">
-            Edit
-          </Link>
-        ),
-      },
-      {
-        key: "approve",
-        header: "Approve",
-        sortable: false,
-        filterable: false,
-        serverSortable: false,
-        render: (r) =>
-          r.supervisorApproved ? (
-            <span className="text-success" style={{ fontWeight: 700 }}>
-              Approved
-            </span>
-          ) : (
-            <button
-              type="button"
-              onClick={() => approveRow(r.id)}
-              disabled={approvingId === r.id}
-              className="btn btn-secondary btn-sm"
-            >
-              {approvingId === r.id ? "Approving..." : "Approve"}
-            </button>
-          ),
-      },
-      {
-        key: "complete",
-        header: "Complete",
-        sortable: false,
-        filterable: false,
-        serverSortable: false,
-        render: (r) =>
-          r.isCompleted ? (
-            <span className="text-success" style={{ fontWeight: 700 }}>
-              Completed
-            </span>
-          ) : (
-            <button
-              type="button"
-              onClick={() => completeRow(r.id)}
-              disabled={completingId === r.id}
-              className="btn btn-secondary btn-sm"
-            >
-              {completingId === r.id ? "Completing..." : "Complete"}
-            </button>
-          ),
       },
     ];
   }, [filters, approvingId, completingId]);
@@ -448,6 +538,26 @@ export default function RecutSupervisorReviewPage() {
   );
 }
 
+const actionStackStyle: React.CSSProperties = {
+  display: "flex",
+  flexDirection: "column",
+  alignItems: "stretch",
+  gap: 6,
+  minWidth: 112,
+};
+
+const actionControlStyle: React.CSSProperties = {
+  width: "100%",
+  justifyContent: "center",
+};
+
+const actionStatusStyle: React.CSSProperties = {
+  display: "inline-flex",
+  width: "100%",
+  justifyContent: "center",
+  fontWeight: 700,
+};
+
 const filterSelect: React.CSSProperties = {
   width: "100%",
   minWidth: 88,
@@ -456,4 +566,11 @@ const filterSelect: React.CSSProperties = {
   padding: "6px 8px",
   background: "#fff",
   fontSize: 12,
+};
+
+const approveButtonStyle: React.CSSProperties = {
+  ...actionControlStyle,
+  background: "var(--brand-green)",
+  borderColor: "var(--brand-green)",
+  color: "#ffffff",
 };
