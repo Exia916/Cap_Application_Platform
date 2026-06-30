@@ -42,6 +42,10 @@ function boolText(v: boolean) {
   return v ? "Yes" : "No";
 }
 
+function isUnknownOperator(value: string | null | undefined) {
+  return String(value || "").trim().toLowerCase() === "unknown";
+}
+
 function formatDate(value: string) {
   return value ? String(value).slice(0, 10) : "";
 }
@@ -86,6 +90,8 @@ export default function RecutSupervisorReviewPage() {
 
   const [approvingId, setApprovingId] = useState<string | null>(null);
   const [completingId, setCompletingId] = useState<string | null>(null);
+  const [unknownOperatorApprovalRow, setUnknownOperatorApprovalRow] =
+    useState<Row | null>(null);
 
   const [filters, setFilters] = useState<Record<string, string>>({
     recutId: "",
@@ -197,6 +203,15 @@ export default function RecutSupervisorReviewPage() {
     }
   }
 
+  function requestApproval(row: Row) {
+    if (isUnknownOperator(row.operator)) {
+      setUnknownOperatorApprovalRow(row);
+      return;
+    }
+
+    approveRow(row.id);
+  }
+
   async function completeRow(id: string) {
     setCompletingId(id);
     setError(null);
@@ -262,7 +277,7 @@ export default function RecutSupervisorReviewPage() {
             ) : (
               <button
               type="button"
-              onClick={() => approveRow(r.id)}
+              onClick={() => requestApproval(r)}
               disabled={approvingId === r.id}
               className="btn btn-sm"
               style={approveButtonStyle}
@@ -534,6 +549,98 @@ export default function RecutSupervisorReviewPage() {
           Completed: boolText(r.isCompleted),
         })}
       />
+
+      {unknownOperatorApprovalRow ? (
+        <div
+          style={unknownOperatorModalOverlayStyle}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="unknown-operator-approval-title"
+        >
+          <div style={unknownOperatorModalStyle}>
+            <div style={{ display: "grid", gap: 8 }}>
+              <h2
+                id="unknown-operator-approval-title"
+                style={{ margin: 0, fontSize: 18, fontWeight: 800 }}
+              >
+                Confirm Recut Approval
+              </h2>
+
+              <p
+                style={{
+                  margin: 0,
+                  color: "var(--text-muted)",
+                  lineHeight: 1.45,
+                }}
+              >
+                The operator is <strong>&quot;Unknown&quot;</strong>, please
+                confirm you wish to proceed with approving this Recut.
+              </p>
+
+              <div
+                style={{
+                  marginTop: 8,
+                  padding: 10,
+                  borderRadius: 10,
+                  border: "1px solid var(--border)",
+                  background: "var(--surface-subtle)",
+                  display: "grid",
+                  gap: 4,
+                  fontSize: 13,
+                }}
+              >
+                <div>
+                  <strong>Recut ID:</strong>{" "}
+                  {unknownOperatorApprovalRow.recutId}
+                </div>
+                <div>
+                  <strong>Sales Order #:</strong>{" "}
+                  {unknownOperatorApprovalRow.salesOrder}
+                </div>
+                <div>
+                  <strong>Design Name:</strong>{" "}
+                  {unknownOperatorApprovalRow.designName}
+                </div>
+              </div>
+            </div>
+
+            <div style={unknownOperatorModalActionsStyle}>
+              <button
+                type="button"
+                className="btn btn-primary"
+                disabled={approvingId === unknownOperatorApprovalRow.id}
+                onClick={async () => {
+                  const row = unknownOperatorApprovalRow;
+                  setUnknownOperatorApprovalRow(null);
+                  await approveRow(row.id);
+                }}
+              >
+                Confirm
+              </button>
+
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={() => {
+                  const row = unknownOperatorApprovalRow;
+                  setUnknownOperatorApprovalRow(null);
+                  window.location.href = withReturnTo(`/recuts/${row.id}/edit`);
+                }}
+              >
+                Edit
+              </button>
+
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={() => setUnknownOperatorApprovalRow(null)}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -573,4 +680,33 @@ const approveButtonStyle: React.CSSProperties = {
   background: "var(--brand-green)",
   borderColor: "var(--brand-green)",
   color: "#ffffff",
+};
+
+const unknownOperatorModalOverlayStyle: React.CSSProperties = {
+  position: "fixed",
+  inset: 0,
+  zIndex: 1000,
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  padding: 20,
+  background: "rgba(17, 24, 39, 0.45)",
+};
+
+const unknownOperatorModalStyle: React.CSSProperties = {
+  width: "min(520px, 100%)",
+  borderRadius: 14,
+  border: "1px solid var(--border)",
+  background: "var(--surface)",
+  boxShadow: "var(--shadow-lg)",
+  padding: 18,
+  display: "grid",
+  gap: 16,
+};
+
+const unknownOperatorModalActionsStyle: React.CSSProperties = {
+  display: "flex",
+  justifyContent: "flex-end",
+  gap: 10,
+  flexWrap: "wrap",
 };

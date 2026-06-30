@@ -566,6 +566,7 @@ export default function RecutsAllTable({
         <table style={{ borderCollapse: "separate", borderSpacing: 0, width: "100%", minWidth: 2550 }}>
           <thead>
             <tr>
+              <SortHeader label="View" sortKey="recutId" activeSort={sort} activeDir={dir} onChange={toggleSort} />
               <SortHeader label="Date Requested" sortKey="requestedDate" activeSort={sort} activeDir={dir} onChange={toggleSort} />
               <SortHeader label="Operator" sortKey="operator" activeSort={sort} activeDir={dir} onChange={toggleSort} />
               <SortHeader label="Name" sortKey="requestedByName" activeSort={sort} activeDir={dir} onChange={toggleSort} />
@@ -584,11 +585,11 @@ export default function RecutsAllTable({
               <SortHeader label="Warehouse Printed" sortKey="warehousePrinted" activeSort={sort} activeDir={dir} onChange={toggleSort} />
               <SortHeader label="Completed" sortKey="isCompleted" activeSort={sort} activeDir={dir} onChange={toggleSort} />
               <SortHeader label="Do Not Pull" sortKey="doNotPull" activeSort={sort} activeDir={dir} onChange={toggleSort} />
-              <SortHeader label="View" sortKey="recutId" activeSort={sort} activeDir={dir} onChange={toggleSort} />
               <SortHeader label="Recut ID" sortKey="recutId" activeSort={sort} activeDir={dir} onChange={toggleSort} />
             </tr>
 
             <tr>
+              <th style={{ padding: 8, background: "var(--surface-muted)", borderBottom: "1px solid var(--border)" }} />
               <th style={{ padding: 8, background: "var(--surface-muted)", borderBottom: "1px solid var(--border)" }} />
               <th style={{ padding: 8, background: "var(--surface-muted)", borderBottom: "1px solid var(--border)" }}>
                 <input value={operator} onChange={(e) => setOperator(e.target.value)} placeholder="Filter..." style={headInput} />
@@ -661,7 +662,6 @@ export default function RecutsAllTable({
                   <option value="false">No</option>
                 </select>
               </th>
-              <th style={{ padding: 8, background: "var(--surface-muted)", borderBottom: "1px solid var(--border)" }} />
               <th style={{ padding: 8, background: "var(--surface-muted)", borderBottom: "1px solid var(--border)" }}>
                 <input value={recutId} onChange={(e) => setRecutId(e.target.value)} placeholder="Filter..." style={headInput} />
               </th>
@@ -671,6 +671,11 @@ export default function RecutsAllTable({
           <tbody>
             {rows.map((r) => (
               <tr key={r.id} className={rowClass(r)}>
+                <td style={td}>
+                  <Link href={`/recuts/${r.id}`} className="btn btn-secondary btn-sm">
+                    View
+                  </Link>
+                </td>
                 <td style={td}>{fmtDateOnly(r.requestedDate)}</td>
                 <td style={td}>{r.operator}</td>
                 <td style={td}>{r.requestedByName}</td>
@@ -689,11 +694,6 @@ export default function RecutsAllTable({
                 <td style={td}><BoolBadge value={r.warehousePrinted} trueTone="warning" /></td>
                 <td style={td}><BoolBadge value={r.isCompleted} /></td>
                 <td style={td}><BoolBadge value={r.doNotPull} trueTone="danger" /></td>
-                <td style={td}>
-                  <Link href={`/recuts/${r.id}`} className="btn btn-secondary btn-sm">
-                    View
-                  </Link>
-                </td>
                 <td style={td}>{r.recutId}</td>
               </tr>
             ))}
