@@ -19,6 +19,9 @@ const CREATE_ROLES = [
   "CUSTOMER SERVICE",
   "PURCHASING",
   "OVERSEAS CUSTOMER SERVICE",
+  "OVERSEAS CS",
+  "SALES",
+  "SUPERVISOR",
 ];
 
 export async function GET(req: NextRequest) {
