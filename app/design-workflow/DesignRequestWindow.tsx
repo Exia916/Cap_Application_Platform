@@ -996,10 +996,6 @@ export default function DesignRequestWindow({
           >
             Preview
           </button>
-
-          <button type="button" className="btn btn-secondary btn-sm" disabled>
-            Email
-          </button>
         </div>
 
         <div style={tabStrip}>
@@ -1378,11 +1374,6 @@ export default function DesignRequestWindow({
           ) : null}
 
           <div style={footerBar}>
-            <label style={checkboxRow}>
-              <input type="checkbox" disabled />
-              <span>Include Letterhead</span>
-            </label>
-
             <div style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
               {!readOnly ? (
                 <button
