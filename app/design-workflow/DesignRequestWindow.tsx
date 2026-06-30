@@ -398,18 +398,25 @@ export default function DesignRequestWindow({
   mode,
   requestId,
   isModal = false,
+  initialTab = "general",
   onClose,
   onSaved,
 }: {
   mode: Mode;
   requestId?: string;
   isModal?: boolean;
+  initialTab?: TabKey;
   onClose?: () => void;
-  onSaved?: (record: RequestRecord | { id: string }) => void;
+  onSaved?: (record: RequestRecord | { id: string }) => void | Promise<void>;
 }) {
   const readOnly = mode === "view";
 
-  const [tab, setTab] = useState<TabKey>("general");
+  const [tab, setTab] = useState<TabKey>(initialTab);
+
+  useEffect(() => {
+    setTab(initialTab);
+  }, [initialTab, mode, requestId]);
+
   const [me, setMe] = useState<MeResponse | null>(null);
 
   const [statuses, setStatuses] = useState<StatusRow[]>([]);
@@ -919,9 +926,13 @@ export default function DesignRequestWindow({
       }
 
       setSuccessMsg(mode === "new" ? "Design request created." : "Design request updated.");
-      onSaved?.(data as RequestRecord | { id: string });
+      await onSaved?.(data as RequestRecord | { id: string });
 
       if (isModal) {
+        if (mode === "new") {
+          return;
+        }
+
         onClose?.();
         return;
       }

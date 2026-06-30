@@ -112,9 +112,16 @@ type SortKey =
   | "artProof"
   | "createdAt";
 
+type WorkflowModalTab = "general" | "additional" | "colorways" | "attachments" | "history";
+
 type ModalState =
   | { open: false }
-  | { open: true; mode: "new" | "view" | "edit"; requestId?: string };
+  | {
+      open: true;
+      mode: "new" | "view" | "edit";
+      requestId?: string;
+      initialTab?: WorkflowModalTab;
+    };
 
 type ColumnKey =
   | "salesOrderNumber"
@@ -1919,13 +1926,34 @@ async function duplicateSelected() {
           mode={modalState.mode}
           requestId={modalState.requestId}
           isModal={true}
+          initialTab={modalState.initialTab}
           onClose={() => setModalState({ open: false })}
           onSaved={async (saved) => {
             await loadList();
-            if (modalState.mode === "view" && "id" in saved && saved.id) {
-              setModalState({ open: true, mode: "edit", requestId: saved.id });
-              return;
+
+            if ("id" in saved && saved.id) {
+              setSelectedRequestId(saved.id);
+
+              if (modalState.mode === "new") {
+                setModalState({
+                  open: true,
+                  mode: "edit",
+                  requestId: saved.id,
+                  initialTab: "attachments",
+                });
+                return;
+              }
+
+              if (modalState.mode === "view") {
+                setModalState({
+                  open: true,
+                  mode: "edit",
+                  requestId: saved.id,
+                });
+                return;
+              }
             }
+
             setModalState({ open: false });
           }}
         />
