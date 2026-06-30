@@ -24,6 +24,9 @@ const EDIT_ROLES = [
   "DIGITIZING",
   "ART",
   "ORDER PROCESSING",
+  "SUPERVISOR",
+  "SALES",
+  "OVERSEAS CS",
 ];
 
 function hasRole(userRole: string | null | undefined, roles: string[]) {
