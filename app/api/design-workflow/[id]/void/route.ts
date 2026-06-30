@@ -5,13 +5,13 @@ import { voidRequest } from "@/lib/repositories/designWorkflowRepo";
 
 const dbQuery = db.query.bind(db);
 
-const VOID_ROLES = [
-  "ADMIN",
-  "MANAGER",
-  "CUSTOMER SERVICE",
-  "PURCHASING",
-  "OVERSEAS CUSTOMER SERVICE",
-];
+function normalizeRole(role: string | null | undefined): string {
+  return String(role || "")
+    .trim()
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .toUpperCase();
+}
 
 export async function POST(
   req: NextRequest,
@@ -23,7 +23,7 @@ export async function POST(
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  if (!VOID_ROLES.includes(String(user.role || "").toUpperCase())) {
+  if (normalizeRole(user.role) !== "ADMIN") {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 

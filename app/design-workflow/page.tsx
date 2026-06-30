@@ -58,6 +58,16 @@ type ListResponse = {
   pageSize: number;
 };
 
+type MeResponse = {
+  username?: string | null;
+  displayName?: string | null;
+  employeeNumber?: number | null;
+  role?: string | null;
+  userId?: string | null;
+  id?: string | null;
+  name?: string | null;
+};
+
 const DEFAULT_FILTERS: WorkflowSearchFilters = {
   salesOrderNumbers: [],
   poNumbers: [],
@@ -237,6 +247,14 @@ function fmtDateTime(v?: string | null): string {
 
 function boolText(v: boolean) {
   return v ? "Yes" : "No";
+}
+
+function normalizeRole(role: string | null | undefined): string {
+  return String(role || "")
+    .trim()
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .toUpperCase();
 }
 
 function normalizeSearchCriteria(input: any): WorkflowSearchFilters {
@@ -806,6 +824,7 @@ export default function DesignWorkflowPage() {
   const [rows, setRows] = useState<WorkflowRow[]>([]);
   const [totalCount, setTotalCount] = useState(0);
   const [statuses, setStatuses] = useState<WorkflowStatusRow[]>([]);
+  const [me, setMe] = useState<MeResponse | null>(null);
   const [savedSearches, setSavedSearches] = useState<WorkflowSavedSearchRow[]>(
     [],
   );
@@ -903,6 +922,7 @@ export default function DesignWorkflowPage() {
       setBootstrapping(true);
       try {
         const [
+          meRes,
           statusRes,
           prefRes,
           savedRes,
@@ -913,6 +933,10 @@ export default function DesignWorkflowPage() {
           designersRes,
           stylesRes,
         ] = await Promise.all([
+          fetch("/api/me", {
+            cache: "no-store",
+            credentials: "include",
+          }),
           fetch("/api/design-workflow/statuses", {
             cache: "no-store",
             credentials: "include",
@@ -951,6 +975,7 @@ export default function DesignWorkflowPage() {
           }),
         ]);
 
+        const meData = meRes.ok ? await meRes.json() : null;
         const statusesData = statusRes.ok ? await statusRes.json() : [];
         const prefData = prefRes.ok ? await prefRes.json() : {};
         const savedData = savedRes.ok ? await savedRes.json() : [];
@@ -965,6 +990,7 @@ export default function DesignWorkflowPage() {
 
         if (!alive) return;
 
+        setMe(meData);
         setStatuses(Array.isArray(statusesData) ? statusesData : []);
         setSavedSearches(Array.isArray(savedData) ? savedData : []);
         setCustomerOptions(
@@ -1595,6 +1621,8 @@ async function duplicateSelected() {
     [visibleColumns],
   );
 
+  const canDeleteRequests = normalizeRole(me?.role) === "ADMIN";
+
   const toolbar = (
     <>
       <button
@@ -1612,14 +1640,16 @@ async function duplicateSelected() {
       >
         {duplicateBusy ? "Duplicating..." : "Duplicate"}
       </button>
-      <button
-        type="button"
-        className="btn btn-secondary"
-        onClick={voidSelected}
-        disabled={!selectedRow || !!selectedRow.isVoided}
-      >
-        Delete
-      </button>
+      {canDeleteRequests ? (
+        <button
+          type="button"
+          className="btn btn-secondary"
+          onClick={voidSelected}
+          disabled={!selectedRow || !!selectedRow.isVoided}
+        >
+          Delete
+        </button>
+      ) : null}
       <button
         type="button"
         className="btn btn-secondary"
@@ -1635,9 +1665,6 @@ async function duplicateSelected() {
         disabled={!selectedRow}
       >
         Preview
-      </button>
-      <button type="button" className="btn btn-secondary" disabled>
-        Email
       </button>
       <button
         type="button"
