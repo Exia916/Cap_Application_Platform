@@ -6,9 +6,9 @@ import {
 } from "@/lib/inboundShipments/permissions";
 import {
   createInboundShipment,
-  listInboundShipments,
   type SortDir,
 } from "@/lib/repositories/inboundShipmentRepo";
+import { listInboundShipmentsForList } from "@/lib/repositories/inboundShipmentListRepo";
 
 export const runtime = "nodejs";
 
@@ -33,6 +33,16 @@ function boolParam(v: string | null) {
   return v === "true" ? true : v === "false" ? false : undefined;
 }
 
+function csvParam(sp: URLSearchParams, name: string): string[] | null {
+  const values = sp
+    .getAll(name)
+    .flatMap((value) => String(value || "").split(","))
+    .map((value) => value.trim())
+    .filter(Boolean);
+
+  return values.length ? values : null;
+}
+
 export async function GET(req: NextRequest) {
   const auth = (await getAuthFromRequest(req as any)) as AuthLike | null;
 
@@ -47,9 +57,11 @@ export async function GET(req: NextRequest) {
   const sp = req.nextUrl.searchParams;
 
   try {
-    const rows = await listInboundShipments({
+    const rows = await listInboundShipmentsForList({
       q: sp.get("q"),
       status: sp.get("status"),
+      excludeStatusCodes:
+        csvParam(sp, "excludeStatusCodes") ?? csvParam(sp, "excludeStatusCode"),
       containerNumber: sp.get("containerNumber"),
       mblNumber: sp.get("mblNumber"),
       hblNumber: sp.get("hblNumber"),

@@ -81,6 +81,8 @@ const DEFAULT_FILTERS: Filters = {
   poNumber: "",
 };
 
+const CLOSED_STATUS_CODES = ["DELIVERED", "RECEIVED_CLOSED"];
+
 function ymdChicago(d: Date): string {
   const parts = new Intl.DateTimeFormat("en-CA", {
     timeZone: "America/Chicago",
@@ -154,6 +156,8 @@ export default function InboundShipmentsPage() {
   const [filters, setFilters] = useState<Filters>(DEFAULT_FILTERS);
   const [debouncedFilters, setDebouncedFilters] = useState<Filters>(DEFAULT_FILTERS);
 
+  const [excludeClosedStatuses, setExcludeClosedStatuses] = useState(true);
+
   const [sortBy, setSortBy] = useState("eta");
   const [sortDir, setSortDir] = useState<SortDir>("asc");
 
@@ -166,6 +170,8 @@ export default function InboundShipmentsPage() {
 
   const offset = pageIndex * pageSize;
 
+  const defaultStatusFilterActive = excludeClosedStatuses && !filters.status;
+
   useEffect(() => {
     const t = window.setTimeout(() => setDebouncedFilters(filters), 300);
     return () => window.clearTimeout(t);
@@ -173,7 +179,17 @@ export default function InboundShipmentsPage() {
 
   useEffect(() => {
     setPageIndex(0);
-  }, [debouncedFilters, etaFrom, etaTo, etdFrom, etdTo, sortBy, sortDir, pageSize]);
+  }, [
+    debouncedFilters,
+    etaFrom,
+    etaTo,
+    etdFrom,
+    etdTo,
+    excludeClosedStatuses,
+    sortBy,
+    sortDir,
+    pageSize,
+  ]);
 
   useEffect(() => {
     async function loadLookups() {
@@ -230,7 +246,12 @@ export default function InboundShipmentsPage() {
     sp.set("sortBy", sortBy);
     sp.set("sortDir", sortDir);
 
-    if (debouncedFilters.status) sp.set("status", debouncedFilters.status);
+    if (debouncedFilters.status) {
+      sp.set("status", debouncedFilters.status);
+    } else if (excludeClosedStatuses) {
+      sp.set("excludeStatusCodes", CLOSED_STATUS_CODES.join(","));
+    }
+
     if (debouncedFilters.containerNumber.trim()) {
       sp.set("containerNumber", debouncedFilters.containerNumber.trim());
     }
@@ -265,6 +286,7 @@ export default function InboundShipmentsPage() {
     etaTo,
     etdFrom,
     etdTo,
+    excludeClosedStatuses,
     pageSize,
     offset,
     sortBy,
@@ -314,6 +336,10 @@ export default function InboundShipmentsPage() {
 
   function onFilterChange(key: string, value: string) {
     if (key in DEFAULT_FILTERS) {
+      if (key === "status" && value) {
+        setExcludeClosedStatuses(false);
+      }
+
       setFilters((prev) => ({ ...prev, [key]: value }));
     }
   }
@@ -324,8 +350,21 @@ export default function InboundShipmentsPage() {
     setEtaTo("");
     setEtdFrom("");
     setEtdTo("");
+    setExcludeClosedStatuses(true);
     setSortBy("eta");
     setSortDir("asc");
+    setPageIndex(0);
+  }
+
+  function showAllStatuses() {
+    setExcludeClosedStatuses(false);
+    setFilters((prev) => ({ ...prev, status: "" }));
+    setPageIndex(0);
+  }
+
+  function hideClosedStatuses() {
+    setExcludeClosedStatuses(true);
+    setFilters((prev) => ({ ...prev, status: "" }));
     setPageIndex(0);
   }
 
@@ -349,7 +388,9 @@ export default function InboundShipmentsPage() {
             disabled={lookupLoading}
             onChange={(e) => onFilterChange("status", e.target.value)}
           >
-            <option value="">All</option>
+            <option value="">
+              {excludeClosedStatuses ? "All Open" : "All"}
+            </option>
             {statusOptions.map((s) => (
               <option key={s.id} value={String(s.id)}>
                 {s.label}
@@ -586,6 +627,7 @@ export default function InboundShipmentsPage() {
       etaTo,
       etdFrom,
       etdTo,
+      excludeClosedStatuses,
       filters.status,
       filters.forwarder,
       filters.shipmentType,
@@ -606,10 +648,27 @@ export default function InboundShipmentsPage() {
           </p>
         </div>
 
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+          {defaultStatusFilterActive ? (
+            <span className="record-pill record-pill-info">
+              Hiding Delivered + Received / Closed
+            </span>
+          ) : null}
+
+          {excludeClosedStatuses ? (
+            <button type="button" className="btn btn-secondary" onClick={showAllStatuses}>
+              Show All Statuses
+            </button>
+          ) : (
+            <button type="button" className="btn btn-secondary" onClick={hideClosedStatuses}>
+              Hide Delivered / Closed
+            </button>
+          )}
+
           <button type="button" className="btn btn-secondary" onClick={clearFilters}>
             Clear Filters
           </button>
+
           <Link href="/inbound-shipments/new" className="btn btn-primary">
             New Inbound Shipment
           </Link>
